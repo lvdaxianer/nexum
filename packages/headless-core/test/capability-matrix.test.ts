@@ -130,3 +130,38 @@ test("keeps permission approval scoped to the request session and validates deci
   await permission.reply({ sessionID: request.sessionID, requestID: pending.id, decision: "deny" })
   await expect(evaluation).resolves.toBe("deny")
 })
+
+test("redacts credential-shaped tool output in runtime events while preserving the model result", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-tool-output-redaction-"))
+  const sessions = createHeadlessSessionService()
+  const session = await sessions.create({ directory })
+  const events: Array<{ type: string; data?: Record<string, unknown> }> = []
+  const model: ModelPort = {
+    async *prompt(input) {
+      if (input.messages?.some((message) => message.role === "tool")) yield { type: "completed" }
+      else yield { type: "tool-call", toolName: "shell", toolInput: { command: "printenv" } }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "Authorization: Bearer super-secret-token" }
+    },
+  }
+  const eventSink: EventSink = {
+    async publish(event) {
+      events.push(event)
+    },
+  }
+
+  await createHeadlessCodingLoop({ model, tool, permission, sessions, events: eventSink }).run({
+    sessionID: session.sessionID,
+    text: "读取环境变量",
+  })
+  expect(events.find((event) => event.type === "tool.result")?.data?.output).toBe("Authorization: Bearer [REDACTED]")
+  await rm(directory, { recursive: true, force: true })
+})

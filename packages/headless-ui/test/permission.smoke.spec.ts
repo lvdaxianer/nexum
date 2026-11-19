@@ -3,6 +3,17 @@ import { afterEach, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { join, normalize } from "node:path"
 import { tmpdir } from "node:os"
+import {
+  createHeadlessCodingLoop,
+  createHeadlessProjectContextPort,
+  createHeadlessQuestionPort,
+  createHeadlessSessionService,
+  type ContextCompactionPort,
+  type ModelPort,
+  type PermissionPort,
+  type ToolPort,
+} from "@opencode/headless-core"
+import { createHeadlessEventHub } from "../../headless-server/src/events.ts"
 import { startHeadlessServer, type HeadlessServer } from "../../headless-server/src/index.ts"
 
 const uiOrigin = "http://127.0.0.1:5173"
@@ -76,6 +87,140 @@ test("denying a tool request fails the task without writing to the session direc
   await expect(page.getByText("session.failed")).toBeVisible()
   await expect(page.getByRole("button", { name: "Deny" })).toHaveCount(0)
   expect(await Bun.file(join(directory, "denied.txt")).exists()).toBe(false)
+})
+
+test("allowing a tool completes the task without exposing credential-shaped output", async () => {
+  browser = await chromium.launch({ headless: true })
+  const page = await browser.newPage()
+  let upstreamCalls = 0
+  upstream = Bun.serve({
+    port: 0,
+    async fetch() {
+      upstreamCalls += 1
+      if (upstreamCalls > 1) return Response.json({ choices: [{ message: { content: "命令已执行" } }] })
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_shell_secret",
+                  type: "function",
+                  function: {
+                    name: "shell",
+                    arguments: JSON.stringify({ command: "printf 'Authorization: Bearer super-secret-token'" }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      })
+    },
+  })
+  apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+  uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+  directory = await mkdtemp(join(tmpdir(), "headless-ui-allow-"))
+
+  await page.goto(uiOrigin)
+  await page.getByLabel("Base URL").fill(upstream.url.toString().replace(/\/$/, ""))
+  await page.getByLabel("Model").fill("fixture-model")
+  await page.getByRole("button", { name: "Save model config" }).click()
+  await page.getByLabel("Working directory").fill(directory)
+  await page.getByRole("button", { name: /Create session/ }).click()
+  await page.getByPlaceholder("Describe the next coding move…").fill("查看环境")
+  await page.getByRole("button", { name: /^Send/ }).click()
+  await page.getByRole("button", { name: "Allow once" }).click()
+
+  await expect(page.locator(".pill-completed")).toBeVisible()
+  await expect(page.getByText("tool.result")).toBeVisible()
+  await expect(page.locator("body")).not.toContainText("super-secret-token")
+})
+
+test("answers a Question and shows compaction plus project context states", async () => {
+  browser = await chromium.launch({ headless: true })
+  const page = await browser.newPage()
+  const sessions = createHeadlessSessionService()
+  const questions = createHeadlessQuestionPort()
+  const eventHub = createHeadlessEventHub()
+  const projectContext = createHeadlessProjectContextPort({
+    sources: [{ sourceID: "instruction:project", kind: "instruction", path: "AGENTS.md" }],
+    readFile: async () => "仅允许 Headless API",
+  })
+  let step = 0
+  const model: ModelPort = {
+    async *prompt() {
+      step += 1
+      if (step === 1) {
+        yield {
+          type: "question",
+          questionID: "question_ui_001",
+          toolCallID: "call_question_ui_001",
+          questions: [{ header: "目录", question: "选择目录", options: [{ label: "src", description: "源代码" }] }],
+        }
+        return
+      }
+      if (step === 2) {
+        yield { type: "tool-call", toolCallID: "call_read_ui_001", toolName: "read", toolInput: { path: "README.md" } }
+        return
+      }
+      yield { type: "completed" }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "README 内容" }
+    },
+  }
+  const compaction: ContextCompactionPort = {
+    estimate: (messages) => (messages.some((message) => message.role === "tool") ? 100 : 1),
+    async compact() {
+      return { summary: "UI smoke summary", recentMessages: [], context: [] }
+    },
+  }
+  const codingLoop = createHeadlessCodingLoop({
+    model,
+    tool,
+    permission,
+    sessions,
+    events: eventHub,
+    question: questions,
+    projectContext,
+    contextCompaction: compaction,
+    compactionThreshold: 10,
+  })
+  apiServer = await startHeadlessServer({
+    port: 4097,
+    corsOrigins: [uiOrigin],
+    sessionService: sessions,
+    eventHub,
+    codingLoop,
+    questionPort: questions,
+  })
+  uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+  directory = await mkdtemp(join(tmpdir(), "headless-ui-question-"))
+
+  await page.goto(uiOrigin)
+  await page.getByLabel("Working directory").fill(directory)
+  await page.getByRole("button", { name: /Create session/ }).click()
+  await page.getByPlaceholder("Describe the next coding move…").fill("先确认目录，再读取 README")
+  await page.getByRole("button", { name: /^Send/ }).click()
+  await expect(page.getByText("选择目录", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: /^src/ }).click()
+  await page.getByRole("button", { name: "Submit answers" }).click()
+
+  await expect(page.locator(".pill-completed")).toBeVisible()
+  await expect(page.locator(".context-value").filter({ hasText: "completed" })).toBeVisible()
+  await expect(page.getByText("AGENTS.md", { exact: true })).toBeVisible()
+  await expect(
+    page.locator(".event-body strong").filter({ hasText: "context.compaction.completed" }).first(),
+  ).toBeVisible()
 })
 
 async function serveBuiltUi(request: Request): Promise<Response> {
