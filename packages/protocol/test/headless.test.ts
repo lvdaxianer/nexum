@@ -9,6 +9,7 @@ const expectedRoutes = [
   "/api/experimental/headless/session/{sessionID}/events",
   "/api/experimental/headless/session/{sessionID}/permission",
   "/api/experimental/headless/session/{sessionID}/permission/{requestID}/reply",
+  "/api/experimental/headless/model",
 ]
 
 test("headless protocol exposes isolated session, event, and permission routes", () => {
@@ -36,6 +37,8 @@ test("headless protocol operations remain experimental", () => {
       "experimental.headless.session.events",
       "experimental.headless.session.permission.list",
       "experimental.headless.session.permission.reply",
+      "experimental.headless.model.get",
+      "experimental.headless.model.update",
     ]),
   )
 })

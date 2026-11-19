@@ -4957,6 +4957,21 @@ export type ExperimentalConfigUpdateInput = { readonly shell: string | null }
 
 export type ExperimentalConfigUpdateOutput = void
 
+export type ExperimentalHeadlessModelGetOutput = {
+  data: { baseUrl: string; model: string; credentialConfigured: boolean; credentialRef?: string | undefined } | null
+}["data"]
+
+export type ExperimentalHeadlessModelUpdateInput = {
+  readonly baseUrl: string
+  readonly model: string
+  readonly credential?: string | undefined
+  readonly credentialRef?: string | undefined
+}
+
+export type ExperimentalHeadlessModelUpdateOutput = {
+  data: { baseUrl: string; model: string; credentialConfigured: boolean; credentialRef?: string | undefined }
+}["data"]
+
 export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string }
 
 export type ExperimentalHeadlessSessionCreateOutput = {

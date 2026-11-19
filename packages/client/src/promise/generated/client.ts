@@ -326,6 +326,9 @@ import type {
   ConfigShellsOutput,
   ExperimentalConfigUpdateInput,
   ExperimentalConfigUpdateOutput,
+  ExperimentalHeadlessModelGetOutput,
+  ExperimentalHeadlessModelUpdateInput,
+  ExperimentalHeadlessModelUpdateOutput,
   ExperimentalHeadlessSessionCreateInput,
   ExperimentalHeadlessSessionCreateOutput,
   ExperimentalHeadlessSessionPromptInput,
@@ -1812,6 +1815,36 @@ export function make(options: ClientOptions) {
           ),
       },
       headless: {
+        model: {
+          get: (requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessModelGetOutput }>(
+              {
+                method: "GET",
+                path: `/api/experimental/headless/model`,
+                successStatus: 200,
+                declaredStatuses: [],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          update: (input: ExperimentalHeadlessModelUpdateInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessModelUpdateOutput }>(
+              {
+                method: "PUT",
+                path: `/api/experimental/headless/model`,
+                body: {
+                  baseUrl: input["baseUrl"],
+                  model: input["model"],
+                  credential: input["credential"],
+                  credentialRef: input["credentialRef"],
+                },
+                successStatus: 200,
+                declaredStatuses: [400],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+        },
         session: {
           create: (input: ExperimentalHeadlessSessionCreateInput, requestOptions?: RequestOptions) =>
             request<{ readonly data: ExperimentalHeadlessSessionCreateOutput }>(

@@ -540,3 +540,52 @@ curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/session/2b4
   --header 'Content-Type: application/json' \
   --data '{"decision":"allow_once"}'
 ```
+
+## 8. 模型配置
+
+### 8.1 接口概览
+
+| 项目     | 内容                                                                           |
+| -------- | ------------------------------------------------------------------------------ |
+| 接口名称 | Headless 单模型配置                                                            |
+| 接口用途 | 保存和读取一个 OpenAI-compatible Base URL、模型名称和凭据引用                  |
+| 业务场景 | 外部 UI 在启动 Coding Loop 前配置活动模型                                      |
+| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制                  |
+| 幂等性   | PUT 幂等；有效配置覆盖当前配置，非法配置不会覆盖旧值                           |
+| 安全     | 响应只返回 `credentialConfigured` 和可选 `credentialRef`，不返回 credential 值 |
+
+### 8.2 读取配置
+
+```http
+GET http://127.0.0.1:4097/api/experimental/headless/model
+```
+
+未配置时返回 `{"data":null}`；已配置时示例：
+
+```json
+{
+  "data": {
+    "baseUrl": "https://model.example.com/v1",
+    "model": "coding-model",
+    "credentialConfigured": true
+  }
+}
+```
+
+### 8.3 更新配置
+
+```http
+PUT http://127.0.0.1:4097/api/experimental/headless/model
+```
+
+```json
+{
+  "baseUrl": "https://model.example.com/v1",
+  "model": "coding-model",
+  "credentialRef": "MODEL_API_KEY"
+}
+```
+
+`credential` 可直接提交凭据值，但服务响应、事件和普通错误不会返回该值；生产建议只提交环境变量名 `credentialRef`。
+
+非法 URL、空模型名或同时提交 `credential` 与 `credentialRef` 返回 `400 HEADLESS_INVALID_MODEL_CONFIG`，且保留上一份有效配置。

@@ -49,6 +49,22 @@ export const HeadlessEvent = Schema.Struct({
   data: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
 })
 
+/** Headless 单模型配置的安全返回体。 */
+export const HeadlessModelConfig = Schema.Struct({
+  baseUrl: Schema.String,
+  model: Schema.String,
+  credentialConfigured: Schema.Boolean,
+  credentialRef: Schema.optional(Schema.String),
+})
+
+/** Headless 单模型配置请求体。 */
+export const HeadlessModelConfigPayload = Schema.Struct({
+  baseUrl: Schema.String,
+  model: Schema.String,
+  credential: Schema.optional(Schema.String),
+  credentialRef: Schema.optional(Schema.String),
+})
+
 const acceptedResponse = Schema.Struct({
   data: Schema.Struct({ status: Schema.Literal("accepted") }),
 })
@@ -63,6 +79,30 @@ const permissionReplyResponse = Schema.Struct({
 
 /** Headless Service 的实验性 API group。 */
 export const HeadlessGroup = HttpApiGroup.make("server.headless")
+  .add(
+    HttpApiEndpoint.get("experimental.headless.model.get", "/api/experimental/headless/model", {
+      success: Schema.Struct({ data: Schema.NullOr(HeadlessModelConfig) }),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.model.get",
+        summary: "Get the active headless model configuration",
+        description: "Return the active model endpoint without returning credential values.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put("experimental.headless.model.update", "/api/experimental/headless/model", {
+      payload: HeadlessModelConfigPayload,
+      success: Schema.Struct({ data: HeadlessModelConfig }),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.model.update",
+        summary: "Update the active headless model configuration",
+        description: "Validate and store one OpenAI-compatible model configuration without exposing credentials.",
+      }),
+    ),
+  )
   .add(
     HttpApiEndpoint.post("experimental.headless.session.create", "/api/experimental/headless/session", {
       payload: HeadlessSessionCreatePayload,

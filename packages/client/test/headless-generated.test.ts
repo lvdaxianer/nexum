@@ -10,4 +10,6 @@ test("generated promise client exposes the headless experimental surface", () =>
   expect(client.experimental.headless.session.events).toBeFunction()
   expect(client.experimental.headless.session.permission.list).toBeFunction()
   expect(client.experimental.headless.session.permission.reply).toBeFunction()
+  expect(client.experimental.headless.model.get).toBeFunction()
+  expect(client.experimental.headless.model.update).toBeFunction()
 })

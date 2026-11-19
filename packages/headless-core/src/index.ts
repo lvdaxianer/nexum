@@ -445,3 +445,10 @@ export type {
   HeadlessPermissionReply,
   HeadlessPermissionRequest,
 } from "./permission.js"
+export { createHeadlessModelConfigStore, HeadlessModelConfigError } from "./model-config.js"
+export type {
+  HeadlessModelConfig,
+  HeadlessModelConfigErrorCode,
+  HeadlessModelConfigInput,
+  HeadlessModelConfigStore,
+} from "./model-config.js"

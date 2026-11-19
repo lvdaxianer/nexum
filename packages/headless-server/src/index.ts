@@ -6,10 +6,13 @@
  */
 
 import {
+  HeadlessModelConfigError,
   HeadlessPermissionError,
   HeadlessSessionError,
+  createHeadlessModelConfigStore,
   createHeadlessSessionService,
   type HeadlessCodingLoop,
+  type HeadlessModelConfigStore,
   type HeadlessPermissionBroker,
   type HeadlessSessionService,
 } from "@opencode/headless-core"
@@ -26,6 +29,7 @@ export interface HeadlessServerOptions {
   readonly sessionService?: HeadlessSessionService
   readonly codingLoop?: HeadlessCodingLoop
   readonly permissionBroker?: HeadlessPermissionBroker
+  readonly modelConfigStore?: HeadlessModelConfigStore
 }
 
 /** 已启动的 Headless Service 控制句柄。 */
@@ -49,12 +53,13 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
   const sessionService = options.sessionService ?? createHeadlessSessionService()
   const codingLoop = options.codingLoop
   const permissionBroker = options.permissionBroker
+  const modelConfigStore = options.modelConfigStore ?? createHeadlessModelConfigStore()
   assertPort(port)
 
   const server = Bun.serve({
     hostname,
     port,
-    fetch: (request) => handleRequest(request, sessionService, codingLoop, permissionBroker),
+    fetch: (request) => handleRequest(request, sessionService, codingLoop, permissionBroker, modelConfigStore),
   })
 
   return {
@@ -76,6 +81,7 @@ async function handleRequest(
   sessionService: HeadlessSessionService,
   codingLoop?: HeadlessCodingLoop,
   permissionBroker?: HeadlessPermissionBroker,
+  modelConfigStore?: HeadlessModelConfigStore,
 ): Promise<Response> {
   const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
   const url = new URL(request.url)
@@ -94,6 +100,12 @@ async function handleRequest(
       return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
     return createSession(request, sessionService, traceId)
+  }
+
+  if (url.pathname === "/api/experimental/headless/model") {
+    if (request.method === "GET") return getModelConfig(modelConfigStore, traceId)
+    if (request.method === "PUT") return updateModelConfig(request, modelConfigStore, traceId)
+    return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 或 PUT 请求", traceId)
   }
 
   const promptMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/prompt$/)
@@ -319,6 +331,53 @@ async function createSession(
       return errorResponse(400, "HEADLESS_INVALID_DIRECTORY", error.message, traceId)
     }
     return errorResponse(500, "HEADLESS_SESSION_CREATE_FAILED", "Session 创建失败", traceId)
+  }
+}
+
+/** 返回当前模型配置的安全视图。 */
+async function getModelConfig(
+  modelConfigStore: HeadlessModelConfigStore | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!modelConfigStore) {
+    return errorResponse(503, "HEADLESS_MODEL_CONFIG_NOT_CONFIGURED", "Headless Model Config 尚未配置", traceId)
+  }
+  return jsonResponse({ data: await modelConfigStore.get() }, traceId)
+}
+
+/** 更新并校验当前模型配置，错误时保留旧配置。 */
+async function updateModelConfig(
+  request: Request,
+  modelConfigStore: HeadlessModelConfigStore | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!modelConfigStore) {
+    return errorResponse(503, "HEADLESS_MODEL_CONFIG_NOT_CONFIGURED", "Headless Model Config 尚未配置", traceId)
+  }
+  const payload = await request.json().catch(() => undefined)
+  if (
+    !isRecord(payload) ||
+    typeof payload.baseUrl !== "string" ||
+    typeof payload.model !== "string" ||
+    (payload.credential !== undefined && typeof payload.credential !== "string") ||
+    (payload.credentialRef !== undefined && typeof payload.credentialRef !== "string")
+  ) {
+    return errorResponse(400, "HEADLESS_INVALID_MODEL_CONFIG", "模型配置字段无效", traceId)
+  }
+
+  try {
+    const config = await modelConfigStore.update({
+      baseUrl: payload.baseUrl,
+      model: payload.model,
+      ...(payload.credential !== undefined ? { credential: payload.credential } : {}),
+      ...(payload.credentialRef !== undefined ? { credentialRef: payload.credentialRef } : {}),
+    })
+    return jsonResponse({ data: config }, traceId)
+  } catch (error) {
+    if (error instanceof HeadlessModelConfigError) {
+      return errorResponse(400, "HEADLESS_INVALID_MODEL_CONFIG", error.message, traceId)
+    }
+    return errorResponse(500, "HEADLESS_MODEL_CONFIG_UPDATE_FAILED", "模型配置保存失败", traceId)
   }
 }
 

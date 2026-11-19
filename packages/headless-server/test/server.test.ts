@@ -2,7 +2,11 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createHeadlessPermissionBroker, createHeadlessSessionService } from "@opencode/headless-core"
+import {
+  createHeadlessModelConfigStore,
+  createHeadlessPermissionBroker,
+  createHeadlessSessionService,
+} from "@opencode/headless-core"
 import { startHeadlessServer, type HeadlessServer } from "../src/index.ts"
 
 const FORBIDDEN_UI_PACKAGES = ["@opencode/app", "@opencode/tui", "@opencode/desktop", "@opencode/cli"]
@@ -162,6 +166,41 @@ test("lists pending permissions and returns stable approval errors", async () =>
   expect(replyResponse.status).toBe(404)
   expect(replyBody.errorCode).toBe("HEADLESS_PERMISSION_NOT_FOUND")
   expect(replyBody.message).toBe("权限请求不存在")
+})
+
+test("stores model configuration without returning its credential", async () => {
+  const modelConfigStore = createHeadlessModelConfigStore()
+  const server = await startHeadlessServer({ port: 0, modelConfigStore })
+  servers.push(server)
+
+  const updateResponse = await fetch(new URL("/api/experimental/headless/model", server.url), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      baseUrl: "https://model.example.com/v1",
+      model: "coding-model",
+      credential: "super-secret-value",
+    }),
+  })
+  const updateBody = (await updateResponse.json()) as { data: Record<string, unknown> }
+  expect(updateResponse.status).toBe(200)
+  expect(updateBody.data).toEqual({
+    baseUrl: "https://model.example.com/v1",
+    model: "coding-model",
+    credentialConfigured: true,
+  })
+  expect(JSON.stringify(updateBody)).not.toContain("super-secret-value")
+
+  const invalidResponse = await fetch(new URL("/api/experimental/headless/model", server.url), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ baseUrl: "invalid", model: "next-model" }),
+  })
+  expect(invalidResponse.status).toBe(400)
+
+  const getResponse = await fetch(new URL("/api/experimental/headless/model", server.url))
+  expect(getResponse.status).toBe(200)
+  expect(await getResponse.json()).toEqual({ data: updateBody.data })
 })
 
 test("headless-server package stays independent from UI packages", async () => {

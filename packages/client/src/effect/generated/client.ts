@@ -322,6 +322,9 @@ import type {
   ConfigShellsOutput,
   ExperimentalConfigUpdateInput,
   ExperimentalConfigUpdateOutput,
+  ExperimentalHeadlessModelGetOutput,
+  ExperimentalHeadlessModelUpdateInput,
+  ExperimentalHeadlessModelUpdateOutput,
   ExperimentalHeadlessSessionCreateInput,
   ExperimentalHeadlessSessionCreateOutput,
   ExperimentalHeadlessSessionPromptInput,
@@ -2009,6 +2012,30 @@ const adaptGroupExperimentalConfig = (raw: RawClient["server.config"]) => ({
   update: EndpointExperimentalConfigUpdate(raw),
 })
 
+const EndpointExperimentalHeadlessModelGet = (raw: RawClient["server.headless"]) => () =>
+  preserveEffect<ExperimentalHeadlessModelGetOutput>()(
+    raw["experimental.headless.model.get"]({}).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
+const EndpointExperimentalHeadlessModelUpdate =
+  (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessModelUpdateInput) =>
+    preserveEffect<ExperimentalHeadlessModelUpdateOutput>()(
+      raw["experimental.headless.model.update"]({
+        payload: {
+          baseUrl: input["baseUrl"],
+          model: input["model"],
+          credential: input["credential"],
+          credentialRef: input["credentialRef"],
+        },
+      }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
 const EndpointExperimentalHeadlessSessionCreate =
   (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionCreateInput) =>
     preserveEffect<ExperimentalHeadlessSessionCreateOutput>()(
@@ -2072,6 +2099,7 @@ const EndpointExperimentalHeadlessSessionPermissionReply =
     )
 
 const adaptGroupExperimentalHeadless = (raw: RawClient["server.headless"]) => ({
+  model: { get: EndpointExperimentalHeadlessModelGet(raw), update: EndpointExperimentalHeadlessModelUpdate(raw) },
   session: {
     create: EndpointExperimentalHeadlessSessionCreate(raw),
     prompt: EndpointExperimentalHeadlessSessionPrompt(raw),

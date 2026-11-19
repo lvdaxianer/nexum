@@ -2845,6 +2845,33 @@ export interface ExperimentalConfigApi<E = never> {
   readonly update: ExperimentalConfigUpdateOperation<E>
 }
 
+export type ExperimentalHeadlessModelGetOutput = {
+  readonly baseUrl: string
+  readonly model: string
+  readonly credentialConfigured: boolean
+  readonly credentialRef?: string | undefined
+} | null
+export type ExperimentalHeadlessModelGetOperation<E = never> = () => Effect.Effect<
+  ExperimentalHeadlessModelGetOutput,
+  E
+>
+
+export type ExperimentalHeadlessModelUpdateInput = {
+  readonly baseUrl: string
+  readonly model: string
+  readonly credential?: string | undefined
+  readonly credentialRef?: string | undefined
+}
+export type ExperimentalHeadlessModelUpdateOutput = {
+  readonly baseUrl: string
+  readonly model: string
+  readonly credentialConfigured: boolean
+  readonly credentialRef?: string | undefined
+}
+export type ExperimentalHeadlessModelUpdateOperation<E = never> = (
+  input: ExperimentalHeadlessModelUpdateInput,
+) => Effect.Effect<ExperimentalHeadlessModelUpdateOutput, E>
+
 export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string }
 export type ExperimentalHeadlessSessionCreateOutput = {
   readonly id: string
@@ -2901,6 +2928,10 @@ export type ExperimentalHeadlessSessionPermissionReplyOperation<E = never> = (
 ) => Effect.Effect<ExperimentalHeadlessSessionPermissionReplyOutput, E>
 
 export interface ExperimentalHeadlessApi<E = never> {
+  readonly model: {
+    readonly get: ExperimentalHeadlessModelGetOperation<E>
+    readonly update: ExperimentalHeadlessModelUpdateOperation<E>
+  }
   readonly session: {
     readonly create: ExperimentalHeadlessSessionCreateOperation<E>
     readonly prompt: ExperimentalHeadlessSessionPromptOperation<E>

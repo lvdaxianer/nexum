@@ -16091,6 +16091,165 @@
         }
       }
     },
+    "/api/experimental/headless/model": {
+      "get": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.model.get",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "baseUrl": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "credentialConfigured": {
+                              "type": "boolean"
+                            },
+                            "credentialRef": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": ["baseUrl", "model", "credentialConfigured"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "description": "Return the active model endpoint without returning credential values.",
+        "summary": "Get the active headless model configuration"
+      },
+      "put": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.model.update",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "baseUrl": {
+                          "type": "string"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "credentialConfigured": {
+                          "type": "boolean"
+                        },
+                        "credentialRef": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["baseUrl", "model", "credentialConfigured"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Validate and store one OpenAI-compatible model configuration without exposing credentials.",
+        "summary": "Update the active headless model configuration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "baseUrl": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "credential": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "credentialRef": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": ["baseUrl", "model"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/experimental/headless/session": {
       "post": {
         "tags": ["headless"],
