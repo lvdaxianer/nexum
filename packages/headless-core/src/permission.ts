@@ -44,6 +44,7 @@ export class HeadlessPermissionError extends Error {
 export interface HeadlessPermissionBroker extends PermissionPort {
   readonly list: (sessionID: string) => Promise<readonly HeadlessPermissionRequest[]>
   readonly reply: (input: HeadlessPermissionReply) => Promise<HeadlessPermissionDecision>
+  readonly cancel: (sessionID: string, requestID?: string) => Promise<void>
 }
 
 interface PendingPermission {
@@ -100,6 +101,19 @@ export function createHeadlessPermissionBroker(): HeadlessPermissionBroker {
       if (previous?.sessionID === input.sessionID) return previous.decision
       throw new HeadlessPermissionError("not_found", "权限请求不存在")
     },
+    async cancel(sessionID, requestID) {
+      let cancelled = false
+      for (const [id, active] of pending) {
+        if (active.request.sessionID !== sessionID || (requestID !== undefined && requestID !== id)) continue
+        active.settled = "deny"
+        active.resolve("deny")
+        cancelled = true
+        if (requestID !== undefined) break
+      }
+      if (requestID !== undefined && !cancelled && resolved.get(requestID)?.sessionID !== sessionID) {
+        throw new HeadlessPermissionError("not_found", "权限请求不存在")
+      }
+    },
   }
 }
 
@@ -109,11 +123,29 @@ function createPendingPermission(request: ToolRequest): PendingPermission {
       id: crypto.randomUUID(),
       sessionID: request.sessionID,
       action: request.action,
-      resource: request.resource,
+      resource: redactHeadlessSensitiveText(request.resource),
       reason: `工具 ${request.toolName} 需要权限审批`,
     },
     resolve: () => undefined,
   }
+}
+
+/** 对权限展示和运行事件中的文本做凭据值脱敏。 */
+function redactHeadlessSensitiveText(value: string): string {
+  return value.replace(
+    /((?:authorization|api[_-]?key|token|password|secret)\s*[:=]\s*(?:bearer\s+)?)([^\s'",;]+)/gi,
+    "$1[REDACTED]",
+  )
+}
+
+/** 递归脱敏权限事件中的字符串、数组和对象值。 */
+export function redactHeadlessSensitiveValue(value: unknown): unknown {
+  if (typeof value === "string") return redactHeadlessSensitiveText(value)
+  if (Array.isArray(value)) return value.map(redactHeadlessSensitiveValue)
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactHeadlessSensitiveValue(item)]))
+  }
+  return value
 }
 
 /** 校验外部传入的权限决策。 */

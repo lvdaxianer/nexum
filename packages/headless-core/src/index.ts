@@ -7,6 +7,7 @@
 
 import { access, constants, stat } from "node:fs/promises"
 import { isAbsolute, normalize } from "node:path"
+import { redactHeadlessSensitiveValue } from "./permission.js"
 import { normalizeHeadlessToolRequest } from "./tools.js"
 
 /** Agent 请求模型生成时携带的最小输入。 */
@@ -56,6 +57,7 @@ export type PermissionEffect = "allow" | "deny" | "ask"
 /** 权限端口负责判断工具调用是否可以继续。 */
 export interface PermissionPort {
   readonly evaluate: (request: ToolRequest) => Promise<PermissionEffect>
+  readonly cancel?: (sessionID: string, requestID?: string) => Promise<void>
 }
 
 /** Session 的最小持久化记录。 */
@@ -289,7 +291,12 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
             }
 
             const request = makeToolRequest(input.sessionID, chunk)
-            await publish("tool.request", { toolName: request.toolName, input: request.input })
+            await publish("tool.request", {
+              action: request.action,
+              resource: redactHeadlessSensitiveValue(request.resource) as string,
+              toolName: request.toolName,
+              input: redactHeadlessSensitiveValue(request.input) as Record<string, unknown>,
+            })
             const effect = await options.permission.evaluate(request)
             if (effect !== "allow") {
               throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
@@ -332,6 +339,7 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
       if (active) {
         active.cancelled = true
         active.controller.abort()
+        await options.permission.cancel?.(sessionID)
       }
       if (current.status === "idle" || current.status === "running") {
         return options.sessions.setStatus(sessionID, "cancelled")
@@ -429,6 +437,7 @@ export function createHeadlessCore(options: HeadlessCoreOptions): HeadlessCore {
 export { createHeadlessToolRegistry, normalizeHeadlessToolRequest } from "./tools.js"
 export type { HeadlessToolRegistry, HeadlessToolRegistryOptions, HeadlessBuiltinToolName } from "./tools.js"
 export { createHeadlessPermissionBroker, HeadlessPermissionError } from "./permission.js"
+export { redactHeadlessSensitiveValue } from "./permission.js"
 export type {
   HeadlessPermissionBroker,
   HeadlessPermissionDecision,

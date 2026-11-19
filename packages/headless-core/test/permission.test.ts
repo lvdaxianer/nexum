@@ -8,6 +8,7 @@ import {
   createHeadlessSessionService,
   type EventSink,
   type ModelPort,
+  type ToolRequest,
   type ToolPort,
 } from "../src/index.ts"
 
@@ -125,4 +126,49 @@ test("allow_always automatically approves the next matching action and resource"
 
   await rm(first.directory, { recursive: true, force: true })
   await rm(second.directory, { recursive: true, force: true })
+})
+
+test("cancelling a run also resolves its pending permission request", async () => {
+  const { directory, sessions, session } = await makeSession()
+  const permission = createHeadlessPermissionBroker()
+  const loop = createHeadlessCodingLoop({
+    model: modelForTool(),
+    tool: {
+      async execute() {
+        return { ok: true, output: "must not run" }
+      },
+    },
+    permission,
+    sessions,
+    events: events(),
+  })
+
+  const run = loop.run({ sessionID: session.sessionID, text: "读取文件" })
+  await Bun.sleep(0)
+  expect(await permission.list(session.sessionID)).toHaveLength(1)
+  expect((await loop.cancel(session.sessionID)).status).toBe("cancelled")
+  const result = await Promise.race([run, Bun.sleep(100).then(() => undefined)])
+
+  expect(result?.status).toBe("cancelled")
+  expect(await permission.list(session.sessionID)).toEqual([])
+  await rm(directory, { recursive: true, force: true })
+})
+
+test("redacts credential-shaped values from permission requests", async () => {
+  const broker = createHeadlessPermissionBroker()
+  const request: ToolRequest = {
+    sessionID: "session-redaction",
+    toolName: "shell",
+    action: "shell",
+    resource: "curl -H 'Authorization: Bearer super-secret-token' --data 'api_key=sk-live-value'",
+    input: { command: "curl -H 'Authorization: Bearer super-secret-token' --data 'api_key=sk-live-value'" },
+  }
+  const evaluation = broker.evaluate(request)
+  await Bun.sleep(0)
+  const pending = (await broker.list(request.sessionID))[0]!
+
+  expect(pending.resource).not.toContain("super-secret-token")
+  expect(pending.resource).not.toContain("sk-live-value")
+  await broker.reply({ sessionID: request.sessionID, requestID: pending.id, decision: "deny" })
+  expect(await evaluation).toBe("deny")
 })
