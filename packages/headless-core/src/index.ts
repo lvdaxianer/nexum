@@ -7,6 +7,8 @@
 
 import { access, constants, stat } from "node:fs/promises"
 import { isAbsolute, normalize } from "node:path"
+import { createOpenAICompatibleModelPort } from "./model.js"
+import type { HeadlessModelConfigStore } from "./model-config.js"
 import { redactHeadlessSensitiveValue } from "./permission.js"
 import { normalizeHeadlessToolRequest } from "./tools.js"
 
@@ -236,6 +238,11 @@ export interface HeadlessCodingLoopOptions {
   readonly maxSteps?: number
 }
 
+/** 使用活动模型配置创建 Coding Loop 的参数。 */
+export interface HeadlessConfiguredCodingLoopOptions extends Omit<HeadlessCodingLoopOptions, "model"> {
+  readonly modelConfig: HeadlessModelConfigStore
+}
+
 /** 单 Agent Headless Coding Loop。 */
 export interface HeadlessCodingLoop {
   readonly run: (input: HeadlessCodingLoopInput) => Promise<SessionRecord>
@@ -349,6 +356,21 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
   }
 }
 
+/**
+ * 使用当前活动模型配置创建单 Agent Coding Loop。
+ *
+ * @param options - 模型配置与工具、权限、Session、事件端口
+ * @returns 绑定 OpenAI-compatible ModelPort 的 Coding Loop
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-19
+ */
+export function createHeadlessConfiguredCodingLoop(options: HeadlessConfiguredCodingLoopOptions): HeadlessCodingLoop {
+  return createHeadlessCodingLoop({
+    ...options,
+    model: createOpenAICompatibleModelPort({ config: options.modelConfig }),
+  })
+}
+
 interface ActiveRun {
   readonly controller: AbortController
   cancelled: boolean
@@ -452,3 +474,5 @@ export type {
   HeadlessModelConfigInput,
   HeadlessModelConfigStore,
 } from "./model-config.js"
+export { createOpenAICompatibleModelPort, HeadlessModelError } from "./model.js"
+export type { HeadlessFetch, HeadlessModelErrorCode, OpenAICompatibleModelPortOptions } from "./model.js"

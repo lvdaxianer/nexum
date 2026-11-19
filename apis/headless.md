@@ -589,3 +589,5 @@ PUT http://127.0.0.1:4097/api/experimental/headless/model
 `credential` 可直接提交凭据值，但服务响应、事件和普通错误不会返回该值；生产建议只提交环境变量名 `credentialRef`。
 
 非法 URL、空模型名或同时提交 `credential` 与 `credentialRef` 返回 `400 HEADLESS_INVALID_MODEL_CONFIG`，且保留上一份有效配置。
+
+Headless Core 的 `createHeadlessConfiguredCodingLoop` 会在每次新运行时读取这份活动配置，并只请求该 Base URL；端点不可达返回安全的“模型服务不可达”，`401/403` 返回“模型认证失败”，不会静默切换其他 Provider。
