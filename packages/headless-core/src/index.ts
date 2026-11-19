@@ -5,6 +5,9 @@
  * @date 2026-11-19
  */
 
+import { access, constants, stat } from "node:fs/promises"
+import { isAbsolute, normalize } from "node:path"
+
 /** Agent 请求模型生成时携带的最小输入。 */
 export interface ModelPrompt {
   readonly sessionID: string
@@ -60,6 +63,160 @@ export interface SessionRecord {
 export interface SessionStore {
   readonly get: (sessionID: string) => Promise<SessionRecord | undefined>
   readonly save: (session: SessionRecord) => Promise<void>
+}
+
+/** Headless Session 的状态类型。 */
+export type HeadlessSessionStatus = SessionRecord["status"]
+
+/** 可由 Headless Session Service 返回的领域错误类型。 */
+export type HeadlessSessionErrorCode = "invalid_directory" | "session_not_found" | "invalid_transition"
+
+/** Headless Session 创建请求。 */
+export interface HeadlessSessionCreateInput {
+  readonly directory: string
+}
+
+/** Headless Session Service 的可替换目录校验端口。 */
+export interface HeadlessDirectoryValidator {
+  readonly validate: (directory: string) => Promise<void>
+}
+
+/** 可观察和推进 Session 生命周期的最小服务接口。 */
+export interface HeadlessSessionService {
+  readonly create: (input: HeadlessSessionCreateInput) => Promise<SessionRecord>
+  readonly get: (sessionID: string) => Promise<SessionRecord | undefined>
+  readonly setStatus: (sessionID: string, status: HeadlessSessionStatus) => Promise<SessionRecord>
+}
+
+/** Headless Session Service 的依赖配置。 */
+export interface HeadlessSessionServiceOptions {
+  readonly store?: SessionStore
+  readonly directoryValidator?: HeadlessDirectoryValidator
+}
+
+/** 可供测试和 POC 使用的内存 SessionStore。 */
+export interface InMemorySessionStore extends SessionStore {
+  readonly list: () => Promise<readonly SessionRecord[]>
+}
+
+/** Session 领域错误，包含稳定的机器可读错误码。 */
+export class HeadlessSessionError extends Error {
+  constructor(
+    readonly code: HeadlessSessionErrorCode,
+    message: string,
+    readonly sessionID?: string,
+  ) {
+    super(message)
+    this.name = "HeadlessSessionError"
+  }
+}
+
+/**
+ * 创建进程内 SessionStore。
+ *
+ * @returns 可读写的内存 SessionStore
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-19
+ */
+export function createInMemorySessionStore(): InMemorySessionStore {
+  const sessions = new Map<string, SessionRecord>()
+
+  return {
+    async get(sessionID) {
+      const session = sessions.get(sessionID)
+      return session ? { ...session } : undefined
+    },
+    async save(session) {
+      sessions.set(session.sessionID, { ...session })
+    },
+    async list() {
+      return Array.from(sessions.values(), (session) => ({ ...session }))
+    },
+  }
+}
+
+/**
+ * 校验 Headless Session 的工作目录。
+ *
+ * @param directory - 待校验的绝对工作目录
+ * @throws 当目录不是绝对路径、不存在、不是目录或不可读写时抛出领域错误
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-19
+ */
+export async function validateHeadlessDirectory(directory: string): Promise<void> {
+  const trimmed = directory.trim()
+  if (!trimmed) {
+    throw new HeadlessSessionError("invalid_directory", "工作目录不能为空")
+  }
+  const normalized = normalize(trimmed)
+  if (!isAbsolute(normalized)) {
+    throw new HeadlessSessionError("invalid_directory", "工作目录必须是绝对路径")
+  }
+
+  try {
+    const details = await stat(normalized)
+    if (!details.isDirectory()) {
+      throw new HeadlessSessionError("invalid_directory", "工作目录必须是目录")
+    }
+    await access(normalized, constants.R_OK | constants.W_OK)
+  } catch (error) {
+    if (error instanceof HeadlessSessionError) throw error
+    throw new HeadlessSessionError("invalid_directory", "工作目录不存在或不可访问")
+  }
+}
+
+/**
+ * 创建独立 Headless Session Service。
+ *
+ * @param options - SessionStore 与目录校验器
+ * @returns 负责创建和管理 Session 状态的服务
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-19
+ */
+export function createHeadlessSessionService(options: HeadlessSessionServiceOptions = {}): HeadlessSessionService {
+  const store = options.store ?? createInMemorySessionStore()
+  const directoryValidator = options.directoryValidator ?? { validate: validateHeadlessDirectory }
+
+  return {
+    async create(input) {
+      const directory = normalize(input.directory.trim())
+      await directoryValidator.validate(directory)
+      const session: SessionRecord = {
+        sessionID: crypto.randomUUID(),
+        directory,
+        status: "idle",
+      }
+      await store.save(session)
+      return session
+    },
+    get(sessionID) {
+      return store.get(sessionID)
+    },
+    async setStatus(sessionID, status) {
+      const current = await store.get(sessionID)
+      if (!current) {
+        throw new HeadlessSessionError("session_not_found", "Session 不存在", sessionID)
+      }
+      if (current.status === status) return current
+      if (!isAllowedTransition(current.status, status)) {
+        throw new HeadlessSessionError(
+          "invalid_transition",
+          `Session 状态不能从 ${current.status} 变更为 ${status}`,
+          sessionID,
+        )
+      }
+      const next = { ...current, status }
+      await store.save(next)
+      return next
+    },
+  }
+}
+
+/** 判断 Session 是否允许进入目标状态。 */
+function isAllowedTransition(from: HeadlessSessionStatus, to: HeadlessSessionStatus): boolean {
+  if (from === "idle") return to === "running" || to === "cancelled"
+  if (from === "running") return to === "completed" || to === "failed" || to === "cancelled"
+  return false
 }
 
 /** Headless Runtime 对外发布的最小事件。 */

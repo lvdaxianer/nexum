@@ -4,17 +4,18 @@
 
 | 项目            | 内容                                                                         |
 | --------------- | ---------------------------------------------------------------------------- |
-| 业务模块        | Headless Service 健康检查（`headless`）                                      |
+| 业务模块        | Headless Service 健康检查与最小 Session 创建（`headless`）                   |
 | 文档路径        | `apis/headless.md`                                                           |
-| 模块职责        | 为任意 UI 或运行编排器提供独立 Headless Service 的存活与就绪状态             |
+| 模块职责        | 为任意 UI 或运行编排器提供独立 Headless Service 的健康状态与 Session 创建    |
 | 基础 URL / 版本 | `http://127.0.0.1:4097`；当前为 POC，暂无版本前缀                            |
 | 通用认证与约定  | 健康检查不要求认证；响应为 JSON；所有响应带 `X-Trace-Id`；响应 Cookie 不适用 |
 
 ### 1.1 对外 route 覆盖表
 
-| Controller / 路由归属          | 对外端点                                | 文档章节                 | 覆盖状态 |
-| ------------------------------ | --------------------------------------- | ------------------------ | -------- |
-| `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready` | [健康检查](#21-健康检查) | 已覆盖   |
+| Controller / 路由归属          | 对外端点                                  | 文档章节                         | 覆盖状态 |
+| ------------------------------ | ----------------------------------------- | -------------------------------- | -------- |
+| `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready`   | [健康检查](#21-健康检查)         | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session` | [Session 创建](#31-session-创建) | 已覆盖   |
 
 ## 2. 健康检查
 
@@ -192,3 +193,102 @@ X-Trace-Id: trace_example_002
 - 时间：不返回时间字段，不适用。
 - 错误：错误体只返回稳定错误码、中文消息和 trace ID，不返回堆栈或内部路径。
 - 安全：`X-Trace-Id` 会校验长度和字符集；非法值不会原样进入响应。
+
+## 3. Session 创建
+
+### 3.1 接口概览
+
+| 项目     | 内容                                                                  |
+| -------- | --------------------------------------------------------------------- |
+| 接口名称 | Headless Session 创建                                                 |
+| 接口用途 | 校验工作目录并创建一个初始状态为 `idle` 的独立 Session                |
+| 业务场景 | UI 或编排器在发送 Prompt 前申请 Session；本接口不启动模型、不执行工具 |
+| 权限要求 | 当前 POC 不要求认证；服务默认只绑定 `127.0.0.1`                       |
+| 幂等性   | 非幂等；每次成功调用生成新的 Session ID                               |
+| 版本     | 当前为实验性 `/api/experimental` 路由                                 |
+
+### 3.2 请求定义
+
+#### 3.2.1 Method and URL
+
+```http
+POST http://127.0.0.1:4097/api/experimental/headless/session
+```
+
+| 项目         | 内容                                   |
+| ------------ | -------------------------------------- |
+| Method       | `POST`                                 |
+| URL          | `/api/experimental/headless/session`   |
+| Content-Type | `application/json`                     |
+| Accept       | 推荐 `application/json`；服务返回 JSON |
+
+#### 3.2.2 Request headers
+
+沿用健康检查的 `X-Trace-Id` 约定；请求体必须是 JSON。
+
+#### 3.2.3 requestBody
+
+```json
+{
+  "directory": "/Users/example/project"
+}
+```
+
+| 字段路径    | 类型   | 必有/可选 | 约束                         | 说明               |
+| ----------- | ------ | --------- | ---------------------------- | ------------------ |
+| `directory` | string | 必有      | 非空绝对路径，须为可读写目录 | Session 的工作目录 |
+
+### 3.3 响应定义
+
+#### 3.3.1 Response overview
+
+| HTTP 状态码              | 业务含义       | 触发条件                                    | 调用方处理                    |
+| ------------------------ | -------------- | ------------------------------------------- | ----------------------------- |
+| `200 OK`                 | 创建成功       | 工作目录校验通过                            | 保存 `data.id` 并订阅后续事件 |
+| `400 Bad Request`        | 请求或目录无效 | JSON 字段无效、目录不存在、非目录或不可访问 | 修正目录或请求体后重试        |
+| `404 Not Found`          | 路径不存在     | 请求其他路径                                | 修正路径                      |
+| `405 Method Not Allowed` | 方法不支持     | 对创建路径使用非 `POST` 方法                | 改用 `POST`                   |
+
+#### 3.3.2 Success response
+
+```json
+{
+  "data": {
+    "id": "2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7",
+    "directory": "/Users/example/project",
+    "status": "idle"
+  }
+}
+```
+
+`status` 当前固定为 `idle`；Session 状态迁移由 Headless Core 管理。
+
+#### 3.3.3 Error response
+
+错误体沿用健康检查的 `errorCode`、`message`、`traceId` 字段。错误码包括：
+
+- `HEADLESS_INVALID_REQUEST`：请求体缺少非空 `directory` 字段。
+- `HEADLESS_INVALID_DIRECTORY`：目录不是绝对路径、不存在、不是目录或不可读写。
+- `HEADLESS_ROUTE_NOT_FOUND`、`HEADLESS_METHOD_NOT_ALLOWED`：路径或方法错误。
+
+### 3.4 Complete example
+
+#### 3.4.1 curl request
+
+```bash
+curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/session' \
+  --header 'Content-Type: application/json' \
+  --header 'X-Trace-Id: session_create_trace' \
+  --data '{"directory":"/Users/example/project"}'
+```
+
+#### 3.4.2 Success response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+X-Trace-Id: session_create_trace
+
+{"data":{"id":"2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7","directory":"/Users/example/project","status":"idle"}}
+```

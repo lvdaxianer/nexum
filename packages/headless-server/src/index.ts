@@ -5,6 +5,12 @@
  * @date 2026-11-19
  */
 
+import {
+  HeadlessSessionError,
+  createHeadlessSessionService,
+  type HeadlessSessionService,
+} from "@opencode/headless-core"
+
 const DEFAULT_HOSTNAME = "127.0.0.1"
 const DEFAULT_PORT = 4097
 const TRACE_ID_HEADER = "x-trace-id"
@@ -14,6 +20,7 @@ const TRACE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 export interface HeadlessServerOptions {
   readonly hostname?: string
   readonly port?: number
+  readonly sessionService?: HeadlessSessionService
 }
 
 /** 已启动的 Headless Service 控制句柄。 */
@@ -34,12 +41,13 @@ export interface HeadlessServer {
 export async function startHeadlessServer(options: HeadlessServerOptions = {}): Promise<HeadlessServer> {
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
   const port = options.port ?? DEFAULT_PORT
+  const sessionService = options.sessionService ?? createHeadlessSessionService()
   assertPort(port)
 
   const server = Bun.serve({
     hostname,
     port,
-    fetch: handleRequest,
+    fetch: (request) => handleRequest(request, sessionService),
   })
 
   return {
@@ -56,7 +64,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
  * @author lvdaxianer@yeah.net
  * @date 2026-11-19
  */
-function handleRequest(request: Request): Response {
+async function handleRequest(request: Request, sessionService: HeadlessSessionService): Promise<Response> {
   const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
   const url = new URL(request.url)
 
@@ -69,7 +77,59 @@ function handleRequest(request: Request): Response {
     return jsonResponse({ service: "headless-server", status }, traceId)
   }
 
+  if (url.pathname === "/api/experimental/headless/session") {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return createSession(request, sessionService, traceId)
+  }
+
   return errorResponse(404, "HEADLESS_ROUTE_NOT_FOUND", "请求路径不存在", traceId)
+}
+
+/**
+ * 处理 Headless Session 创建请求。
+ *
+ * @param request - 标准 Web 请求
+ * @param sessionService - Session 创建与状态服务
+ * @param traceId - 当前请求链路标识
+ * @returns Session 数据或 caller-safe 错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-19
+ */
+async function createSession(
+  request: Request,
+  sessionService: HeadlessSessionService,
+  traceId: string,
+): Promise<Response> {
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload) || typeof payload.directory !== "string" || payload.directory.trim() === "") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "directory 必须是非空字符串", traceId)
+  }
+
+  try {
+    const session = await sessionService.create({ directory: payload.directory })
+    return jsonResponse(
+      {
+        data: {
+          id: session.sessionID,
+          directory: session.directory,
+          status: session.status,
+        },
+      },
+      traceId,
+    )
+  } catch (error) {
+    if (error instanceof HeadlessSessionError && error.code === "invalid_directory") {
+      return errorResponse(400, "HEADLESS_INVALID_DIRECTORY", error.message, traceId)
+    }
+    return errorResponse(500, "HEADLESS_SESSION_CREATE_FAILED", "Session 创建失败", traceId)
+  }
+}
+
+/** 判断 JSON payload 是否为非数组对象。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 /**

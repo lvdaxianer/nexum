@@ -1,11 +1,16 @@
 import { afterEach, expect, test } from "bun:test"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { startHeadlessServer, type HeadlessServer } from "../src/index.ts"
 
 const FORBIDDEN_UI_PACKAGES = ["@opencode/app", "@opencode/tui", "@opencode/desktop", "@opencode/cli"]
 const servers: HeadlessServer[] = []
+const temporaryDirectories: string[] = []
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.stop(true)))
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
 })
 
 test("headless server starts independently and exposes liveness and readiness", async () => {
@@ -50,6 +55,41 @@ test("unknown routes return a stable caller-safe error", async () => {
   expect(body.errorCode).toBe("HEADLESS_ROUTE_NOT_FOUND")
   expect(body.message).toBe("请求路径不存在")
   expect(body.traceId).toBe(traceId)
+})
+
+test("creates a session through the independent headless service", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-session-"))
+  temporaryDirectories.push(directory)
+  const server = await startHeadlessServer({ port: 0 })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/experimental/headless/session", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ directory }),
+  })
+  const body = (await response.json()) as { data: { id: string; directory: string; status: string } }
+
+  expect(response.status).toBe(200)
+  expect(body.data).toMatchObject({ directory, status: "idle" })
+  expect(body.data.id).toMatch(/^[0-9a-f-]{36}$/)
+})
+
+test("rejects an invalid session directory at the HTTP boundary", async () => {
+  const server = await startHeadlessServer({ port: 0 })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/experimental/headless/session", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-trace-id": "session_create_trace" },
+    body: JSON.stringify({ directory: join(tmpdir(), `missing-headless-server-directory-${crypto.randomUUID()}`) }),
+  })
+  const body = (await response.json()) as { errorCode: string; message: string; traceId: string }
+
+  expect(response.status).toBe(400)
+  expect(body.errorCode).toBe("HEADLESS_INVALID_DIRECTORY")
+  expect(body.traceId).toBe("session_create_trace")
+  expect(body.message).toBeString()
 })
 
 test("headless-server package stays independent from UI packages", async () => {
