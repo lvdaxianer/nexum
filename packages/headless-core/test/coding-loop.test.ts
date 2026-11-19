@@ -8,6 +8,7 @@ import {
   type EventSink,
   type ModelPort,
   type PermissionPort,
+  type ToolRequest,
   type ToolPort,
 } from "../src/index.ts"
 
@@ -24,6 +25,7 @@ test("runs model text, tool request, tool result, continuation, and completion i
   const session = await sessions.create({ directory })
   const events: Array<{ type: string; sessionID: string; sequence: number; data?: Record<string, unknown> }> = []
   const prompts: string[] = []
+  const permissionRequests: ToolRequest[] = []
 
   const model: ModelPort = {
     async *prompt(input) {
@@ -43,7 +45,8 @@ test("runs model text, tool request, tool result, continuation, and completion i
     },
   }
   const permission: PermissionPort = {
-    async evaluate() {
+    async evaluate(request) {
+      permissionRequests.push(request)
       return "allow"
     },
   }
@@ -68,4 +71,5 @@ test("runs model text, tool request, tool result, continuation, and completion i
   expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5])
   expect(events[1]?.data).toMatchObject({ toolName: "read", input: { path: "README.md" } })
   expect(events[2]?.data).toMatchObject({ ok: true, output: "README 内容" })
+  expect(permissionRequests[0]).toMatchObject({ action: "read", resource: "README.md" })
 })

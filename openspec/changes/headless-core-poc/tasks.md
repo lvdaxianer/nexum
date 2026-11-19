@@ -14,7 +14,7 @@
 
 ## 3. 工具权限审批闭环
 
-- [ ] 3.1 迁移最小 `read`、`write/edit`、`shell` 工具注册和 action/resource 归一化，验证每次工具执行前都会经过 PermissionPort
+- [x] 3.1 迁移最小 `read`、`write/edit`、`shell` 工具注册和 action/resource 归一化，验证每次工具执行前都会经过 PermissionPort
 - [ ] 3.2 实现 `allow_once`、`allow_always`、`deny` 的审批接口和 pending request 状态，验证未审批时工具暂停、允许后继续、拒绝后不执行
 - [ ] 3.3 增加重复审批、未知 request、取消审批和敏感字段脱敏测试，验证重复请求不会导致重复执行且事件/日志不包含凭据
 

@@ -7,6 +7,7 @@
 
 import { access, constants, stat } from "node:fs/promises"
 import { isAbsolute, normalize } from "node:path"
+import { normalizeHeadlessToolRequest } from "./tools.js"
 
 /** Agent 请求模型生成时携带的最小输入。 */
 export interface ModelPrompt {
@@ -33,6 +34,8 @@ export interface ModelPort {
 export interface ToolRequest {
   readonly sessionID: string
   readonly toolName: string
+  readonly action: string
+  readonly resource: string
   readonly input: Record<string, unknown>
 }
 
@@ -359,11 +362,7 @@ function throwIfCancelled(run: ActiveRun): void {
 /** 从模型增量构造规范化工具请求。 */
 function makeToolRequest(sessionID: string, chunk: ModelChunk): ToolRequest {
   if (!chunk.toolName) throw new Error("模型返回了缺少名称的工具请求")
-  return {
-    sessionID,
-    toolName: chunk.toolName,
-    input: chunk.toolInput ?? {},
-  }
+  return normalizeHeadlessToolRequest(sessionID, chunk.toolName, chunk.toolInput ?? {})
 }
 
 /** 把未知错误转换为可安全发布到事件流的消息。 */
@@ -426,3 +425,6 @@ export interface HeadlessCore {
 export function createHeadlessCore(options: HeadlessCoreOptions): HeadlessCore {
   return { ports: options.ports }
 }
+
+export { createHeadlessToolRegistry, normalizeHeadlessToolRequest } from "./tools.js"
+export type { HeadlessToolRegistry, HeadlessToolRegistryOptions, HeadlessBuiltinToolName } from "./tools.js"
