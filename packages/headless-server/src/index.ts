@@ -8,15 +8,18 @@
 import {
   HeadlessModelConfigError,
   HeadlessPermissionError,
+  HeadlessQuestionError,
   HeadlessSessionError,
   createHeadlessConfiguredCodingLoop,
   createHeadlessModelConfigStore,
   createHeadlessPermissionBroker,
+  createHeadlessQuestionPort,
   createHeadlessSessionService,
   createHeadlessToolRegistry,
   type HeadlessCodingLoop,
   type HeadlessModelConfigStore,
   type HeadlessPermissionBroker,
+  type HeadlessQuestionPort,
   type HeadlessSessionService,
 } from "@opencode/headless-core"
 import { createHeadlessEventHub, type HeadlessEventHub } from "./events.ts"
@@ -34,6 +37,7 @@ export interface HeadlessServerOptions {
   readonly sessionService?: HeadlessSessionService
   readonly codingLoop?: HeadlessCodingLoop
   readonly permissionBroker?: HeadlessPermissionBroker
+  readonly questionPort?: HeadlessQuestionPort
   readonly modelConfigStore?: HeadlessModelConfigStore
   readonly eventHub?: HeadlessEventHub
   readonly corsOrigins?: readonly string[]
@@ -62,6 +66,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
   const modelConfigStore = options.modelConfigStore ?? createHeadlessModelConfigStore()
   const eventHub = options.eventHub ?? createHeadlessEventHub()
   const permissionBroker = options.permissionBroker ?? createHeadlessPermissionBroker()
+  const questionPort = options.questionPort ?? createHeadlessQuestionPort()
   const toolRegistry = createHeadlessToolRegistry({ sessions: sessionService })
   const corsOrigins = options.corsOrigins ?? DEFAULT_CORS_ORIGINS
   const codingLoop =
@@ -73,6 +78,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
       tool: toolRegistry.port,
       events: eventHub,
       tools: toolRegistry.definitions,
+      question: questionPort,
     })
   assertPort(port)
 
@@ -88,6 +94,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
         eventHub,
         codingLoop,
         permissionBroker,
+        questionPort,
         modelConfigStore,
       )
       return withCorsHeaders(response, request, corsOrigins)
@@ -145,6 +152,7 @@ async function handleRequest(
   eventHub: HeadlessEventHub,
   codingLoop?: HeadlessCodingLoop,
   permissionBroker?: HeadlessPermissionBroker,
+  questionPort?: HeadlessQuestionPort,
   modelConfigStore?: HeadlessModelConfigStore,
 ): Promise<Response> {
   const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
@@ -217,6 +225,47 @@ async function handleRequest(
       decodeURIComponent(permissionReplyMatch[2]!),
       sessionService,
       permissionBroker,
+      traceId,
+    )
+  }
+
+  const questionListMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/question$/)
+  if (questionListMatch) {
+    if (request.method !== "GET") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return listQuestions(decodeURIComponent(questionListMatch[1]!), sessionService, questionPort, traceId)
+  }
+
+  const questionReplyMatch = url.pathname.match(
+    /^\/api\/experimental\/headless\/session\/([^/]+)\/question\/([^/]+)\/reply$/,
+  )
+  if (questionReplyMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return replyQuestion(
+      request,
+      decodeURIComponent(questionReplyMatch[1]!),
+      decodeURIComponent(questionReplyMatch[2]!),
+      sessionService,
+      questionPort,
+      traceId,
+    )
+  }
+
+  const questionCancelMatch = url.pathname.match(
+    /^\/api\/experimental\/headless\/session\/([^/]+)\/question\/([^/]+)\/cancel$/,
+  )
+  if (questionCancelMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return cancelQuestion(
+      decodeURIComponent(questionCancelMatch[1]!),
+      decodeURIComponent(questionCancelMatch[2]!),
+      sessionService,
+      questionPort,
       traceId,
     )
   }
@@ -411,6 +460,90 @@ async function replyPermission(
     }
     return errorResponse(500, "HEADLESS_PERMISSION_REPLY_FAILED", "权限审批失败", traceId)
   }
+}
+
+/** 返回指定 Session 的待回答 Question。 */
+async function listQuestions(
+  sessionID: string,
+  sessionService: HeadlessSessionService,
+  questionPort: HeadlessQuestionPort | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!questionPort) {
+    return errorResponse(503, "HEADLESS_QUESTION_NOT_CONFIGURED", "Headless Question 尚未配置", traceId)
+  }
+  if (!(await sessionService.get(sessionID))) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  return jsonResponse({ data: await questionPort.list(sessionID) }, traceId)
+}
+
+/** 接收 Question 的结构化回答并唤醒阻塞的 Coding Loop。 */
+async function replyQuestion(
+  request: Request,
+  sessionID: string,
+  requestID: string,
+  sessionService: HeadlessSessionService,
+  questionPort: HeadlessQuestionPort | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!questionPort) {
+    return errorResponse(503, "HEADLESS_QUESTION_NOT_CONFIGURED", "Headless Question 尚未配置", traceId)
+  }
+  if (!(await sessionService.get(sessionID))) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  const payload = await request.json().catch(() => undefined)
+  if (
+    !isRecord(payload) ||
+    !Array.isArray(payload.answers) ||
+    !payload.answers.every((answers) => Array.isArray(answers) && answers.every((answer) => typeof answer === "string"))
+  ) {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "answers 必须是二维字符串数组", traceId)
+  }
+
+  try {
+    const result = await questionPort.reply(sessionID, requestID, payload.answers as string[][])
+    if (!result.ok) return errorResponse(409, "HEADLESS_QUESTION_CANCELLED", result.output, traceId)
+    return jsonResponse({ data: { status: "answered" } }, traceId)
+  } catch (error) {
+    return questionErrorResponse(error, traceId)
+  }
+}
+
+/** 取消 pending Question，不生成伪造答案。 */
+async function cancelQuestion(
+  sessionID: string,
+  requestID: string,
+  sessionService: HeadlessSessionService,
+  questionPort: HeadlessQuestionPort | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!questionPort) {
+    return errorResponse(503, "HEADLESS_QUESTION_NOT_CONFIGURED", "Headless Question 尚未配置", traceId)
+  }
+  if (!(await sessionService.get(sessionID))) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  try {
+    await questionPort.cancel(sessionID, requestID)
+    return jsonResponse({ data: { status: "cancelled" } }, traceId)
+  } catch (error) {
+    return questionErrorResponse(error, traceId)
+  }
+}
+
+function questionErrorResponse(error: unknown, traceId: string): Response {
+  if (error instanceof HeadlessQuestionError && error.code === "not_found") {
+    return errorResponse(404, "HEADLESS_QUESTION_NOT_FOUND", error.message, traceId)
+  }
+  if (error instanceof HeadlessQuestionError && error.code === "session_mismatch") {
+    return errorResponse(409, "HEADLESS_QUESTION_SESSION_MISMATCH", error.message, traceId)
+  }
+  if (error instanceof HeadlessQuestionError && error.code === "invalid_answers") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", error.message, traceId)
+  }
+  return errorResponse(500, "HEADLESS_QUESTION_FAILED", "Question 操作失败", traceId)
 }
 
 /**
