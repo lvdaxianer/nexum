@@ -440,6 +440,17 @@
         "@types/bun": "catalog:",
       },
     },
+    "packages/headless-server": {
+      "name": "@opencode/headless-server",
+      "version": "0.0.1",
+      "dependencies": {
+        "@opencode/headless-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+      },
+    },
     "packages/http-recorder": {
       "name": "@opencode/http-recorder",
       "version": "2.3.0",
