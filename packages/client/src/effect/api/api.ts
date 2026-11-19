@@ -2888,6 +2888,38 @@ export type ExperimentalHeadlessSessionPromptOperation<E = never> = (
   input: ExperimentalHeadlessSessionPromptInput,
 ) => Effect.Effect<ExperimentalHeadlessSessionPromptOutput, E>
 
+export type ExperimentalHeadlessSessionQuestionListInput = { readonly sessionID: string }
+export type ExperimentalHeadlessSessionQuestionListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly sessionID: string
+  readonly toolCallID: string
+  readonly questions: ReadonlyArray<{
+    readonly header: string
+    readonly question: string
+    readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>
+    readonly multiple?: boolean | undefined
+  }>
+}>
+export type ExperimentalHeadlessSessionQuestionListOperation<E = never> = (
+  input: ExperimentalHeadlessSessionQuestionListInput,
+) => Effect.Effect<ExperimentalHeadlessSessionQuestionListOutput, E>
+
+export type ExperimentalHeadlessSessionQuestionReplyInput = {
+  readonly sessionID: string
+  readonly requestID: string
+  readonly answers: ReadonlyArray<ReadonlyArray<string>>
+}
+export type ExperimentalHeadlessSessionQuestionReplyOutput = { readonly status: "answered" }
+export type ExperimentalHeadlessSessionQuestionReplyOperation<E = never> = (
+  input: ExperimentalHeadlessSessionQuestionReplyInput,
+) => Effect.Effect<ExperimentalHeadlessSessionQuestionReplyOutput, E>
+
+export type ExperimentalHeadlessSessionQuestionCancelInput = { readonly sessionID: string; readonly requestID: string }
+export type ExperimentalHeadlessSessionQuestionCancelOutput = { readonly status: "cancelled" }
+export type ExperimentalHeadlessSessionQuestionCancelOperation<E = never> = (
+  input: ExperimentalHeadlessSessionQuestionCancelInput,
+) => Effect.Effect<ExperimentalHeadlessSessionQuestionCancelOutput, E>
+
 export type ExperimentalHeadlessSessionCancelInput = { readonly sessionID: string }
 export type ExperimentalHeadlessSessionCancelOutput = { readonly status: "cancelled" }
 export type ExperimentalHeadlessSessionCancelOperation<E = never> = (
@@ -2896,7 +2928,19 @@ export type ExperimentalHeadlessSessionCancelOperation<E = never> = (
 
 export type ExperimentalHeadlessSessionEventsInput = { readonly sessionID: string }
 export type ExperimentalHeadlessSessionEventsOutput = {
-  readonly type: string
+  readonly type:
+    | "assistant.text"
+    | "tool.request"
+    | "tool.result"
+    | "question.request"
+    | "question.result"
+    | "question.cancelled"
+    | "context.compaction.started"
+    | "context.compaction.completed"
+    | "context.compaction.failed"
+    | "session.completed"
+    | "session.failed"
+    | "session.cancelled"
   readonly sessionID: string
   readonly sequence: number
   readonly data?: { readonly [x: string]: Schema.Json } | undefined
@@ -2935,6 +2979,11 @@ export interface ExperimentalHeadlessApi<E = never> {
   readonly session: {
     readonly create: ExperimentalHeadlessSessionCreateOperation<E>
     readonly prompt: ExperimentalHeadlessSessionPromptOperation<E>
+    readonly question: {
+      readonly list: ExperimentalHeadlessSessionQuestionListOperation<E>
+      readonly reply: ExperimentalHeadlessSessionQuestionReplyOperation<E>
+      readonly cancel: ExperimentalHeadlessSessionQuestionCancelOperation<E>
+    }
     readonly cancel: ExperimentalHeadlessSessionCancelOperation<E>
     readonly events: ExperimentalHeadlessSessionEventsOperation<E>
     readonly permission: {

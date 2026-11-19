@@ -13,7 +13,7 @@
 
 ## 3. Headless Server 协议与集成
 
-- [ ] 3.1 增加 Question、Context Compaction 事件和状态的 Protocol/Client 类型，运行生成检查并通过 Server/Client tsc
+- [x] 3.1 增加 Question、Context Compaction 事件和状态的 Protocol/Client 类型，运行生成检查并通过 Server/Client tsc
 - [ ] 3.2 增加 Question 查询/回答/取消和压缩事件 SSE 集成，使用 fixture model 验证 Session → Question/Permission → Tool → Compaction → Completion 完整链路
 
 ## 4. 独立 UI 能力验收
