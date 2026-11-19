@@ -26,7 +26,7 @@
 
 ## 5. 独立 Web POC
 
-- [ ] 5.1 新增不依赖完整 `packages/app` 的最小 Solid/Vite Web 客户端，验证页面只通过 Headless API 创建 Session、发送 Prompt 和订阅事件
+- [x] 5.1 新增不依赖完整 `packages/app` 的最小 Solid/Vite Web 客户端，验证页面只通过 Headless API 创建 Session、发送 Prompt 和订阅事件
 - [ ] 5.2 增加模型配置、工作目录、事件时间线和权限审批交互，验证页面能完成一次允许工具执行的 Coding Task
 - [ ] 5.3 增加页面级冒烟测试或 Playwright 测试，验证拒绝权限时任务显示失败/拒绝状态且页面不会直接执行本地工具
 

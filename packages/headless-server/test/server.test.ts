@@ -7,6 +7,7 @@ import {
   createHeadlessPermissionBroker,
   createHeadlessSessionService,
 } from "@opencode/headless-core"
+import { createHeadlessEventHub } from "../src/events.ts"
 import { startHeadlessServer, type HeadlessServer } from "../src/index.ts"
 
 const FORBIDDEN_UI_PACKAGES = ["@opencode/app", "@opencode/tui", "@opencode/desktop", "@opencode/cli"]
@@ -137,6 +138,47 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
   )
   expect(cancelResponse.status).toBe(200)
   expect(await cancelResponse.json()).toEqual({ data: { status: "cancelled" } })
+})
+
+test("streams ordered session events over SSE", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-events-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createHeadlessSessionService()
+  const session = await sessionService.create({ directory })
+  const eventHub = createHeadlessEventHub()
+  const server = await startHeadlessServer({ port: 0, sessionService, eventHub })
+  servers.push(server)
+
+  const response = await fetch(new URL(`/api/experimental/headless/session/${session.sessionID}/events`, server.url), {
+    headers: { "x-trace-id": "events_trace_001" },
+  })
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error("SSE 响应缺少可读流")
+
+  expect(response.status).toBe(200)
+  expect(response.headers.get("content-type")).toContain("text/event-stream")
+  expect(response.headers.get("x-trace-id")).toBe("events_trace_001")
+
+  const connectedChunk = await reader.read()
+  expect(new TextDecoder().decode(connectedChunk.value)).toContain("headless-events-connected")
+
+  const read = reader.read()
+  await eventHub.publish({
+    type: "session.started",
+    sessionID: session.sessionID,
+    sequence: 1,
+    data: { status: "running" },
+  })
+  const chunk = await Promise.race([
+    read,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("SSE 事件读取超时")), 1_000)),
+  ])
+  const text = new TextDecoder().decode(chunk.value)
+
+  expect(text).toContain("id: 1")
+  expect(text).toContain('"type":"session.started"')
+  expect(text).toContain('"status":"running"')
+  await reader.cancel()
 })
 
 test("lists pending permissions and returns stable approval errors", async () => {

@@ -16,6 +16,7 @@ import {
   type HeadlessPermissionBroker,
   type HeadlessSessionService,
 } from "@opencode/headless-core"
+import { createHeadlessEventHub, type HeadlessEventHub } from "./events.ts"
 
 const DEFAULT_HOSTNAME = "127.0.0.1"
 const DEFAULT_PORT = 4097
@@ -30,6 +31,7 @@ export interface HeadlessServerOptions {
   readonly codingLoop?: HeadlessCodingLoop
   readonly permissionBroker?: HeadlessPermissionBroker
   readonly modelConfigStore?: HeadlessModelConfigStore
+  readonly eventHub?: HeadlessEventHub
 }
 
 /** 已启动的 Headless Service 控制句柄。 */
@@ -54,12 +56,14 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
   const codingLoop = options.codingLoop
   const permissionBroker = options.permissionBroker
   const modelConfigStore = options.modelConfigStore ?? createHeadlessModelConfigStore()
+  const eventHub = options.eventHub ?? createHeadlessEventHub()
   assertPort(port)
 
   const server = Bun.serve({
     hostname,
     port,
-    fetch: (request) => handleRequest(request, sessionService, codingLoop, permissionBroker, modelConfigStore),
+    fetch: (request) =>
+      handleRequest(request, sessionService, eventHub, codingLoop, permissionBroker, modelConfigStore),
   })
 
   return {
@@ -79,6 +83,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
 async function handleRequest(
   request: Request,
   sessionService: HeadlessSessionService,
+  eventHub: HeadlessEventHub,
   codingLoop?: HeadlessCodingLoop,
   permissionBroker?: HeadlessPermissionBroker,
   modelConfigStore?: HeadlessModelConfigStore,
@@ -122,6 +127,14 @@ async function handleRequest(
       return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
     return cancelSession(decodeURIComponent(cancelMatch[1]!), sessionService, codingLoop, traceId)
+  }
+
+  const eventsMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/events$/)
+  if (eventsMatch) {
+    if (request.method !== "GET") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return streamEvents(decodeURIComponent(eventsMatch[1]!), sessionService, eventHub, traceId)
   }
 
   const permissionListMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/permission$/)
@@ -223,6 +236,48 @@ async function cancelSession(
     }
     return errorResponse(409, "HEADLESS_SESSION_CANCEL_CONFLICT", "Session 当前状态不允许取消", traceId)
   }
+}
+
+/** 将指定 Session 的运行事件转换为 SSE 响应。 */
+async function streamEvents(
+  sessionID: string,
+  sessionService: HeadlessSessionService,
+  eventHub: HeadlessEventHub,
+  traceId: string,
+): Promise<Response> {
+  if (!(await sessionService.get(sessionID))) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+
+  const encoder = new TextEncoder()
+  const iterator = eventHub.subscribe(sessionID)[Symbol.asyncIterator]()
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(": headless-events-connected\n\n"))
+      void (async () => {
+        try {
+          while (true) {
+            const next = await iterator.next()
+            if (next.done) return
+            controller.enqueue(encoder.encode(`id: ${next.value.sequence}\ndata: ${JSON.stringify(next.value)}\n\n`))
+          }
+        } catch {
+          controller.close()
+        }
+      })()
+    },
+    cancel() {
+      void iterator.return?.()
+    },
+  })
+  return new Response(stream, {
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/event-stream; charset=utf-8",
+      connection: "keep-alive",
+      [TRACE_ID_HEADER]: traceId,
+    },
+  })
 }
 
 /** 返回指定 Session 的待审批权限请求。 */

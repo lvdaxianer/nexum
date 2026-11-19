@@ -18,6 +18,7 @@
 | `headless-server/src/index.ts` | `POST /api/experimental/headless/session`                                        | [Session 创建](#31-session-创建) | 已覆盖   |
 | `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/prompt`                      | [Prompt 提交](#41-prompt-提交)   | 已覆盖   |
 | `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/cancel`                      | [Session 取消](#51-session-取消) | 已覆盖   |
+| `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/events`                       | [Session 事件](#81-session-事件) | 已覆盖   |
 | `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/permission`                   | [权限列表](#61-权限列表)         | 已覆盖   |
 | `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/permission/:requestID/reply` | [权限审批](#71-权限审批)         | 已覆盖   |
 
@@ -591,3 +592,33 @@ PUT http://127.0.0.1:4097/api/experimental/headless/model
 非法 URL、空模型名或同时提交 `credential` 与 `credentialRef` 返回 `400 HEADLESS_INVALID_MODEL_CONFIG`，且保留上一份有效配置。
 
 Headless Core 的 `createHeadlessConfiguredCodingLoop` 会在每次新运行时读取这份活动配置，并只请求该 Base URL；端点不可达返回安全的“模型服务不可达”，`401/403` 返回“模型认证失败”，不会静默切换其他 Provider。
+
+## 9. Session 事件
+
+### 9.1 接口概览
+
+| 项目     | 内容                                                                 |
+| -------- | -------------------------------------------------------------------- |
+| 接口名称 | Headless Session SSE 事件流                                          |
+| 接口用途 | 将指定 Session 的有序运行事件持续推送给任意 UI                       |
+| 业务场景 | UI 创建 Session 后订阅；Prompt、工具请求、权限和终态事件从此出口读取 |
+| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制        |
+| 幂等性   | GET 只建立订阅，不修改 Session 状态                                  |
+
+### 9.2 请求定义
+
+```http
+GET http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/events
+```
+
+响应类型为 `text/event-stream; charset=utf-8`。连接应在 UI 销毁或切换 Session 时关闭；未知 Session 返回 `404 HEADLESS_SESSION_NOT_FOUND`。
+
+### 9.3 事件格式
+
+```text
+id: 3
+data: {"type":"tool.requested","sessionID":"2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7","sequence":3,"data":{"toolName":"read"}}
+
+```
+
+`id` 使用 Session 内递增的 `sequence`；`data` 是 JSON 编码的 RuntimeEvent。当前 POC 事件 Hub 为进程内内存实现，不提供断线补发和跨进程持久化；生产版本应在部署拓扑确定后替换为可恢复的事件总线或事件存储。
