@@ -432,6 +432,14 @@
         "vite": "catalog:",
       },
     },
+    "packages/headless-core": {
+      "name": "@opencode/headless-core",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+      },
+    },
     "packages/http-recorder": {
       "name": "@opencode/http-recorder",
       "version": "2.3.0",
