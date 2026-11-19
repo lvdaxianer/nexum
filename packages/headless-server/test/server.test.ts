@@ -3,9 +3,16 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
+  createHeadlessCodingLoop,
   createHeadlessModelConfigStore,
   createHeadlessPermissionBroker,
+  createHeadlessQuestionPort,
   createHeadlessSessionService,
+  type ContextCompactionPort,
+  type EventSink,
+  type ModelPort,
+  type PermissionPort,
+  type ToolPort,
 } from "@opencode/headless-core"
 import { createHeadlessEventHub } from "../src/events.ts"
 import { startHeadlessServer, type HeadlessServer } from "../src/index.ts"
@@ -405,6 +412,155 @@ async function readSseUntil(
   if (!text.includes(marker)) throw new Error(`SSE 未收到目标事件: ${marker}`)
   return text
 }
+
+test("serves Question replies and streams tool plus context compaction completion", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-question-chain-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createHeadlessSessionService()
+  const session = await sessionService.create({ directory })
+  const eventHub = createHeadlessEventHub()
+  const questionPort = createHeadlessQuestionPort()
+  const prompts: Array<Parameters<ModelPort["prompt"]>[0]> = []
+  let step = 0
+  const model: ModelPort = {
+    async *prompt(input) {
+      prompts.push(input)
+      step += 1
+      if (step === 1) {
+        yield {
+          type: "question",
+          questionID: "question_chain_001",
+          toolCallID: "call_question_chain_001",
+          questions: [
+            {
+              header: "目录",
+              question: "选择目录",
+              options: [{ label: "src", description: "源代码目录" }],
+            },
+          ],
+        }
+        return
+      }
+      if (step === 2) {
+        yield {
+          type: "tool-call",
+          toolCallID: "call_read_chain_001",
+          toolName: "read",
+          toolInput: { path: "README.md" },
+        }
+        return
+      }
+      yield { type: "completed" }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "README 内容" }
+    },
+  }
+  const compaction: ContextCompactionPort = {
+    estimate: (messages) =>
+      messages.some((message) => message.role === "tool" && message.toolCallID === "call_read_chain_001") ? 100 : 1,
+    async compact() {
+      return { summary: "Question 与工具链已完成", recentMessages: [], context: [] }
+    },
+  }
+  const events: EventSink = eventHub
+  const codingLoop = createHeadlessCodingLoop({
+    model,
+    tool,
+    permission,
+    sessions: sessionService,
+    events,
+    question: questionPort,
+    contextCompaction: compaction,
+    compactionThreshold: 10,
+  })
+  const server = await startHeadlessServer({
+    port: 0,
+    sessionService,
+    eventHub,
+    codingLoop,
+    questionPort,
+  })
+  servers.push(server)
+
+  const eventsResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${session.sessionID}/events`, server.url),
+  )
+  const reader = eventsResponse.body?.getReader()
+  if (!reader) throw new Error("SSE 响应缺少可读流")
+  await reader.read()
+  const promptResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${session.sessionID}/prompt`, server.url),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "先确认目录，再读取 README.md" }),
+    },
+  )
+  expect(promptResponse.status).toBe(200)
+
+  const questionEventText = await readSseUntil(reader, '"type":"question.request"')
+  expect(questionEventText).toContain('"requestID":"question_chain_001"')
+  const listResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${session.sessionID}/question`, server.url),
+  )
+  const pending = (await listResponse.json()) as { data: Array<{ id: string; questions: unknown[] }> }
+  expect(pending.data).toHaveLength(1)
+  expect(pending.data[0]).toMatchObject({ id: "question_chain_001" })
+
+  const replyResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${session.sessionID}/question/question_chain_001/reply`, server.url),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ answers: [["src"]] }),
+    },
+  )
+  expect(replyResponse.status).toBe(200)
+  expect(await replyResponse.json()).toEqual({ data: { status: "answered" } })
+
+  const completionText = await readSseUntil(reader, '"type":"session.completed"')
+  expect(completionText).toContain('"type":"question.result"')
+  expect(completionText).toContain('"type":"tool.request"')
+  expect(completionText).toContain('"type":"tool.result"')
+  expect(completionText).toContain('"type":"context.compaction.started"')
+  expect(completionText).toContain('"type":"context.compaction.completed"')
+  expect(prompts[2]?.messages).toEqual([
+    { role: "system", content: "Context summary:\nQuestion 与工具链已完成", sourceID: "context:summary" },
+  ])
+  await reader.cancel()
+})
+
+test("cancels a pending Question through the HTTP boundary", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-question-cancel-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createHeadlessSessionService()
+  const session = await sessionService.create({ directory })
+  const questionPort = createHeadlessQuestionPort()
+  const pending = questionPort.ask({
+    id: "question_cancel_001",
+    sessionID: session.sessionID,
+    toolCallID: "call_question_cancel_001",
+    questions: [{ header: "确认", question: "继续吗", options: [{ label: "是", description: "继续" }] }],
+  })
+  const server = await startHeadlessServer({ port: 0, sessionService, questionPort })
+  servers.push(server)
+
+  const response = await fetch(
+    new URL(`/api/experimental/headless/session/${session.sessionID}/question/question_cancel_001/cancel`, server.url),
+    { method: "POST" },
+  )
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ data: { status: "cancelled" } })
+  await expect(pending).resolves.toEqual({ ok: false, output: "问题已取消" })
+})
 
 test("lists pending permissions and returns stable approval errors", async () => {
   const directory = await mkdtemp(join(tmpdir(), "headless-server-permission-"))
