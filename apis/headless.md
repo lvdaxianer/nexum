@@ -17,6 +17,7 @@
 | `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready`                     | [健康检查](#21-健康检查)         | 已覆盖   |
 | `headless-server/src/index.ts` | `POST /api/experimental/headless/session`                   | [Session 创建](#31-session-创建) | 已覆盖   |
 | `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/prompt` | [Prompt 提交](#41-prompt-提交)   | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/cancel` | [Session 取消](#51-session-取消) | 已覆盖   |
 
 ## 2. 健康检查
 
@@ -382,4 +383,72 @@ Cache-Control: no-store
 X-Trace-Id: prompt_trace_001
 
 {"data":{"status":"accepted"}}
+```
+
+## 5. Session 取消
+
+### 5.1 接口概览
+
+| 项目     | 内容                                                        |
+| -------- | ----------------------------------------------------------- |
+| 接口名称 | Headless Session 取消                                       |
+| 接口用途 | 请求停止指定 Session 的当前 Coding Loop，并阻止后续工具执行 |
+| 业务场景 | UI 在运行中主动停止任务，或对空闲 Session 做幂等取消        |
+| 权限要求 | 当前 POC 不要求认证；服务默认只绑定 `127.0.0.1`             |
+| 幂等性   | 对空闲或终态 Session 重复调用不会启动新运行                 |
+| 版本     | 当前为实验性 `/api/experimental` 路由                       |
+
+### 5.2 请求定义
+
+#### 5.2.1 Method and URL
+
+```http
+POST http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/cancel
+```
+
+| 项目   | 内容                                                   |
+| ------ | ------------------------------------------------------ |
+| Method | `POST`                                                 |
+| URL    | `/api/experimental/headless/session/:sessionID/cancel` |
+
+### 5.3 响应定义
+
+#### 5.3.1 Response overview
+
+| HTTP 状态码     | 业务含义       | 触发条件               | 调用方处理                    |
+| --------------- | -------------- | ---------------------- | ----------------------------- |
+| `200 OK`        | 取消已接受     | Session 存在           | 监听 `session.cancelled` 事件 |
+| `404 Not Found` | Session 不存在 | 目标 Session ID 未找到 | 刷新 Session 列表             |
+| `409 Conflict`  | 取消冲突       | 状态迁移不允许         | 读取当前状态后决定下一步      |
+
+#### 5.3.2 Success response
+
+```json
+{
+  "data": {
+    "status": "cancelled"
+  }
+}
+```
+
+运行中的取消会通过事件端口发布 `session.cancelled`；模型或工具已经开始的单步操作不会被强行杀死，但下一次工具边界不会继续执行。
+
+### 5.4 Complete example
+
+#### 5.4.1 curl request
+
+```bash
+curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/session/2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7/cancel' \
+  --header 'X-Trace-Id: cancel_trace_001'
+```
+
+#### 5.4.2 Success response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+X-Trace-Id: cancel_trace_001
+
+{"data":{"status":"cancelled"}}
 ```

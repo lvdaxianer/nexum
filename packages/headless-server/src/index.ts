@@ -99,6 +99,14 @@ async function handleRequest(
     return createPrompt(request, decodeURIComponent(promptMatch[1]!), sessionService, codingLoop, traceId)
   }
 
+  const cancelMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/cancel$/)
+  if (cancelMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return cancelSession(decodeURIComponent(cancelMatch[1]!), sessionService, codingLoop, traceId)
+  }
+
   return errorResponse(404, "HEADLESS_ROUTE_NOT_FOUND", "请求路径不存在", traceId)
 }
 
@@ -121,13 +129,12 @@ async function createPrompt(
   codingLoop: HeadlessCodingLoop | undefined,
   traceId: string,
 ): Promise<Response> {
-  if (!codingLoop) {
-    return errorResponse(503, "HEADLESS_RUNTIME_NOT_CONFIGURED", "Headless Runtime 尚未配置", traceId)
-  }
-
   const session = await sessionService.get(sessionID)
   if (!session) {
     return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  if (!codingLoop) {
+    return errorResponse(503, "HEADLESS_RUNTIME_NOT_CONFIGURED", "Headless Runtime 尚未配置", traceId)
   }
 
   const payload = await request.json().catch(() => undefined)
@@ -137,6 +144,43 @@ async function createPrompt(
 
   void codingLoop.run({ sessionID, text: payload.text }).catch(() => undefined)
   return jsonResponse({ data: { status: "accepted" } }, traceId)
+}
+
+/**
+ * 请求取消指定 Session 的当前运行。
+ *
+ * @param sessionID - 目标 Session ID
+ * @param sessionService - Session 查询与状态服务
+ * @param codingLoop - 可选的 Coding Loop 取消适配器
+ * @param traceId - 当前请求链路标识
+ * @returns 取消结果或 caller-safe 错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-19
+ */
+async function cancelSession(
+  sessionID: string,
+  sessionService: HeadlessSessionService,
+  codingLoop: HeadlessCodingLoop | undefined,
+  traceId: string,
+): Promise<Response> {
+  const session = await sessionService.get(sessionID)
+  if (!session) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+
+  try {
+    if (codingLoop) {
+      await codingLoop.cancel(sessionID)
+    } else if (session.status === "idle" || session.status === "running") {
+      await sessionService.setStatus(sessionID, "cancelled")
+    }
+    return jsonResponse({ data: { status: "cancelled" } }, traceId)
+  } catch (error) {
+    if (error instanceof HeadlessSessionError && error.code === "session_not_found") {
+      return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", error.message, traceId)
+    }
+    return errorResponse(409, "HEADLESS_SESSION_CANCEL_CONFLICT", "Session 当前状态不允许取消", traceId)
+  }
 }
 
 /**

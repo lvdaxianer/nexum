@@ -13,6 +13,7 @@ export interface ModelPrompt {
   readonly sessionID: string
   readonly text: string
   readonly toolResults?: readonly ToolResult[]
+  readonly signal?: AbortSignal
 }
 
 /** 模型生成过程中向 Coding Loop 输出的最小增量。 */
@@ -233,6 +234,7 @@ export interface HeadlessCodingLoopOptions {
 /** 单 Agent Headless Coding Loop。 */
 export interface HeadlessCodingLoop {
   readonly run: (input: HeadlessCodingLoopInput) => Promise<SessionRecord>
+  readonly cancel: (sessionID: string) => Promise<SessionRecord>
 }
 
 /**
@@ -248,6 +250,7 @@ export interface HeadlessCodingLoop {
  */
 export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): HeadlessCodingLoop {
   const maxSteps = options.maxSteps ?? 16
+  const activeRuns = new Map<string, ActiveRun>()
 
   return {
     async run(input) {
@@ -257,6 +260,8 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
       }
 
       await options.sessions.setStatus(input.sessionID, "running")
+      const runState: ActiveRun = { controller: new AbortController(), cancelled: false }
+      activeRuns.set(input.sessionID, runState)
       let sequence = 0
       let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text }
 
@@ -266,8 +271,10 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
 
       try {
         for (let step = 0; step < maxSteps; step++) {
+          throwIfCancelled(runState)
           let continued = false
-          for await (const chunk of options.model.prompt(prompt)) {
+          for await (const chunk of options.model.prompt({ ...prompt, signal: runState.controller.signal })) {
+            throwIfCancelled(runState)
             if (chunk.type === "text") {
               await publish("assistant.text", { content: chunk.content ?? "" })
               continue
@@ -299,12 +306,54 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
 
         throw new Error("Coding Loop 超过最大模型步骤数")
       } catch (error) {
+        if (runState.cancelled || runState.controller.signal.aborted || error instanceof HeadlessCancellationError) {
+          const current = await options.sessions.get(input.sessionID)
+          const cancelled =
+            current?.status === "cancelled" ? current : await options.sessions.setStatus(input.sessionID, "cancelled")
+          await publish("session.cancelled")
+          return cancelled
+        }
         await options.sessions.setStatus(input.sessionID, "failed")
         await publish("session.failed", { message: safeErrorMessage(error) })
         throw error
+      } finally {
+        if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
       }
     },
+    async cancel(sessionID) {
+      const current = await options.sessions.get(sessionID)
+      if (!current) {
+        throw new HeadlessSessionError("session_not_found", "Session 不存在", sessionID)
+      }
+      const active = activeRuns.get(sessionID)
+      if (active) {
+        active.cancelled = true
+        active.controller.abort()
+      }
+      if (current.status === "idle" || current.status === "running") {
+        return options.sessions.setStatus(sessionID, "cancelled")
+      }
+      return current
+    },
   }
+}
+
+interface ActiveRun {
+  readonly controller: AbortController
+  cancelled: boolean
+}
+
+/** Coding Loop 内部取消控制流错误。 */
+class HeadlessCancellationError extends Error {
+  constructor() {
+    super("Coding Loop 已取消")
+    this.name = "HeadlessCancellationError"
+  }
+}
+
+/** 在模型或工具边界检查取消信号。 */
+function throwIfCancelled(run: ActiveRun): void {
+  if (run.cancelled || run.controller.signal.aborted) throw new HeadlessCancellationError()
 }
 
 /** 从模型增量构造规范化工具请求。 */

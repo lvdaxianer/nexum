@@ -107,6 +107,9 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
         prompts.push(input)
         return (await sessionService.get(input.sessionID))!
       },
+      async cancel(sessionID) {
+        return sessionService.setStatus(sessionID, "cancelled")
+      },
     },
   })
   servers.push(server)
@@ -121,6 +124,15 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
   expect(response.status).toBe(200)
   expect(body.data).toEqual({ status: "accepted" })
   expect(prompts).toEqual([{ sessionID: session.sessionID, text: "请读取 README.md" }])
+
+  const cancelResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${session.sessionID}/cancel`, server.url),
+    {
+      method: "POST",
+    },
+  )
+  expect(cancelResponse.status).toBe(200)
+  expect(await cancelResponse.json()).toEqual({ data: { status: "cancelled" } })
 })
 
 test("headless-server package stays independent from UI packages", async () => {
