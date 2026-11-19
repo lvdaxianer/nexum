@@ -4,7 +4,7 @@
 
 - [x] 1.1 新增 `headless-core` 包及 `ModelPort`、`ToolPort`、`PermissionPort`、`SessionStore`、`EventSink` 最小契约，验证其运行时依赖不包含 `@opencode/app`、`@opencode/tui`、`@opencode/desktop` 或 `@opencode/cli`
 - [x] 1.2 新增 `headless-server` 包并实现独立启动入口和健康检查接口，验证 Headless Service 可以在不启动 TUI/Desktop 的情况下启动并返回健康状态
-- [ ] 1.3 为 Headless Session、事件和权限请求增加实验性 Protocol/HttpApi 类型，运行 `bun run generate`（从 `packages/client`）并验证生成客户端与服务端类型检查通过
+- [x] 1.3 为 Headless Session、事件和权限请求增加实验性 Protocol/HttpApi 类型，运行 `bun run generate`（从 `packages/client`）并验证生成客户端与服务端类型检查通过
 
 ## 2. Session 与 Coding Loop 迁移
 

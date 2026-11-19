@@ -322,6 +322,18 @@ import type {
   ConfigShellsOutput,
   ExperimentalConfigUpdateInput,
   ExperimentalConfigUpdateOutput,
+  ExperimentalHeadlessSessionCreateInput,
+  ExperimentalHeadlessSessionCreateOutput,
+  ExperimentalHeadlessSessionPromptInput,
+  ExperimentalHeadlessSessionPromptOutput,
+  ExperimentalHeadlessSessionCancelInput,
+  ExperimentalHeadlessSessionCancelOutput,
+  ExperimentalHeadlessSessionEventsInput,
+  ExperimentalHeadlessSessionEventsOutput,
+  ExperimentalHeadlessSessionPermissionListInput,
+  ExperimentalHeadlessSessionPermissionListOutput,
+  ExperimentalHeadlessSessionPermissionReplyInput,
+  ExperimentalHeadlessSessionPermissionReplyOutput,
 } from "../api/api.js"
 import { ClientError } from "./client-error.js"
 
@@ -1997,6 +2009,81 @@ const adaptGroupExperimentalConfig = (raw: RawClient["server.config"]) => ({
   update: EndpointExperimentalConfigUpdate(raw),
 })
 
+const EndpointExperimentalHeadlessSessionCreate =
+  (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionCreateInput) =>
+    preserveEffect<ExperimentalHeadlessSessionCreateOutput>()(
+      raw["experimental.headless.session.create"]({ payload: { directory: input["directory"] } }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
+const EndpointExperimentalHeadlessSessionPrompt =
+  (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionPromptInput) =>
+    preserveEffect<ExperimentalHeadlessSessionPromptOutput>()(
+      raw["experimental.headless.session.prompt"]({
+        params: { sessionID: input["sessionID"] },
+        payload: { text: input["text"] },
+      }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
+const EndpointExperimentalHeadlessSessionCancel =
+  (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionCancelInput) =>
+    preserveEffect<ExperimentalHeadlessSessionCancelOutput>()(
+      raw["experimental.headless.session.cancel"]({ params: { sessionID: input["sessionID"] } }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
+const EndpointExperimentalHeadlessSessionEvents =
+  (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionEventsInput) =>
+    preserveStream<ExperimentalHeadlessSessionEventsOutput>()(
+      Stream.unwrap(
+        raw["experimental.headless.session.events"]({ params: { sessionID: input["sessionID"] } }).pipe(
+          Effect.mapError(mapClientError),
+          Effect.map((stream) => stream.pipe(Stream.mapError(mapClientError))),
+        ),
+      ),
+    )
+
+const EndpointExperimentalHeadlessSessionPermissionList =
+  (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionPermissionListInput) =>
+    preserveEffect<ExperimentalHeadlessSessionPermissionListOutput>()(
+      raw["experimental.headless.session.permission.list"]({ params: { sessionID: input["sessionID"] } }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
+const EndpointExperimentalHeadlessSessionPermissionReply =
+  (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionPermissionReplyInput) =>
+    preserveEffect<ExperimentalHeadlessSessionPermissionReplyOutput>()(
+      raw["experimental.headless.session.permission.reply"]({
+        params: { sessionID: input["sessionID"], requestID: input["requestID"] },
+        payload: { decision: input["decision"] },
+      }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
+const adaptGroupExperimentalHeadless = (raw: RawClient["server.headless"]) => ({
+  session: {
+    create: EndpointExperimentalHeadlessSessionCreate(raw),
+    prompt: EndpointExperimentalHeadlessSessionPrompt(raw),
+    cancel: EndpointExperimentalHeadlessSessionCancel(raw),
+    events: EndpointExperimentalHeadlessSessionEvents(raw),
+    permission: {
+      list: EndpointExperimentalHeadlessSessionPermissionList(raw),
+      reply: EndpointExperimentalHeadlessSessionPermissionReply(raw),
+    },
+  },
+})
+
 const adaptClient = (raw: RawClient) => {
   const client = {
     server: adaptGroupServer(raw["server.server"]),
@@ -2015,6 +2102,7 @@ const adaptClient = (raw: RawClient) => {
       migration: adaptGroupExperimentalMigration(raw["server.migration"]),
       usage: adaptGroupExperimentalUsage(raw["server.usage"]),
       config: adaptGroupExperimentalConfig(raw["server.config"]),
+      headless: adaptGroupExperimentalHeadless(raw["server.headless"]),
     },
     message: adaptGroupMessage(raw["server.message"]),
     model: adaptGroupModel(raw["server.model"]),

@@ -1,9 +1,7 @@
 import { LocationNotFoundError, InvalidRequestError, SessionNotFoundError } from "./errors.js"
 import { makeDefaultApi } from "./api.js"
-import type { Api } from "./api.js"
-import type { Context } from "effect"
 import { HttpApiMiddleware } from "effect/http-api"
-import type { EventGroup } from "./groups/event.js"
+import { HeadlessGroup } from "./groups/headless.js"
 
 class LocationMiddleware extends HttpApiMiddleware.Service<LocationMiddleware>()(
   "@opencode/client/LocationMiddleware",
@@ -15,23 +13,16 @@ class SessionLocationMiddleware extends HttpApiMiddleware.Service<SessionLocatio
   { error: [InvalidRequestError, SessionNotFoundError, LocationNotFoundError] },
 ) {}
 
-type ClientApiShape = Api<
-  Context.Service.Identifier<typeof LocationMiddleware>,
-  Context.Service.Shape<typeof LocationMiddleware>,
-  Context.Service.Identifier<typeof SessionLocationMiddleware>,
-  Context.Service.Shape<typeof SessionLocationMiddleware>,
-  Context.Service.Identifier<typeof SessionLocationMiddleware>,
-  Context.Service.Shape<typeof SessionLocationMiddleware>,
-  typeof EventGroup
->
-
-export const ClientApi: ClientApiShape = makeDefaultApi({
+const BaseClientApi = makeDefaultApi({
   locationMiddleware: LocationMiddleware,
   // The real server uses a form-specific middleware with an undocumented `global` sentinel branch.
   // The generated client only needs a middleware identity for API typing.
   formLocationMiddleware: SessionLocationMiddleware,
   sessionLocationMiddleware: SessionLocationMiddleware,
 })
+
+/** Client/OpenAPI contract includes the experimental Headless group without changing the server Api. */
+export const ClientApi = BaseClientApi.add(HeadlessGroup)
 
 export const groupNames = {
   "server.server": "server",
@@ -66,6 +57,7 @@ export const groupNames = {
   "server.worktree": "worktree",
   "server.vcs": "vcs",
   "server.config": "config",
+  "server.headless": "headless",
 } as const
 
 // Experimental routes carry no compatibility promise, so the generated clients nest them under

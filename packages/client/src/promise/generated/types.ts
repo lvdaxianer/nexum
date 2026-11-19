@@ -4957,6 +4957,43 @@ export type ExperimentalConfigUpdateInput = { readonly shell: string | null }
 
 export type ExperimentalConfigUpdateOutput = void
 
+export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string }
+
+export type ExperimentalHeadlessSessionCreateOutput = {
+  data: { id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }
+}["data"]
+
+export type ExperimentalHeadlessSessionPromptInput = { readonly sessionID: string; readonly text: string }
+
+export type ExperimentalHeadlessSessionPromptOutput = { data: { status: "accepted" } }["data"]
+
+export type ExperimentalHeadlessSessionCancelInput = { readonly sessionID: string }
+
+export type ExperimentalHeadlessSessionCancelOutput = { data: { status: "cancelled" } }["data"]
+
+export type ExperimentalHeadlessSessionEventsInput = { readonly sessionID: string }
+
+export type ExperimentalHeadlessSessionEventsOutput = {
+  type: string
+  sessionID: string
+  sequence: number
+  data?: { [x: string]: JsonValue } | undefined
+}
+
+export type ExperimentalHeadlessSessionPermissionListInput = { readonly sessionID: string }
+
+export type ExperimentalHeadlessSessionPermissionListOutput = {
+  data: Array<{ id: string; sessionID: string; action: string; resource: string; reason?: string | undefined }>
+}["data"]
+
+export type ExperimentalHeadlessSessionPermissionReplyInput = {
+  readonly sessionID: string
+  readonly requestID: string
+  readonly decision: "allow_once" | "allow_always" | "deny"
+}
+
+export type ExperimentalHeadlessSessionPermissionReplyOutput = { data: { status: "approved" | "denied" } }["data"]
+
 /** @deprecated Use `ExperimentalSessionStatsInput`. Removed in the next minor. */
 export type SessionStatsInput = ExperimentalSessionStatsInput
 

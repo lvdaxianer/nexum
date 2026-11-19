@@ -2845,6 +2845,74 @@ export interface ExperimentalConfigApi<E = never> {
   readonly update: ExperimentalConfigUpdateOperation<E>
 }
 
+export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string }
+export type ExperimentalHeadlessSessionCreateOutput = {
+  readonly id: string
+  readonly directory: string
+  readonly status: "idle" | "running" | "completed" | "failed" | "cancelled"
+}
+export type ExperimentalHeadlessSessionCreateOperation<E = never> = (
+  input: ExperimentalHeadlessSessionCreateInput,
+) => Effect.Effect<ExperimentalHeadlessSessionCreateOutput, E>
+
+export type ExperimentalHeadlessSessionPromptInput = { readonly sessionID: string; readonly text: string }
+export type ExperimentalHeadlessSessionPromptOutput = { readonly status: "accepted" }
+export type ExperimentalHeadlessSessionPromptOperation<E = never> = (
+  input: ExperimentalHeadlessSessionPromptInput,
+) => Effect.Effect<ExperimentalHeadlessSessionPromptOutput, E>
+
+export type ExperimentalHeadlessSessionCancelInput = { readonly sessionID: string }
+export type ExperimentalHeadlessSessionCancelOutput = { readonly status: "cancelled" }
+export type ExperimentalHeadlessSessionCancelOperation<E = never> = (
+  input: ExperimentalHeadlessSessionCancelInput,
+) => Effect.Effect<ExperimentalHeadlessSessionCancelOutput, E>
+
+export type ExperimentalHeadlessSessionEventsInput = { readonly sessionID: string }
+export type ExperimentalHeadlessSessionEventsOutput = {
+  readonly type: string
+  readonly sessionID: string
+  readonly sequence: number
+  readonly data?: { readonly [x: string]: Schema.Json } | undefined
+}
+export type ExperimentalHeadlessSessionEventsOperation<E = never> = (
+  input: ExperimentalHeadlessSessionEventsInput,
+) => Stream.Stream<ExperimentalHeadlessSessionEventsOutput, E>
+
+export type ExperimentalHeadlessSessionPermissionListInput = { readonly sessionID: string }
+export type ExperimentalHeadlessSessionPermissionListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly sessionID: string
+  readonly action: string
+  readonly resource: string
+  readonly reason?: string | undefined
+}>
+export type ExperimentalHeadlessSessionPermissionListOperation<E = never> = (
+  input: ExperimentalHeadlessSessionPermissionListInput,
+) => Effect.Effect<ExperimentalHeadlessSessionPermissionListOutput, E>
+
+export type ExperimentalHeadlessSessionPermissionReplyInput = {
+  readonly sessionID: string
+  readonly requestID: string
+  readonly decision: "allow_once" | "allow_always" | "deny"
+}
+export type ExperimentalHeadlessSessionPermissionReplyOutput = { readonly status: "approved" | "denied" }
+export type ExperimentalHeadlessSessionPermissionReplyOperation<E = never> = (
+  input: ExperimentalHeadlessSessionPermissionReplyInput,
+) => Effect.Effect<ExperimentalHeadlessSessionPermissionReplyOutput, E>
+
+export interface ExperimentalHeadlessApi<E = never> {
+  readonly session: {
+    readonly create: ExperimentalHeadlessSessionCreateOperation<E>
+    readonly prompt: ExperimentalHeadlessSessionPromptOperation<E>
+    readonly cancel: ExperimentalHeadlessSessionCancelOperation<E>
+    readonly events: ExperimentalHeadlessSessionEventsOperation<E>
+    readonly permission: {
+      readonly list: ExperimentalHeadlessSessionPermissionListOperation<E>
+      readonly reply: ExperimentalHeadlessSessionPermissionReplyOperation<E>
+    }
+  }
+}
+
 /** @deprecated Use `ExperimentalSessionStatsInput`. Removed in the next minor. */
 export type SessionStatsInput = ExperimentalSessionStatsInput
 
@@ -3092,6 +3160,7 @@ export interface AppApi<E = never> {
     readonly migration: ExperimentalMigrationApi<E>
     readonly usage: ExperimentalUsageApi<E>
     readonly config: ExperimentalConfigApi<E>
+    readonly headless: ExperimentalHeadlessApi<E>
   }
   readonly message: MessageApi<E>
   readonly model: ModelApi<E>

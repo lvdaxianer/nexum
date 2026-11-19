@@ -326,6 +326,18 @@ import type {
   ConfigShellsOutput,
   ExperimentalConfigUpdateInput,
   ExperimentalConfigUpdateOutput,
+  ExperimentalHeadlessSessionCreateInput,
+  ExperimentalHeadlessSessionCreateOutput,
+  ExperimentalHeadlessSessionPromptInput,
+  ExperimentalHeadlessSessionPromptOutput,
+  ExperimentalHeadlessSessionCancelInput,
+  ExperimentalHeadlessSessionCancelOutput,
+  ExperimentalHeadlessSessionEventsInput,
+  ExperimentalHeadlessSessionEventsOutput,
+  ExperimentalHeadlessSessionPermissionListInput,
+  ExperimentalHeadlessSessionPermissionListOutput,
+  ExperimentalHeadlessSessionPermissionReplyInput,
+  ExperimentalHeadlessSessionPermissionReplyOutput,
 } from "./types.js"
 import { ClientError } from "./client-error.js"
 
@@ -1798,6 +1810,84 @@ export function make(options: ClientOptions) {
             },
             requestOptions,
           ),
+      },
+      headless: {
+        session: {
+          create: (input: ExperimentalHeadlessSessionCreateInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSessionCreateOutput }>(
+              {
+                method: "POST",
+                path: `/api/experimental/headless/session`,
+                body: { directory: input["directory"] },
+                successStatus: 200,
+                declaredStatuses: [400],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          prompt: (input: ExperimentalHeadlessSessionPromptInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSessionPromptOutput }>(
+              {
+                method: "POST",
+                path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/prompt`,
+                body: { text: input["text"] },
+                successStatus: 200,
+                declaredStatuses: [400, 404],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          cancel: (input: ExperimentalHeadlessSessionCancelInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSessionCancelOutput }>(
+              {
+                method: "POST",
+                path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/cancel`,
+                successStatus: 200,
+                declaredStatuses: [404],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          events: (
+            input: ExperimentalHeadlessSessionEventsInput,
+            requestOptions?: RequestOptions,
+          ): AsyncIterable<ExperimentalHeadlessSessionEventsOutput> =>
+            sse<ExperimentalHeadlessSessionEventsOutput>(
+              {
+                method: "GET",
+                path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/events`,
+                successStatus: 200,
+                declaredStatuses: [404],
+                empty: false,
+              },
+              requestOptions,
+            ),
+          permission: {
+            list: (input: ExperimentalHeadlessSessionPermissionListInput, requestOptions?: RequestOptions) =>
+              request<{ readonly data: ExperimentalHeadlessSessionPermissionListOutput }>(
+                {
+                  method: "GET",
+                  path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/permission`,
+                  successStatus: 200,
+                  declaredStatuses: [404],
+                  empty: false,
+                },
+                requestOptions,
+              ).then((value) => value.data),
+            reply: (input: ExperimentalHeadlessSessionPermissionReplyInput, requestOptions?: RequestOptions) =>
+              request<{ readonly data: ExperimentalHeadlessSessionPermissionReplyOutput }>(
+                {
+                  method: "POST",
+                  path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/permission/${encodeURIComponent(input.requestID)}/reply`,
+                  body: { decision: input["decision"] },
+                  successStatus: 200,
+                  declaredStatuses: [400, 404],
+                  empty: false,
+                },
+                requestOptions,
+              ).then((value) => value.data),
+          },
+        },
       },
     },
     message: {

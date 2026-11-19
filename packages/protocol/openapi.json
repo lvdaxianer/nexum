@@ -16090,6 +16090,548 @@
           "required": true
         }
       }
+    },
+    "/api/experimental/headless/session": {
+      "post": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.session.create",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "directory": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": ["idle", "running", "completed", "failed", "cancelled"]
+                        }
+                      },
+                      "required": ["id", "directory", "status"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a UI-independent coding session at a validated working directory.",
+        "summary": "Create a headless session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "directory": {
+                    "type": "string"
+                  }
+                },
+                "required": ["directory"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/experimental/headless/session/{sessionID}/prompt": {
+      "post": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.session.prompt",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["accepted"]
+                        }
+                      },
+                      "required": ["status"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Submit user text to the headless coding loop and return once it is accepted.",
+        "summary": "Send a prompt to a headless session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": ["text"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/experimental/headless/session/{sessionID}/cancel": {
+      "post": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.session.cancel",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["cancelled"]
+                        }
+                      },
+                      "required": ["status"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Request cancellation of the current coding loop turn.",
+        "summary": "Cancel a headless session"
+      }
+    },
+    "/api/experimental/headless/session/{sessionID}/events": {
+      "get": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.session.events",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "string",
+                      "contentMediaType": "application/json",
+                      "contentSchema": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string"
+                          },
+                          "sessionID": {
+                            "type": "string"
+                          },
+                          "sequence": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN", "Infinity", "-Infinity"]
+                              }
+                            ]
+                          },
+                          "data": {
+                            "anyOf": [
+                              {
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["type", "sessionID", "sequence"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["event", "data"],
+                  "additionalProperties": false
+                },
+                "x-effect-stream": {
+                  "encoding": "sse",
+                  "causeSchema": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": ["Fail"]
+                            },
+                            "error": {
+                              "not": {}
+                            }
+                          },
+                          "required": ["_tag", "error"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": ["Die"]
+                            },
+                            "defect": {}
+                          },
+                          "required": ["_tag", "defect"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": ["Interrupt"]
+                            },
+                            "fiberId": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": ["_tag", "fiberId"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "errorSchema": {
+                    "not": {}
+                  },
+                  "failureEvent": "effect/http-api/stream/failure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Subscribe to coding loop, tool, permission, and terminal session events.",
+        "summary": "Subscribe to headless session events"
+      }
+    },
+    "/api/experimental/headless/session/{sessionID}/permission": {
+      "get": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.session.permission.list",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "sessionID": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "resource": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["id", "sessionID", "action", "resource"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "List pending tool permission requests for a headless session.",
+        "summary": "List headless permission requests"
+      }
+    },
+    "/api/experimental/headless/session/{sessionID}/permission/{requestID}/reply": {
+      "post": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.session.permission.reply",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "requestID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["approved", "denied"]
+                        }
+                      },
+                      "required": ["status"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PermissionNotFoundError | SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PermissionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Approve once, approve always, or deny a pending headless tool request.",
+        "summary": "Reply to a headless permission request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": ["allow_once", "allow_always", "deny"]
+                  }
+                },
+                "required": ["decision"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
     }
   },
   "components": {
@@ -31531,6 +32073,10 @@
     {
       "name": "config",
       "description": "Location-scoped configuration routes."
+    },
+    {
+      "name": "headless",
+      "description": "Experimental UI-independent Session, event, and permission routes."
     }
   ]
 }
