@@ -27,6 +27,17 @@ test("creates an idle session for a valid working directory", async () => {
   expect(await service.get(session.sessionID)).toEqual(session)
 })
 
+test("lists sessions for page-level session recovery", async () => {
+  const firstDirectory = await makeDirectory()
+  const secondDirectory = await makeDirectory()
+  const service = createHeadlessSessionService()
+
+  const first = await service.create({ directory: firstDirectory })
+  const second = await service.create({ directory: secondDirectory })
+
+  expect(await service.list()).toEqual([first, second])
+})
+
 test("rejects an invalid directory without creating a session", async () => {
   const store = createInMemorySessionStore()
   const service = createHeadlessSessionService({ store })

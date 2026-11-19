@@ -111,6 +111,7 @@ export interface SessionRecord {
 
 /** Session 存储端口。 */
 export interface SessionStore {
+  readonly list: () => Promise<readonly SessionRecord[]>
   readonly get: (sessionID: string) => Promise<SessionRecord | undefined>
   readonly save: (session: SessionRecord) => Promise<void>
 }
@@ -134,6 +135,7 @@ export interface HeadlessDirectoryValidator {
 /** 可观察和推进 Session 生命周期的最小服务接口。 */
 export interface HeadlessSessionService {
   readonly create: (input: HeadlessSessionCreateInput) => Promise<SessionRecord>
+  readonly list: () => Promise<readonly SessionRecord[]>
   readonly get: (sessionID: string) => Promise<SessionRecord | undefined>
   readonly setStatus: (sessionID: string, status: HeadlessSessionStatus) => Promise<SessionRecord>
 }
@@ -145,9 +147,7 @@ export interface HeadlessSessionServiceOptions {
 }
 
 /** 可供测试和 POC 使用的内存 SessionStore。 */
-export interface InMemorySessionStore extends SessionStore {
-  readonly list: () => Promise<readonly SessionRecord[]>
-}
+export interface InMemorySessionStore extends SessionStore {}
 
 /** Session 领域错误，包含稳定的机器可读错误码。 */
 export class HeadlessSessionError extends Error {
@@ -238,6 +238,9 @@ export function createHeadlessSessionService(options: HeadlessSessionServiceOpti
       }
       await store.save(session)
       return session
+    },
+    list() {
+      return store.list()
     },
     get(sessionID) {
       return store.get(sessionID)
@@ -725,6 +728,8 @@ export type {
 } from "./model-config.js"
 export { createOpenAICompatibleModelPort, HeadlessModelError } from "./model.js"
 export type { HeadlessFetch, HeadlessModelErrorCode, OpenAICompatibleModelPortOptions } from "./model.js"
+export { createHeadlessModelProbePort, HeadlessModelProbeError } from "./model-probe.js"
+export type { HeadlessModelProbeMode, HeadlessModelProbeResult, HeadlessModelProbePort } from "./model-probe.js"
 export { createHeadlessProjectContextPort } from "./context.js"
 export type {
   HeadlessQuestionErrorCode,
