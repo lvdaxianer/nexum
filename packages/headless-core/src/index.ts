@@ -9,7 +9,14 @@ import { access, constants, stat } from "node:fs/promises"
 import { isAbsolute, normalize } from "node:path"
 import { createOpenAICompatibleModelPort } from "./model.js"
 import type { HeadlessModelConfigStore } from "./model-config.js"
-import type { ContextCompactionPort, ContextCompactionResult, ProjectContextPort } from "./context.js"
+import type {
+  ContextCompactionPort,
+  ContextCompactionResult,
+  HeadlessQuestionItem,
+  HeadlessQuestionPort,
+  HeadlessQuestionRequest,
+  ProjectContextPort,
+} from "./context.js"
 import { redactHeadlessSensitiveValue } from "./permission.js"
 import { normalizeHeadlessToolRequest } from "./tools.js"
 
@@ -50,12 +57,14 @@ export interface ModelPrompt {
 
 /** 模型生成过程中向 Coding Loop 输出的最小增量。 */
 export interface ModelChunk {
-  readonly type: "text" | "tool-call" | "completed"
+  readonly type: "text" | "tool-call" | "question" | "completed"
   readonly content?: string
   readonly toolCallID?: string
   readonly toolName?: string
   readonly toolInput?: Record<string, unknown>
   readonly toolCalls?: readonly ModelToolCall[]
+  readonly questionID?: string
+  readonly questions?: readonly HeadlessQuestionItem[]
 }
 
 /** 模型端口负责产生 Agent 下一步所需的增量结果。 */
@@ -269,6 +278,7 @@ export interface HeadlessCodingLoopOptions {
   readonly tools?: readonly ModelToolDefinition[]
   readonly contextCompaction?: ContextCompactionPort
   readonly projectContext?: ProjectContextPort
+  readonly question?: HeadlessQuestionPort
   readonly compactionThreshold?: number
   readonly compactionKeepRecent?: number
   readonly maxSteps?: number
@@ -341,6 +351,33 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
               const completed = await options.sessions.setStatus(input.sessionID, "completed")
               await publish("session.completed")
               return completed
+            }
+
+            const questionChunk = toQuestionChunk(chunk)
+            if (questionChunk) {
+              const request = createQuestionRequest(input.sessionID, questionChunk)
+              await publish("question.request", {
+                requestID: request.id,
+                toolCallID: request.toolCallID,
+                questions: request.questions,
+              })
+              if (!options.question) throw new Error("Question 端口未配置")
+              const result = await options.question.ask(request)
+              if (!result.ok) {
+                await publish("question.cancelled", { requestID: request.id, toolCallID: request.toolCallID })
+                throw new Error(result.output)
+              }
+              await publish("question.result", { requestID: request.id, toolCallID: request.toolCallID })
+              messages = appendQuestionResult(messages, request, result)
+              prompt = {
+                sessionID: input.sessionID,
+                text: input.text,
+                toolResults: [result],
+                messages,
+                ...(options.tools ? { tools: options.tools } : {}),
+              }
+              continued = true
+              break
             }
 
             const toolCalls = chunk.toolCalls ?? [legacyToolCall(chunk)]
@@ -470,6 +507,61 @@ function legacyToolCall(chunk: ModelChunk): ModelToolCall {
     name: chunk.toolName,
     input: chunk.toolInput ?? {},
   }
+}
+
+/** 把模型返回的 Question chunk 转成稳定的 pending 请求。 */
+function createQuestionRequest(sessionID: string, chunk: ModelChunk): HeadlessQuestionRequest {
+  if (!chunk.toolCallID || !chunk.questions || chunk.questions.length === 0) {
+    throw new Error("模型返回了无效的问题请求")
+  }
+  return {
+    id: chunk.questionID ?? crypto.randomUUID(),
+    sessionID,
+    toolCallID: chunk.toolCallID,
+    questions: chunk.questions,
+  }
+}
+
+/** 兼容 OpenAI Function Calling 返回的 question 工具调用。 */
+function toQuestionChunk(chunk: ModelChunk): ModelChunk | undefined {
+  if (chunk.type === "question") return chunk
+  const toolCall = chunk.toolCalls?.find((item) => item.name === "question")
+  if (toolCall)
+    return {
+      type: "question",
+      questionID: toolCall.id,
+      toolCallID: toolCall.id,
+      questions: readQuestionItems(toolCall.input),
+    }
+  if (chunk.toolName === "question") {
+    return {
+      type: "question",
+      questionID: chunk.toolCallID,
+      toolCallID: chunk.toolCallID,
+      questions: readQuestionItems(chunk.toolInput),
+    }
+  }
+  return undefined
+}
+
+function readQuestionItems(input: Record<string, unknown> | undefined): readonly HeadlessQuestionItem[] | undefined {
+  return Array.isArray(input?.questions) ? (input.questions as HeadlessQuestionItem[]) : undefined
+}
+
+/** 把 Question 调用和结果追加到统一消息历史。 */
+function appendQuestionResult(
+  messages: readonly ModelMessage[],
+  request: HeadlessQuestionRequest,
+  result: ToolResult,
+): ModelMessage[] {
+  return [
+    ...messages,
+    {
+      role: "assistant",
+      toolCalls: [{ id: request.toolCallID, name: "question", input: { questions: request.questions } }],
+    },
+    { role: "tool", toolCallID: request.toolCallID, content: result.output },
+  ]
 }
 
 /** 在模型步骤前按策略压缩消息，并把压缩结果转换为统一消息历史。 */
@@ -626,6 +718,11 @@ export { createOpenAICompatibleModelPort, HeadlessModelError } from "./model.js"
 export type { HeadlessFetch, HeadlessModelErrorCode, OpenAICompatibleModelPortOptions } from "./model.js"
 export { createHeadlessProjectContextPort } from "./context.js"
 export type {
+  HeadlessQuestionErrorCode,
+  HeadlessQuestionItem,
+  HeadlessQuestionPort,
+  HeadlessQuestionRequest,
+  QuestionPort,
   ContextCompactionPort,
   ContextCompactionResult,
   HeadlessProjectContextPortOptions,
@@ -633,3 +730,4 @@ export type {
   ProjectContextPort,
   ProjectContextSource,
 } from "./context.js"
+export { createHeadlessQuestionPort, HeadlessQuestionError } from "./context.js"
