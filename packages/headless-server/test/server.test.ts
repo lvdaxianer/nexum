@@ -112,6 +112,70 @@ test("creates a session through the independent headless service", async () => {
   expect(body.data.id).toMatch(/^[0-9a-f-]{36}$/)
 })
 
+test("lists sessions for page-level recovery", async () => {
+  const firstDirectory = await mkdtemp(join(tmpdir(), "headless-server-list-first-"))
+  const secondDirectory = await mkdtemp(join(tmpdir(), "headless-server-list-second-"))
+  temporaryDirectories.push(firstDirectory, secondDirectory)
+  const server = await startHeadlessServer({ port: 0 })
+  servers.push(server)
+
+  for (const directory of [firstDirectory, secondDirectory]) {
+    const response = await fetch(new URL("/api/experimental/headless/session", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ directory }),
+    })
+    expect(response.status).toBe(200)
+  }
+
+  const response = await fetch(new URL("/api/experimental/headless/session", server.url))
+  const body = (await response.json()) as { data: Array<{ id: string; directory: string; status: string }> }
+
+  expect(response.status).toBe(200)
+  expect(body.data.map((item) => item.directory)).toEqual([firstDirectory, secondDirectory])
+  expect(body.data.every((item) => item.status === "idle")).toBe(true)
+})
+
+test("probes the configured model without returning model content or credentials", async () => {
+  const server = await startHeadlessServer({
+    port: 0,
+    modelProbe: {
+      async probe(input) {
+        expect(input).toEqual({ mode: "both" })
+        return { text: "pass", functionCalling: "pass" }
+      },
+    },
+  })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/experimental/headless/model/probe", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode: "both" }),
+  })
+  const body = (await response.json()) as { data: { text: string; functionCalling: string } }
+
+  expect(response.status).toBe(200)
+  expect(body).toEqual({ data: { text: "pass", functionCalling: "pass" } })
+  expect(JSON.stringify(body)).not.toContain("credential")
+})
+
+test("rejects an invalid model probe mode with a stable error", async () => {
+  const server = await startHeadlessServer({ port: 0 })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/experimental/headless/model/probe", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-trace-id": "probe_invalid_trace" },
+    body: JSON.stringify({ mode: "secret" }),
+  })
+  const body = (await response.json()) as { errorCode: string; message: string; traceId: string }
+
+  expect(response.status).toBe(400)
+  expect(body.errorCode).toBe("HEADLESS_INVALID_MODEL_PROBE")
+  expect(body.traceId).toBe("probe_invalid_trace")
+})
+
 test("rejects an invalid session directory at the HTTP boundary", async () => {
   const server = await startHeadlessServer({ port: 0 })
   servers.push(server)

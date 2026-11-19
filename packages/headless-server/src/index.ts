@@ -10,7 +10,11 @@ import {
   HeadlessPermissionError,
   HeadlessQuestionError,
   HeadlessSessionError,
+  HeadlessModelError,
+  HeadlessModelProbeError,
   createHeadlessConfiguredCodingLoop,
+  createHeadlessModelProbePort,
+  createOpenAICompatibleModelPort,
   createHeadlessModelConfigStore,
   createHeadlessPermissionBroker,
   createHeadlessQuestionPort,
@@ -20,6 +24,8 @@ import {
   type HeadlessModelConfigStore,
   type HeadlessPermissionBroker,
   type HeadlessQuestionPort,
+  type HeadlessModelProbeMode,
+  type HeadlessModelProbePort,
   type HeadlessSessionService,
 } from "@opencode/headless-core"
 import { createHeadlessEventHub, type HeadlessEventHub } from "./events.ts"
@@ -38,6 +44,7 @@ export interface HeadlessServerOptions {
   readonly codingLoop?: HeadlessCodingLoop
   readonly permissionBroker?: HeadlessPermissionBroker
   readonly questionPort?: HeadlessQuestionPort
+  readonly modelProbe?: HeadlessModelProbePort
   readonly modelConfigStore?: HeadlessModelConfigStore
   readonly eventHub?: HeadlessEventHub
   readonly corsOrigins?: readonly string[]
@@ -64,6 +71,9 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
   const port = options.port ?? DEFAULT_PORT
   const sessionService = options.sessionService ?? createHeadlessSessionService()
   const modelConfigStore = options.modelConfigStore ?? createHeadlessModelConfigStore()
+  const modelProbe =
+    options.modelProbe ??
+    createHeadlessModelProbePort({ model: createOpenAICompatibleModelPort({ config: modelConfigStore }) })
   const eventHub = options.eventHub ?? createHeadlessEventHub()
   const permissionBroker = options.permissionBroker ?? createHeadlessPermissionBroker()
   const questionPort = options.questionPort ?? createHeadlessQuestionPort()
@@ -96,6 +106,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
         permissionBroker,
         questionPort,
         modelConfigStore,
+        modelProbe,
       )
       return withCorsHeaders(response, request, corsOrigins)
     },
@@ -154,6 +165,7 @@ async function handleRequest(
   permissionBroker?: HeadlessPermissionBroker,
   questionPort?: HeadlessQuestionPort,
   modelConfigStore?: HeadlessModelConfigStore,
+  modelProbe?: HeadlessModelProbePort,
 ): Promise<Response> {
   const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
   const url = new URL(request.url)
@@ -168,6 +180,7 @@ async function handleRequest(
   }
 
   if (url.pathname === "/api/experimental/headless/session") {
+    if (request.method === "GET") return listSessions(sessionService, traceId)
     if (request.method !== "POST") {
       return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
@@ -178,6 +191,13 @@ async function handleRequest(
     if (request.method === "GET") return getModelConfig(modelConfigStore, traceId)
     if (request.method === "PUT") return updateModelConfig(request, modelConfigStore, traceId)
     return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 或 PUT 请求", traceId)
+  }
+
+  if (url.pathname === "/api/experimental/headless/model/probe") {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return probeModel(request, modelProbe, traceId)
   }
 
   const promptMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/prompt$/)
@@ -271,6 +291,43 @@ async function handleRequest(
   }
 
   return errorResponse(404, "HEADLESS_ROUTE_NOT_FOUND", "请求路径不存在", traceId)
+}
+
+/** 返回所有可供页面恢复的 Headless Session。 */
+async function listSessions(sessionService: HeadlessSessionService, traceId: string): Promise<Response> {
+  const data = (await sessionService.list()).map((session) => ({
+    id: session.sessionID,
+    directory: session.directory,
+    status: session.status,
+  }))
+  return jsonResponse({ data }, traceId)
+}
+
+/** 执行安全模型能力 Probe，只返回能力状态。 */
+async function probeModel(
+  request: Request,
+  modelProbe: HeadlessModelProbePort | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!modelProbe) return errorResponse(503, "HEADLESS_MODEL_PROBE_NOT_CONFIGURED", "模型 Probe 尚未配置", traceId)
+  const payload = await request.json().catch(() => undefined)
+  const mode = isRecord(payload) && payload.mode !== undefined ? payload.mode : "both"
+  if (mode !== "text" && mode !== "function_calling" && mode !== "both") {
+    return errorResponse(400, "HEADLESS_INVALID_MODEL_PROBE", "模型 Probe 模式无效", traceId)
+  }
+
+  try {
+    const data = await modelProbe.probe({ mode: mode as HeadlessModelProbeMode })
+    return jsonResponse({ data }, traceId)
+  } catch (error) {
+    if (error instanceof HeadlessModelError && error.code === "authentication_failed") {
+      return errorResponse(401, "HEADLESS_MODEL_AUTH_FAILED", "模型认证失败", traceId)
+    }
+    if (error instanceof HeadlessModelProbeError || error instanceof HeadlessModelError) {
+      return errorResponse(503, "HEADLESS_MODEL_PROBE_FAILED", error.message, traceId)
+    }
+    return errorResponse(503, "HEADLESS_MODEL_PROBE_FAILED", "模型 Probe 失败", traceId)
+  }
 }
 
 /**

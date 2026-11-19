@@ -7,7 +7,14 @@
 
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
-import { InvalidRequestError, PermissionNotFoundError, QuestionNotFoundError, SessionNotFoundError } from "../errors.js"
+import {
+  InvalidRequestError,
+  PermissionNotFoundError,
+  QuestionNotFoundError,
+  ServiceUnavailableError,
+  SessionNotFoundError,
+  UnauthorizedError,
+} from "../errors.js"
 
 /** Headless Session 的生命周期状态。 */
 export const HeadlessSessionStatus = Schema.Literals(["idle", "running", "completed", "failed", "cancelled"])
@@ -131,6 +138,20 @@ export const HeadlessModelConfigPayload = Schema.Struct({
   credentialRef: Schema.optional(Schema.String),
 })
 
+/** 页面模型能力探测模式。 */
+export const HeadlessModelProbeMode = Schema.Literals(["text", "function_calling", "both"])
+
+/** 模型能力探测请求。 */
+export const HeadlessModelProbePayload = Schema.Struct({
+  mode: Schema.optional(HeadlessModelProbeMode),
+})
+
+/** 模型能力探测的安全返回体。 */
+export const HeadlessModelProbeResult = Schema.Struct({
+  text: Schema.Literals(["pass", "skipped"]),
+  functionCalling: Schema.Literals(["pass", "skipped"]),
+})
+
 const acceptedResponse = Schema.Struct({
   data: Schema.Struct({ status: Schema.Literal("accepted") }),
 })
@@ -178,6 +199,19 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
     ),
   )
   .add(
+    HttpApiEndpoint.post("experimental.headless.model.probe", "/api/experimental/headless/model/probe", {
+      payload: HeadlessModelProbePayload,
+      success: Schema.Struct({ data: HeadlessModelProbeResult }),
+      error: [InvalidRequestError, ServiceUnavailableError, UnauthorizedError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.model.probe",
+        summary: "Probe headless model capabilities",
+        description: "Run safe text and Function Calling checks without returning model content or credentials.",
+      }),
+    ),
+  )
+  .add(
     HttpApiEndpoint.post("experimental.headless.session.create", "/api/experimental/headless/session", {
       payload: HeadlessSessionCreatePayload,
       success: Schema.Struct({ data: HeadlessSession }),
@@ -187,6 +221,17 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
         identifier: "experimental.headless.session.create",
         summary: "Create a headless session",
         description: "Create a UI-independent coding session at a validated working directory.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("experimental.headless.session.list", "/api/experimental/headless/session", {
+      success: Schema.Struct({ data: Schema.Array(HeadlessSession) }),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.session.list",
+        summary: "List headless sessions",
+        description: "List Session IDs, working directories, and lifecycle status for page recovery.",
       }),
     ),
   )
@@ -349,3 +394,6 @@ export type HeadlessContextCompactionStatus = typeof HeadlessContextCompactionSt
 export type HeadlessContextCompactionEventData = typeof HeadlessContextCompactionEventData.Type
 export type HeadlessQuestionEventData = typeof HeadlessQuestionEventData.Type
 export type HeadlessEventType = typeof HeadlessEventType.Type
+export type HeadlessModelProbeMode = typeof HeadlessModelProbeMode.Type
+export type HeadlessModelProbePayload = typeof HeadlessModelProbePayload.Type
+export type HeadlessModelProbeResult = typeof HeadlessModelProbeResult.Type

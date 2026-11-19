@@ -325,8 +325,11 @@ import type {
   ExperimentalHeadlessModelGetOutput,
   ExperimentalHeadlessModelUpdateInput,
   ExperimentalHeadlessModelUpdateOutput,
+  ExperimentalHeadlessModelProbeInput,
+  ExperimentalHeadlessModelProbeOutput,
   ExperimentalHeadlessSessionCreateInput,
   ExperimentalHeadlessSessionCreateOutput,
+  ExperimentalHeadlessSessionListOutput,
   ExperimentalHeadlessSessionPromptInput,
   ExperimentalHeadlessSessionPromptOutput,
   ExperimentalHeadlessSessionQuestionListInput,
@@ -2042,6 +2045,15 @@ const EndpointExperimentalHeadlessModelUpdate =
       ),
     )
 
+const EndpointExperimentalHeadlessModelProbe =
+  (raw: RawClient["server.headless"]) => (input?: ExperimentalHeadlessModelProbeInput) =>
+    preserveEffect<ExperimentalHeadlessModelProbeOutput>()(
+      raw["experimental.headless.model.probe"]({ payload: { mode: input?.["mode"] } }).pipe(
+        Effect.mapError(mapClientError),
+        Effect.map((value) => value.data),
+      ),
+    )
+
 const EndpointExperimentalHeadlessSessionCreate =
   (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionCreateInput) =>
     preserveEffect<ExperimentalHeadlessSessionCreateOutput>()(
@@ -2050,6 +2062,14 @@ const EndpointExperimentalHeadlessSessionCreate =
         Effect.map((value) => value.data),
       ),
     )
+
+const EndpointExperimentalHeadlessSessionList = (raw: RawClient["server.headless"]) => () =>
+  preserveEffect<ExperimentalHeadlessSessionListOutput>()(
+    raw["experimental.headless.session.list"]({}).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
 
 const EndpointExperimentalHeadlessSessionPrompt =
   (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionPromptInput) =>
@@ -2137,9 +2157,14 @@ const EndpointExperimentalHeadlessSessionPermissionReply =
     )
 
 const adaptGroupExperimentalHeadless = (raw: RawClient["server.headless"]) => ({
-  model: { get: EndpointExperimentalHeadlessModelGet(raw), update: EndpointExperimentalHeadlessModelUpdate(raw) },
+  model: {
+    get: EndpointExperimentalHeadlessModelGet(raw),
+    update: EndpointExperimentalHeadlessModelUpdate(raw),
+    probe: EndpointExperimentalHeadlessModelProbe(raw),
+  },
   session: {
     create: EndpointExperimentalHeadlessSessionCreate(raw),
+    list: EndpointExperimentalHeadlessSessionList(raw),
     prompt: EndpointExperimentalHeadlessSessionPrompt(raw),
     question: {
       list: EndpointExperimentalHeadlessSessionQuestionList(raw),

@@ -4980,10 +4980,20 @@ export type ExperimentalHeadlessModelUpdateOutput = {
   data: { baseUrl: string; model: string; credentialConfigured: boolean; credentialRef?: string | undefined }
 }["data"]
 
+export type ExperimentalHeadlessModelProbeInput = { readonly mode?: "text" | "function_calling" | "both" | undefined }
+
+export type ExperimentalHeadlessModelProbeOutput = {
+  data: { text: "pass" | "skipped"; functionCalling: "pass" | "skipped" }
+}["data"]
+
 export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string }
 
 export type ExperimentalHeadlessSessionCreateOutput = {
   data: { id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }
+}["data"]
+
+export type ExperimentalHeadlessSessionListOutput = {
+  data: Array<{ id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }>
 }["data"]
 
 export type ExperimentalHeadlessSessionPromptInput = { readonly sessionID: string; readonly text: string }

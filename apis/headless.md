@@ -4,23 +4,25 @@
 
 | 项目            | 内容                                                                                                            |
 | --------------- | --------------------------------------------------------------------------------------------------------------- |
-| 业务模块        | Headless Service 健康检查与最小 Session 创建（`headless`）                                                      |
+| 业务模块        | Headless Service 页面控制台与 Coding Task 运行控制（`headless`）                                                |
 | 文档路径        | `apis/headless.md`                                                                                              |
-| 模块职责        | 为任意 UI 或运行编排器提供独立 Headless Service 的健康状态与 Session 创建                                       |
+| 模块职责        | 为任意 UI 或运行编排器提供独立 Headless Service 的健康状态、模型探测、Session 管理和任务运行控制                |
 | 基础 URL / 版本 | `http://127.0.0.1:4097`；当前为 POC，暂无版本前缀                                                               |
 | 通用认证与约定  | 健康检查不要求认证；响应为 JSON；所有响应带 `X-Trace-Id`；浏览器 POC 默认允许本地 UI origin；响应 Cookie 不适用 |
 
 ### 1.1 对外 route 覆盖表
 
-| Controller / 路由归属          | 对外端点                                                                         | 文档章节                         | 覆盖状态 |
-| ------------------------------ | -------------------------------------------------------------------------------- | -------------------------------- | -------- |
-| `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready`                                          | [健康检查](#21-健康检查)         | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session`                                        | [Session 创建](#31-session-创建) | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/prompt`                      | [Prompt 提交](#41-prompt-提交)   | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/cancel`                      | [Session 取消](#51-session-取消) | 已覆盖   |
-| `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/events`                       | [Session 事件](#81-session-事件) | 已覆盖   |
-| `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/permission`                   | [权限列表](#61-权限列表)         | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/permission/:requestID/reply` | [权限审批](#71-权限审批)         | 已覆盖   |
+| Controller / 路由归属          | 对外端点                                                                         | 文档章节                          | 覆盖状态 |
+| ------------------------------ | -------------------------------------------------------------------------------- | --------------------------------- | -------- |
+| `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready`                                          | [健康检查](#21-健康检查)          | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session`                                        | [Session 创建](#31-session-创建)  | 已覆盖   |
+| `headless-server/src/index.ts` | `GET /api/experimental/headless/session`                                         | [Session 列表](#111-session-列表) | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/model/probe`                                    | [模型能力探测](#121-模型能力探测) | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/prompt`                      | [Prompt 提交](#41-prompt-提交)    | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/cancel`                      | [Session 取消](#51-session-取消)  | 已覆盖   |
+| `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/events`                       | [Session 事件](#81-session-事件)  | 已覆盖   |
+| `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/permission`                   | [权限列表](#61-权限列表)          | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/permission/:requestID/reply` | [权限审批](#71-权限审批)          | 已覆盖   |
 
 ### 1.2 浏览器跨域约定
 
@@ -698,3 +700,142 @@ curl --request PUT 'http://127.0.0.1:4097/api/experimental/headless/model' \
 拒绝权限时，工具不会执行，Session 进入 `failed`，UI 保留失败事件和可排障
 的 trace ID。该链路验证的是 POC 权限边界，不等同于生产级沙箱；生产部署仍需
 增加执行 Worker、目录隔离、网络出口控制和身份认证。
+
+## 11. Session 列表
+
+### 11.1 接口概览
+
+| 项目     | 内容                                                            |
+| -------- | --------------------------------------------------------------- |
+| 接口名称 | Headless Session 列表                                           |
+| 接口用途 | 为页面刷新、Session 切换和运行恢复提供当前进程内的 Session 摘要 |
+| 业务场景 | 页面启动或用户点击刷新时调用；只读，不启动模型、不执行工具      |
+| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制   |
+| 幂等性   | GET 幂等；不修改 Session 状态                                   |
+| 版本     | 当前为实验性 `/api/experimental` 路由                           |
+
+### 11.2 请求定义
+
+```http
+GET http://127.0.0.1:4097/api/experimental/headless/session
+```
+
+| 项目         | 内容                                 |
+| ------------ | ------------------------------------ |
+| Method       | `GET`                                |
+| URL          | `/api/experimental/headless/session` |
+| Content-Type | 不适用，无请求体                     |
+| Accept       | 推荐 `application/json`              |
+
+路径参数、查询参数、表单参数和请求 Cookie：不适用。可选请求头
+`X-Trace-Id` 沿用模块通用约定。
+
+### 11.3 响应定义
+
+成功返回 `200 OK`，响应 Cookie 不适用，响应头包含 `Content-Type: application/json`、
+`Cache-Control: no-store` 和 `X-Trace-Id`。
+
+```json
+{
+  "data": [
+    {
+      "id": "2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7",
+      "directory": "/Users/example/project",
+      "status": "idle"
+    }
+  ]
+}
+```
+
+| 字段路径           | 类型   | 必有/可选 | 枚举                                              | 说明             |
+| ------------------ | ------ | --------- | ------------------------------------------------- | ---------------- |
+| `data`             | array  | 必有      | -                                                 | Session 摘要列表 |
+| `data[].id`        | string | 必有      | UUID                                              | Session ID       |
+| `data[].directory` | string | 必有      | 规范化绝对路径                                    | 工作目录         |
+| `data[].status`    | string | 必有      | `idle`/`running`/`completed`/`failed`/`cancelled` | 生命周期状态     |
+
+错误响应：`405 HEADLESS_METHOD_NOT_ALLOWED`；其他错误遵循模块通用错误体。分页、排序、过滤、幂等键和时间字段：不适用；列表仅覆盖当前进程内存状态。
+
+### 11.4 Complete example
+
+```bash
+curl --request GET 'http://127.0.0.1:4097/api/experimental/headless/session' \
+  --header 'Accept: application/json' \
+  --header 'X-Trace-Id: session_list_trace_001'
+```
+
+## 12. 模型能力探测
+
+### 12.1 接口概览
+
+| 项目     | 内容                                                                   |
+| -------- | ---------------------------------------------------------------------- |
+| 接口名称 | Headless 模型能力探测                                                  |
+| 接口用途 | 验证当前已保存模型的文本响应和 OpenAI-compatible Function Calling 能力 |
+| 业务场景 | 页面保存模型配置后由用户显式点击调用；会产生模型请求但不执行工具       |
+| 权限要求 | 当前 POC 不要求认证；凭据只在服务端配置存储和模型适配器内使用          |
+| 幂等性   | 逻辑上只读，但每次调用可能产生上游模型费用；不支持幂等键               |
+| 版本     | 当前为实验性 `/api/experimental` 路由                                  |
+
+### 12.2 请求定义
+
+```http
+POST http://127.0.0.1:4097/api/experimental/headless/model/probe
+```
+
+| 项目         | 内容                                     |
+| ------------ | ---------------------------------------- |
+| Method       | `POST`                                   |
+| URL          | `/api/experimental/headless/model/probe` |
+| Content-Type | `application/json`                       |
+| Accept       | 推荐 `application/json`                  |
+
+请求 Cookie：不适用。请求头可选 `X-Trace-Id`。请求体：
+
+```json
+{
+  "mode": "both"
+}
+```
+
+| 字段路径 | 类型   | 必填/默认 | 枚举                               | 说明             |
+| -------- | ------ | --------- | ---------------------------------- | ---------------- |
+| `mode`   | string | 否/`both` | `text`、`function_calling`、`both` | 选择要探测的能力 |
+
+### 12.3 响应定义
+
+成功返回 `200 OK`，响应 Cookie 不适用，响应体只包含安全能力状态，不包含模型文本、请求头或凭据：
+
+```json
+{
+  "data": {
+    "text": "pass",
+    "functionCalling": "pass"
+  }
+}
+```
+
+| 字段路径               | 类型   | 必有/可选 | 枚举             | 说明             |
+| ---------------------- | ------ | --------- | ---------------- | ---------------- |
+| `data.text`            | string | 必有      | `pass`/`skipped` | 文本能力结果     |
+| `data.functionCalling` | string | 必有      | `pass`/`skipped` | 工具调用能力结果 |
+
+| HTTP 状态码 | 错误码                         | 触发条件                     | 调用方处理               |
+| ----------- | ------------------------------ | ---------------------------- | ------------------------ |
+| `400`       | `HEADLESS_INVALID_MODEL_PROBE` | mode 格式不合法              | 修正 mode 后重试         |
+| `401`       | `HEADLESS_MODEL_AUTH_FAILED`   | 上游模型认证失败             | 更新模型凭据后重试       |
+| `503`       | `HEADLESS_MODEL_PROBE_FAILED`  | 未配置、不可达或响应格式无效 | 检查配置、网络后显式重试 |
+
+错误响应统一包含 `errorCode`、`message`、`traceId`，不包含上游原始响应、Token 或堆栈；响应头包含 `X-Trace-Id` 和 `Cache-Control: no-store`。
+
+### 12.4 Complete example
+
+```bash
+curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/model/probe' \
+  --header 'Accept: application/json' \
+  --header 'Content-Type: application/json' \
+  --header 'X-Trace-Id: model_probe_trace_001' \
+  --data '{"mode":"both"}'
+```
+
+真实凭据不通过此接口传入；先使用 `PUT /api/experimental/headless/model` 保存配置，或通过服务端环境变量引用凭据。
