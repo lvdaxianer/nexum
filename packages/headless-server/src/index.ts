@@ -9,8 +9,11 @@ import {
   HeadlessModelConfigError,
   HeadlessPermissionError,
   HeadlessSessionError,
+  createHeadlessConfiguredCodingLoop,
   createHeadlessModelConfigStore,
+  createHeadlessPermissionBroker,
   createHeadlessSessionService,
+  createHeadlessToolRegistry,
   type HeadlessCodingLoop,
   type HeadlessModelConfigStore,
   type HeadlessPermissionBroker,
@@ -53,10 +56,19 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
   const port = options.port ?? DEFAULT_PORT
   const sessionService = options.sessionService ?? createHeadlessSessionService()
-  const codingLoop = options.codingLoop
-  const permissionBroker = options.permissionBroker
   const modelConfigStore = options.modelConfigStore ?? createHeadlessModelConfigStore()
   const eventHub = options.eventHub ?? createHeadlessEventHub()
+  const permissionBroker = options.permissionBroker ?? createHeadlessPermissionBroker()
+  const toolRegistry = createHeadlessToolRegistry({ sessions: sessionService })
+  const codingLoop =
+    options.codingLoop ??
+    createHeadlessConfiguredCodingLoop({
+      modelConfig: modelConfigStore,
+      permission: permissionBroker,
+      sessions: sessionService,
+      tool: toolRegistry.port,
+      events: eventHub,
+    })
   assertPort(port)
 
   const server = Bun.serve({

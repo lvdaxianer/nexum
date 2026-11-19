@@ -12,10 +12,12 @@ import { startHeadlessServer, type HeadlessServer } from "../src/index.ts"
 
 const FORBIDDEN_UI_PACKAGES = ["@opencode/app", "@opencode/tui", "@opencode/desktop", "@opencode/cli"]
 const servers: HeadlessServer[] = []
+const upstreamServers: Array<ReturnType<typeof Bun.serve>> = []
 const temporaryDirectories: string[] = []
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.stop(true)))
+  await Promise.all(upstreamServers.splice(0).map((server) => server.stop(true)))
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
 })
 
@@ -138,6 +140,67 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
   )
   expect(cancelResponse.status).toBe(200)
   expect(await cancelResponse.json()).toEqual({ data: { status: "cancelled" } })
+})
+
+test("composes the default coding loop when no runtime is injected", async () => {
+  const modelRequests: string[] = []
+  const upstream = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      modelRequests.push(await request.text())
+      return Response.json({ choices: [{ message: { content: "default runtime is alive" } }] })
+    },
+  })
+  upstreamServers.push(upstream)
+  const server = await startHeadlessServer({ port: 0 })
+  servers.push(server)
+
+  const modelResponse = await fetch(new URL("/api/experimental/headless/model", server.url), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ baseUrl: upstream.url.toString().replace(/\/$/, ""), model: "poc-model" }),
+  })
+  expect(modelResponse.status).toBe(200)
+
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-default-runtime-"))
+  temporaryDirectories.push(directory)
+  const sessionResponse = await fetch(new URL("/api/experimental/headless/session", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ directory }),
+  })
+  const sessionBody = (await sessionResponse.json()) as { data: { id: string } }
+  const eventsResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${sessionBody.data.id}/events`, server.url),
+  )
+  const reader = eventsResponse.body?.getReader()
+  if (!reader) throw new Error("SSE 响应缺少可读流")
+  await reader.read()
+
+  const promptResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${sessionBody.data.id}/prompt`, server.url),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "请输出运行状态" }),
+    },
+  )
+  expect(promptResponse.status).toBe(200)
+
+  let eventText = ""
+  const decoder = new TextDecoder()
+  for (let attempt = 0; attempt < 4 && !eventText.includes('"type":"session.completed"'); attempt++) {
+    const event = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("默认 Runtime 事件读取超时")), 1_000)),
+    ])
+    eventText += decoder.decode(event.value)
+  }
+  expect(eventText).toContain('"type":"assistant.text"')
+  expect(eventText).toContain("default runtime is alive")
+  expect(eventText).toContain('"type":"session.completed"')
+  expect(modelRequests).toHaveLength(1)
+  await reader.cancel()
 })
 
 test("streams ordered session events over SSE", async () => {
