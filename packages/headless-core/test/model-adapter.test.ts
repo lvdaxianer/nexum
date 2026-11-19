@@ -43,4 +43,9 @@ test("returns a safe authentication error without provider fallback", async () =
 
   await expect(collect(model)).rejects.toMatchObject({ code: "authentication_failed" })
   await expect(collect(model)).rejects.toThrow("模型认证失败")
+  try {
+    await collect(model)
+  } catch (error) {
+    expect(String(error)).not.toContain("super-secret-value")
+  }
 })
