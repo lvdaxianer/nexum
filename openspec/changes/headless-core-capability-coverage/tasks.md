@@ -24,7 +24,7 @@
 ## 5. 真实模型 Smoke 与交付
 
 - [x] 5.1 增加安全的真实 OpenAI-compatible smoke 命令，从环境变量读取 Base URL、Model 和 API Key，覆盖无工具响应与 Function Calling 响应并禁止把凭据写入仓库
-- [ ] 5.2 运行 Core/Server/UI/Protocol/Client 全量验证、OpenSpec strict validate、格式和密钥审计，更新启动/API/能力验收文档并完成最终集成
+- [x] 5.2 运行 Core/Server/UI/Protocol/Client 全量验证、OpenSpec strict validate、格式和密钥审计，更新启动/API/能力验收文档并完成最终集成
 
 ## Workflow follow-up
 
