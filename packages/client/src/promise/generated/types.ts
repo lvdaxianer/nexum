@@ -3375,6 +3375,14 @@ export type VcsInitNotSupportedError = {
 export const isVcsInitNotSupportedError = (value: unknown): value is VcsInitNotSupportedError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "VcsInitNotSupportedError"
 
+export type QuestionNotFoundError = {
+  readonly _tag: "QuestionNotFoundError"
+  readonly requestID: string
+  readonly message: string
+}
+export const isQuestionNotFoundError = (value: unknown): value is QuestionNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "QuestionNotFoundError"
+
 export type ServerInfoOutput = ServerInfo
 
 export type ServerPairOutput = PairingCode
@@ -4982,6 +4990,34 @@ export type ExperimentalHeadlessSessionPromptInput = { readonly sessionID: strin
 
 export type ExperimentalHeadlessSessionPromptOutput = { data: { status: "accepted" } }["data"]
 
+export type ExperimentalHeadlessSessionQuestionListInput = { readonly sessionID: string }
+
+export type ExperimentalHeadlessSessionQuestionListOutput = {
+  data: Array<{
+    id: string
+    sessionID: string
+    toolCallID: string
+    questions: Array<{
+      header: string
+      question: string
+      options: Array<{ label: string; description: string }>
+      multiple?: boolean | undefined
+    }>
+  }>
+}["data"]
+
+export type ExperimentalHeadlessSessionQuestionReplyInput = {
+  readonly sessionID: string
+  readonly requestID: string
+  readonly answers: ReadonlyArray<ReadonlyArray<string>>
+}
+
+export type ExperimentalHeadlessSessionQuestionReplyOutput = { data: { status: "answered" } }["data"]
+
+export type ExperimentalHeadlessSessionQuestionCancelInput = { readonly sessionID: string; readonly requestID: string }
+
+export type ExperimentalHeadlessSessionQuestionCancelOutput = { data: { status: "cancelled" } }["data"]
+
 export type ExperimentalHeadlessSessionCancelInput = { readonly sessionID: string }
 
 export type ExperimentalHeadlessSessionCancelOutput = { data: { status: "cancelled" } }["data"]
@@ -4989,7 +5025,19 @@ export type ExperimentalHeadlessSessionCancelOutput = { data: { status: "cancell
 export type ExperimentalHeadlessSessionEventsInput = { readonly sessionID: string }
 
 export type ExperimentalHeadlessSessionEventsOutput = {
-  type: string
+  type:
+    | "assistant.text"
+    | "tool.request"
+    | "tool.result"
+    | "question.request"
+    | "question.result"
+    | "question.cancelled"
+    | "context.compaction.started"
+    | "context.compaction.completed"
+    | "context.compaction.failed"
+    | "session.completed"
+    | "session.failed"
+    | "session.cancelled"
   sessionID: string
   sequence: number
   data?: { [x: string]: JsonValue } | undefined

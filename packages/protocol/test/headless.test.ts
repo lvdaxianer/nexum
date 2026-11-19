@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
+import { Schema } from "effect"
 import { OpenApi } from "effect/http-api"
 import { ClientApi } from "../src/client.js"
+import { HeadlessContextCompactionEventData, HeadlessQuestionRequest } from "../src/groups/headless.js"
 
 const expectedRoutes = [
   "/api/experimental/headless/session",
@@ -9,6 +11,9 @@ const expectedRoutes = [
   "/api/experimental/headless/session/{sessionID}/events",
   "/api/experimental/headless/session/{sessionID}/permission",
   "/api/experimental/headless/session/{sessionID}/permission/{requestID}/reply",
+  "/api/experimental/headless/session/{sessionID}/question",
+  "/api/experimental/headless/session/{sessionID}/question/{requestID}/reply",
+  "/api/experimental/headless/session/{sessionID}/question/{requestID}/cancel",
   "/api/experimental/headless/model",
 ]
 
@@ -37,8 +42,34 @@ test("headless protocol operations remain experimental", () => {
       "experimental.headless.session.events",
       "experimental.headless.session.permission.list",
       "experimental.headless.session.permission.reply",
+      "experimental.headless.session.question.list",
+      "experimental.headless.session.question.reply",
+      "experimental.headless.session.question.cancel",
       "experimental.headless.model.get",
       "experimental.headless.model.update",
     ]),
   )
+})
+
+test("headless protocol decodes structured questions and compaction status", () => {
+  const question = Schema.decodeUnknownSync(HeadlessQuestionRequest)({
+    id: "question_001",
+    sessionID: "session_001",
+    toolCallID: "call_question_001",
+    questions: [
+      {
+        header: "目录",
+        question: "选择目录",
+        options: [{ label: "src", description: "源代码目录" }],
+      },
+    ],
+  })
+  const compaction = Schema.decodeUnknownSync(HeadlessContextCompactionEventData)({
+    status: "completed",
+    summaryLength: 12,
+    keptMessages: 3,
+  })
+
+  expect(question.questions[0]?.options[0]?.label).toBe("src")
+  expect(compaction).toMatchObject({ status: "completed", summaryLength: 12, keptMessages: 3 })
 })

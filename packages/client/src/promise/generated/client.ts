@@ -333,6 +333,12 @@ import type {
   ExperimentalHeadlessSessionCreateOutput,
   ExperimentalHeadlessSessionPromptInput,
   ExperimentalHeadlessSessionPromptOutput,
+  ExperimentalHeadlessSessionQuestionListInput,
+  ExperimentalHeadlessSessionQuestionListOutput,
+  ExperimentalHeadlessSessionQuestionReplyInput,
+  ExperimentalHeadlessSessionQuestionReplyOutput,
+  ExperimentalHeadlessSessionQuestionCancelInput,
+  ExperimentalHeadlessSessionQuestionCancelOutput,
   ExperimentalHeadlessSessionCancelInput,
   ExperimentalHeadlessSessionCancelOutput,
   ExperimentalHeadlessSessionEventsInput,
@@ -1870,6 +1876,42 @@ export function make(options: ClientOptions) {
               },
               requestOptions,
             ).then((value) => value.data),
+          question: {
+            list: (input: ExperimentalHeadlessSessionQuestionListInput, requestOptions?: RequestOptions) =>
+              request<{ readonly data: ExperimentalHeadlessSessionQuestionListOutput }>(
+                {
+                  method: "GET",
+                  path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/question`,
+                  successStatus: 200,
+                  declaredStatuses: [404],
+                  empty: false,
+                },
+                requestOptions,
+              ).then((value) => value.data),
+            reply: (input: ExperimentalHeadlessSessionQuestionReplyInput, requestOptions?: RequestOptions) =>
+              request<{ readonly data: ExperimentalHeadlessSessionQuestionReplyOutput }>(
+                {
+                  method: "POST",
+                  path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/question/${encodeURIComponent(input.requestID)}/reply`,
+                  body: { answers: input["answers"] },
+                  successStatus: 200,
+                  declaredStatuses: [400, 404],
+                  empty: false,
+                },
+                requestOptions,
+              ).then((value) => value.data),
+            cancel: (input: ExperimentalHeadlessSessionQuestionCancelInput, requestOptions?: RequestOptions) =>
+              request<{ readonly data: ExperimentalHeadlessSessionQuestionCancelOutput }>(
+                {
+                  method: "POST",
+                  path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/question/${encodeURIComponent(input.requestID)}/cancel`,
+                  successStatus: 200,
+                  declaredStatuses: [404],
+                  empty: false,
+                },
+                requestOptions,
+              ).then((value) => value.data),
+          },
           cancel: (input: ExperimentalHeadlessSessionCancelInput, requestOptions?: RequestOptions) =>
             request<{ readonly data: ExperimentalHeadlessSessionCancelOutput }>(
               {
