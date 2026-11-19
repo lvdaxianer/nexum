@@ -13,10 +13,36 @@ import { redactHeadlessSensitiveValue } from "./permission.js"
 import { normalizeHeadlessToolRequest } from "./tools.js"
 
 /** Agent 请求模型生成时携带的最小输入。 */
+export interface ModelToolDefinition {
+  readonly name: string
+  readonly description: string
+  readonly parameters: Record<string, unknown>
+}
+
+/** 模型响应中的工具调用。 */
+export interface ModelToolCall {
+  readonly id: string
+  readonly name: string
+  readonly input: Record<string, unknown>
+}
+
+/** OpenAI-compatible Chat Completions 消息的内部表示。 */
+export type ModelMessage =
+  | { readonly role: "user"; readonly content: string }
+  | {
+      readonly role: "assistant"
+      readonly content?: string
+      readonly toolCalls?: readonly ModelToolCall[]
+    }
+  | { readonly role: "tool"; readonly toolCallID: string; readonly content: string }
+
+/** Agent 请求模型生成时携带的最小输入。 */
 export interface ModelPrompt {
   readonly sessionID: string
   readonly text: string
   readonly toolResults?: readonly ToolResult[]
+  readonly messages?: readonly ModelMessage[]
+  readonly tools?: readonly ModelToolDefinition[]
   readonly signal?: AbortSignal
 }
 
@@ -24,8 +50,10 @@ export interface ModelPrompt {
 export interface ModelChunk {
   readonly type: "text" | "tool-call" | "completed"
   readonly content?: string
+  readonly toolCallID?: string
   readonly toolName?: string
   readonly toolInput?: Record<string, unknown>
+  readonly toolCalls?: readonly ModelToolCall[]
 }
 
 /** 模型端口负责产生 Agent 下一步所需的增量结果。 */
@@ -46,6 +74,7 @@ export interface ToolRequest {
 export interface ToolResult {
   readonly ok: boolean
   readonly output: string
+  readonly toolCallID?: string
 }
 
 /** 工具端口负责执行已经通过权限判断的工具调用。 */
@@ -235,6 +264,7 @@ export interface HeadlessCodingLoopOptions {
   readonly permission: PermissionPort
   readonly sessions: HeadlessSessionService
   readonly events: EventSink
+  readonly tools?: readonly ModelToolDefinition[]
   readonly maxSteps?: number
 }
 
@@ -275,7 +305,13 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
       const runState: ActiveRun = { controller: new AbortController(), cancelled: false }
       activeRuns.set(input.sessionID, runState)
       let sequence = 0
-      let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text }
+      let messages: ModelMessage[] = [{ role: "user", content: input.text }]
+      let prompt: ModelPrompt = {
+        sessionID: input.sessionID,
+        text: input.text,
+        messages,
+        ...(options.tools ? { tools: options.tools } : {}),
+      }
 
       const publish = async (type: string, data?: Record<string, unknown>) => {
         await options.events.publish({ sessionID: input.sessionID, type, sequence: ++sequence, data })
@@ -297,20 +333,42 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
               return completed
             }
 
-            const request = makeToolRequest(input.sessionID, chunk)
-            await publish("tool.request", {
-              action: request.action,
-              resource: redactHeadlessSensitiveValue(request.resource) as string,
-              toolName: request.toolName,
-              input: redactHeadlessSensitiveValue(request.input) as Record<string, unknown>,
-            })
-            const effect = await options.permission.evaluate(request)
-            if (effect !== "allow") {
-              throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
+            const toolCalls = chunk.toolCalls ?? [legacyToolCall(chunk)]
+            messages = [
+              ...messages,
+              {
+                role: "assistant",
+                toolCalls,
+              },
+            ]
+            const toolResults: ToolResult[] = []
+            for (const toolCall of toolCalls) {
+              const request = makeToolRequest(input.sessionID, toolCall)
+              const toolCallID = toolCall.id
+              await publish("tool.request", {
+                toolCallID,
+                action: request.action,
+                resource: redactHeadlessSensitiveValue(request.resource) as string,
+                toolName: request.toolName,
+                input: redactHeadlessSensitiveValue(request.input) as Record<string, unknown>,
+              })
+              const effect = await options.permission.evaluate(request)
+              if (effect !== "allow") {
+                throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
+              }
+              const result = await options.tool.execute(request)
+              const toolResult = { ...result, toolCallID }
+              toolResults.push(toolResult)
+              await publish("tool.result", { toolCallID, ok: result.ok, output: result.output })
+              messages = [...messages, { role: "tool", toolCallID, content: result.output }]
             }
-            const result = await options.tool.execute(request)
-            await publish("tool.result", { ok: result.ok, output: result.output })
-            prompt = { sessionID: input.sessionID, text: input.text, toolResults: [result] }
+            prompt = {
+              sessionID: input.sessionID,
+              text: input.text,
+              toolResults,
+              messages,
+              ...(options.tools ? { tools: options.tools } : {}),
+            }
             continued = true
             break
           }
@@ -390,9 +448,18 @@ function throwIfCancelled(run: ActiveRun): void {
 }
 
 /** 从模型增量构造规范化工具请求。 */
-function makeToolRequest(sessionID: string, chunk: ModelChunk): ToolRequest {
+function makeToolRequest(sessionID: string, toolCall: ModelToolCall): ToolRequest {
+  return normalizeHeadlessToolRequest(sessionID, toolCall.name, toolCall.input)
+}
+
+/** 兼容旧的单工具增量格式。 */
+function legacyToolCall(chunk: ModelChunk): ModelToolCall {
   if (!chunk.toolName) throw new Error("模型返回了缺少名称的工具请求")
-  return normalizeHeadlessToolRequest(sessionID, chunk.toolName, chunk.toolInput ?? {})
+  return {
+    id: chunk.toolCallID ?? crypto.randomUUID(),
+    name: chunk.toolName,
+    input: chunk.toolInput ?? {},
+  }
 }
 
 /** 把未知错误转换为可安全发布到事件流的消息。 */

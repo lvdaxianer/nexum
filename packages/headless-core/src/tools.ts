@@ -7,7 +7,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { isAbsolute, relative, resolve, sep } from "node:path"
-import type { HeadlessSessionService, ToolPort, ToolRequest, ToolResult } from "./index.js"
+import type { HeadlessSessionService, ModelToolDefinition, ToolPort, ToolRequest, ToolResult } from "./index.js"
 
 /** POC 首期内置工具名称。 */
 export type HeadlessBuiltinToolName = "read" | "write" | "edit" | "shell"
@@ -20,6 +20,7 @@ export interface HeadlessToolRegistryOptions {
 /** 内置工具注册表和统一执行端口。 */
 export interface HeadlessToolRegistry {
   readonly names: readonly HeadlessBuiltinToolName[]
+  readonly definitions: readonly ModelToolDefinition[]
   readonly port: ToolPort
 }
 
@@ -60,9 +61,58 @@ export function normalizeHeadlessToolRequest(
  */
 export function createHeadlessToolRegistry(options: HeadlessToolRegistryOptions): HeadlessToolRegistry {
   const names: readonly HeadlessBuiltinToolName[] = ["read", "write", "edit", "shell"]
+  const definitions: readonly ModelToolDefinition[] = [
+    {
+      name: "read",
+      description: "读取 Session 工作目录内的文本文件",
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string", description: "相对于工作目录的文件路径" } },
+        required: ["path"],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "write",
+      description: "写入 Session 工作目录内的文本文件",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "相对于工作目录的文件路径" },
+          content: { type: "string", description: "要写入的文本" },
+        },
+        required: ["path", "content"],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "edit",
+      description: "覆盖写入 Session 工作目录内的文本文件",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "相对于工作目录的文件路径" },
+          content: { type: "string", description: "更新后的文本" },
+        },
+        required: ["path", "content"],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "shell",
+      description: "在 Session 工作目录内执行受权限保护的 shell 命令",
+      parameters: {
+        type: "object",
+        properties: { command: { type: "string", description: "要执行的 shell 命令" } },
+        required: ["command"],
+        additionalProperties: false,
+      },
+    },
+  ]
 
   return {
     names,
+    definitions,
     port: {
       execute: async (request) => {
         const session = await options.sessions.get(request.sessionID)

@@ -73,3 +73,97 @@ test("runs model text, tool request, tool result, continuation, and completion i
   expect(events[2]?.data).toMatchObject({ ok: true, output: "README 内容" })
   expect(permissionRequests[0]).toMatchObject({ action: "read", resource: "README.md" })
 })
+
+test("continues the model conversation with the assistant tool call and tool result", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-loop-conversation-"))
+  temporaryDirectories.push(directory)
+  const sessions = createHeadlessSessionService()
+  const session = await sessions.create({ directory })
+  const prompts: Array<Parameters<ModelPort["prompt"]>[0]> = []
+  let callCount = 0
+
+  const model: ModelPort = {
+    async *prompt(input) {
+      prompts.push(input)
+      callCount += 1
+      if (callCount === 1) {
+        yield {
+          type: "tool-call",
+          toolCallID: "call_read_001",
+          toolName: "read",
+          toolInput: { path: "README.md" },
+        }
+        return
+      }
+      yield { type: "completed" }
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "README 内容" }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const events: EventSink = { async publish() {} }
+
+  await createHeadlessCodingLoop({ model, tool, permission, sessions, events }).run({
+    sessionID: session.sessionID,
+    text: "请读取 README.md",
+  })
+
+  expect(prompts[1]?.messages).toEqual([
+    { role: "user", content: "请读取 README.md" },
+    {
+      role: "assistant",
+      toolCalls: [{ id: "call_read_001", name: "read", input: { path: "README.md" } }],
+    },
+    { role: "tool", toolCallID: "call_read_001", content: "README 内容" },
+  ])
+})
+
+test("executes every tool call in one assistant response before continuing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-loop-multi-tool-"))
+  temporaryDirectories.push(directory)
+  const sessions = createHeadlessSessionService()
+  const session = await sessions.create({ directory })
+  const executedTools: string[] = []
+
+  const model: ModelPort = {
+    async *prompt(input) {
+      if (!input.messages?.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool-call",
+          toolCalls: [
+            { id: "call_read_001", name: "read", input: { path: "README.md" } },
+            { id: "call_read_002", name: "read", input: { path: "package.json" } },
+          ],
+        } as never
+        return
+      }
+      yield { type: "completed" }
+    },
+  }
+  const tool: ToolPort = {
+    async execute(request) {
+      executedTools.push(request.toolName)
+      return { ok: true, output: request.resource }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const events: EventSink = { async publish() {} }
+
+  await createHeadlessCodingLoop({ model, tool, permission, sessions, events }).run({
+    sessionID: session.sessionID,
+    text: "请读取两个文件",
+  })
+
+  expect(executedTools).toEqual(["read", "read"])
+})

@@ -23,6 +23,7 @@ import { createHeadlessEventHub, type HeadlessEventHub } from "./events.ts"
 
 const DEFAULT_HOSTNAME = "127.0.0.1"
 const DEFAULT_PORT = 4097
+const DEFAULT_CORS_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"] as const
 const TRACE_ID_HEADER = "x-trace-id"
 const TRACE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 
@@ -35,6 +36,8 @@ export interface HeadlessServerOptions {
   readonly permissionBroker?: HeadlessPermissionBroker
   readonly modelConfigStore?: HeadlessModelConfigStore
   readonly eventHub?: HeadlessEventHub
+  readonly corsOrigins?: readonly string[]
+  readonly idleTimeout?: number
 }
 
 /** 已启动的 Headless Service 控制句柄。 */
@@ -60,6 +63,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
   const eventHub = options.eventHub ?? createHeadlessEventHub()
   const permissionBroker = options.permissionBroker ?? createHeadlessPermissionBroker()
   const toolRegistry = createHeadlessToolRegistry({ sessions: sessionService })
+  const corsOrigins = options.corsOrigins ?? DEFAULT_CORS_ORIGINS
   const codingLoop =
     options.codingLoop ??
     createHeadlessConfiguredCodingLoop({
@@ -68,20 +72,63 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
       sessions: sessionService,
       tool: toolRegistry.port,
       events: eventHub,
+      tools: toolRegistry.definitions,
     })
   assertPort(port)
 
   const server = Bun.serve({
     hostname,
     port,
-    fetch: (request) =>
-      handleRequest(request, sessionService, eventHub, codingLoop, permissionBroker, modelConfigStore),
+    idleTimeout: options.idleTimeout ?? 0,
+    fetch: async (request) => {
+      if (request.method === "OPTIONS") return corsPreflight(request, corsOrigins)
+      const response = await handleRequest(
+        request,
+        sessionService,
+        eventHub,
+        codingLoop,
+        permissionBroker,
+        modelConfigStore,
+      )
+      return withCorsHeaders(response, request, corsOrigins)
+    },
   })
 
   return {
     url: server.url,
     stop: (closeActiveConnections = false) => server.stop(closeActiveConnections),
   }
+}
+
+function corsPreflight(request: Request, origins: readonly string[]): Response {
+  const origin = request.headers.get("origin")
+  if (!origin || !isAllowedOrigin(origin, origins)) {
+    return errorResponse(
+      403,
+      "HEADLESS_CORS_ORIGIN_NOT_ALLOWED",
+      "请求来源不被允许",
+      traceIdFrom(request.headers.get(TRACE_ID_HEADER)),
+    )
+  }
+  const response = new Response(null, { status: 204 })
+  return withCorsHeaders(response, request, origins)
+}
+
+function withCorsHeaders(response: Response, request: Request, origins: readonly string[]): Response {
+  const headers = new Headers(response.headers)
+  const origin = request.headers.get("origin")
+  headers.set("vary", "origin")
+  if (origin && isAllowedOrigin(origin, origins)) {
+    headers.set("access-control-allow-origin", origin)
+    headers.set("access-control-allow-methods", "GET, POST, PUT, OPTIONS")
+    headers.set("access-control-allow-headers", "content-type, x-trace-id")
+    headers.set("access-control-max-age", "300")
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+}
+
+function isAllowedOrigin(origin: string, origins: readonly string[]): boolean {
+  return origins.some((allowedOrigin) => allowedOrigin.trim() === origin)
 }
 
 /**
@@ -263,6 +310,7 @@ async function streamEvents(
 
   const encoder = new TextEncoder()
   const iterator = eventHub.subscribe(sessionID)[Symbol.asyncIterator]()
+  let closed = false
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(encoder.encode(": headless-events-connected\n\n"))
@@ -270,15 +318,19 @@ async function streamEvents(
         try {
           while (true) {
             const next = await iterator.next()
-            if (next.done) return
+            if (next.done || closed) return
             controller.enqueue(encoder.encode(`id: ${next.value.sequence}\ndata: ${JSON.stringify(next.value)}\n\n`))
           }
         } catch {
-          controller.close()
+          if (!closed) {
+            closed = true
+            controller.close()
+          }
         }
       })()
     },
     cancel() {
+      closed = true
       void iterator.return?.()
     },
   })

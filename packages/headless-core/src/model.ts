@@ -6,7 +6,7 @@
  */
 
 import type { HeadlessModelConfigStore } from "./model-config.js"
-import type { ModelPort } from "./index.js"
+import type { ModelMessage, ModelPort, ModelPrompt } from "./index.js"
 
 /** 模型请求失败的稳定错误码。 */
 export type HeadlessModelErrorCode = "not_configured" | "authentication_failed" | "unavailable" | "invalid_response"
@@ -59,14 +59,7 @@ export function createOpenAICompatibleModelPort(options: OpenAICompatibleModelPo
         response = await fetcher(`${config.baseUrl}/chat/completions`, {
           method: "POST",
           headers,
-          body: JSON.stringify({
-            model: config.model,
-            stream: false,
-            messages: [
-              { role: "user", content: input.text },
-              ...(input.toolResults ?? []).map((result) => ({ role: "tool", content: result.output })),
-            ],
-          }),
+          body: JSON.stringify(createChatCompletionBody(config.model, input)),
           signal: input.signal,
         })
       } catch {
@@ -80,14 +73,79 @@ export function createOpenAICompatibleModelPort(options: OpenAICompatibleModelPo
         throw new HeadlessModelError("unavailable", "模型服务请求失败")
       }
 
-      const content = await readModelContent(response)
-      if (content !== undefined) yield { type: "text", content }
+      const result = await readModelResult(response)
+      if (result.content !== undefined) yield { type: "text", content: result.content }
+      if (result.toolCalls.length > 0) {
+        const first = result.toolCalls[0]
+        yield {
+          type: "tool-call",
+          toolCalls: result.toolCalls,
+          ...(result.toolCalls.length === 1
+            ? { toolCallID: first.id, toolName: first.name, toolInput: first.input }
+            : {}),
+        }
+        return
+      }
       yield { type: "completed" }
     },
   }
 }
 
-async function readModelContent(response: Response): Promise<string | undefined> {
+function createChatCompletionBody(model: string, input: ModelPrompt): Record<string, unknown> {
+  const messages = input.messages?.map(serializeMessage) ?? [
+    { role: "user", content: input.text },
+    ...(input.toolResults ?? []).map((result, index) => ({
+      role: "tool",
+      tool_call_id: result.toolCallID ?? `tool-result-${index + 1}`,
+      content: result.output,
+    })),
+  ]
+  return {
+    model,
+    stream: false,
+    messages,
+    ...(input.tools && input.tools.length > 0
+      ? {
+          tools: input.tools.map((tool) => ({
+            type: "function",
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            },
+          })),
+          tool_choice: "auto",
+        }
+      : {}),
+  }
+}
+
+function serializeMessage(message: ModelMessage): Record<string, unknown> {
+  if (message.role === "user") return { role: "user", content: message.content }
+  if (message.role === "tool") {
+    return { role: "tool", tool_call_id: message.toolCallID, content: message.content }
+  }
+  return {
+    role: "assistant",
+    ...(message.content !== undefined ? { content: message.content } : { content: null }),
+    ...(message.toolCalls
+      ? {
+          tool_calls: message.toolCalls.map((toolCall) => ({
+            id: toolCall.id,
+            type: "function",
+            function: { name: toolCall.name, arguments: JSON.stringify(toolCall.input) },
+          })),
+        }
+      : {}),
+  }
+}
+
+interface ModelResult {
+  readonly content?: string
+  readonly toolCalls: readonly { id: string; name: string; input: Record<string, unknown> }[]
+}
+
+async function readModelResult(response: Response): Promise<ModelResult> {
   let body: unknown
   try {
     body = await response.json()
@@ -101,7 +159,28 @@ async function readModelContent(response: Response): Promise<string | undefined>
   if (!isRecord(first) || !isRecord(first.message)) {
     throw new HeadlessModelError("invalid_response", "模型响应格式无效")
   }
-  return typeof first.message.content === "string" ? first.message.content : undefined
+  const content = typeof first.message.content === "string" ? first.message.content : undefined
+  const rawToolCalls = first.message.tool_calls
+  if (rawToolCalls === undefined) return { content, toolCalls: [] }
+  if (!Array.isArray(rawToolCalls)) throw new HeadlessModelError("invalid_response", "模型工具调用格式无效")
+
+  const toolCalls = rawToolCalls.map((rawToolCall) => {
+    if (!isRecord(rawToolCall) || typeof rawToolCall.id !== "string" || !isRecord(rawToolCall.function)) {
+      throw new HeadlessModelError("invalid_response", "模型工具调用格式无效")
+    }
+    if (typeof rawToolCall.function.name !== "string") {
+      throw new HeadlessModelError("invalid_response", "模型工具调用名称无效")
+    }
+    const rawArguments = rawToolCall.function.arguments
+    try {
+      const input = typeof rawArguments === "string" ? JSON.parse(rawArguments) : rawArguments
+      if (!isRecord(input)) throw new Error()
+      return { id: rawToolCall.id, name: rawToolCall.function.name, input }
+    } catch {
+      throw new HeadlessModelError("invalid_response", "模型工具调用参数无效")
+    }
+  })
+  return { content, toolCalls }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
