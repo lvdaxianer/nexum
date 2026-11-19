@@ -4,11 +4,14 @@ import { OpenCode } from "@opencode/client"
 import type {
   ExperimentalHeadlessSessionEventsOutput,
   ExperimentalHeadlessSessionPermissionListOutput,
+  ExperimentalHeadlessSessionQuestionListOutput,
 } from "@opencode/client"
 import "./styles.css"
 
 type TimelineEvent = ExperimentalHeadlessSessionEventsOutput & { localTime: string }
 type PermissionRequest = ExperimentalHeadlessSessionPermissionListOutput[number]
+type QuestionRequest = ExperimentalHeadlessSessionQuestionListOutput[number]
+type ContextSource = { sourceID: string; kind: string; path: string }
 
 const apiBaseUrl = import.meta.env.VITE_HEADLESS_API_URL ?? "http://127.0.0.1:4097"
 const client = OpenCode.make({ baseUrl: apiBaseUrl })
@@ -24,6 +27,10 @@ function App() {
   const [sessionStatus, setSessionStatus] = createSignal("no session")
   const [events, setEvents] = createSignal<TimelineEvent[]>([])
   const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
+  const [questions, setQuestions] = createSignal<QuestionRequest[]>([])
+  const [questionAnswers, setQuestionAnswers] = createSignal<Record<string, string[][]>>({})
+  const [compactionStatus, setCompactionStatus] = createSignal("idle")
+  const [contextSources, setContextSources] = createSignal<ContextSource[]>([])
   const [busy, setBusy] = createSignal(false)
   const [notice, setNotice] = createSignal("Ready for a headless run.")
   const [connected, setConnected] = createSignal(false)
@@ -72,6 +79,10 @@ function App() {
       setSessionStatus(created.status)
       setEvents([])
       setPermissions([])
+      setQuestions([])
+      setQuestionAnswers({})
+      setCompactionStatus("idle")
+      setContextSources([])
       connectEvents(created.id)
       setNotice(`Session ${created.id.slice(0, 8)} is waiting for a prompt.`)
     } catch (error) {
@@ -99,7 +110,16 @@ function App() {
         if (event.type === "session.failed") setSessionStatus("failed")
         if (event.type === "session.cancelled") setSessionStatus("cancelled")
         if (event.type === "tool.request") setSessionStatus("awaiting permission")
+        if (event.type === "question.request") {
+          setSessionStatus("awaiting question")
+          void refreshQuestions(id)
+        }
+        if (event.type === "question.result" || event.type === "question.cancelled") void refreshQuestions(id)
         if (event.type === "tool.result" || event.type === "assistant.text") setSessionStatus("running")
+        if (event.type === "context.compaction.started") setCompactionStatus("compressing")
+        if (event.type === "context.compaction.completed") setCompactionStatus("completed")
+        if (event.type === "context.compaction.failed") setCompactionStatus("failed")
+        if (event.type === "context.project.loaded") setContextSources(sourcesFromEvent(event.data))
         void refreshPermissions(id)
       }
     } catch (error) {
@@ -115,6 +135,64 @@ function App() {
       setPermissions(await client.experimental.headless.session.permission.list({ sessionID: id }))
     } catch {
       // A missing permission endpoint should not break the event timeline.
+    }
+  }
+
+  async function refreshQuestions(id = sessionID()) {
+    if (!id) return
+    try {
+      setQuestions(await client.experimental.headless.session.question.list({ sessionID: id }))
+    } catch {
+      // A missing Question endpoint should not break the event timeline.
+    }
+  }
+
+  function chooseAnswer(request: QuestionRequest, questionIndex: number, label: string) {
+    const answers = questionAnswers()[request.id] ?? request.questions.map(() => [])
+    const current = answers[questionIndex] ?? []
+    const question = request.questions[questionIndex]
+    const next = question?.multiple
+      ? current.includes(label)
+        ? current.filter((value) => value !== label)
+        : [...current, label]
+      : [label]
+    setQuestionAnswers({
+      ...questionAnswers(),
+      [request.id]: answers.map((value, index) => (index === questionIndex ? next : value)),
+    })
+  }
+
+  function answerSelected(requestID: string, questionIndex: number, label: string) {
+    return questionAnswers()[requestID]?.[questionIndex]?.includes(label) ?? false
+  }
+
+  async function replyQuestion(request: QuestionRequest) {
+    if (!sessionID()) return
+    setBusy(true)
+    try {
+      const answers = questionAnswers()[request.id] ?? request.questions.map(() => [])
+      await client.experimental.headless.session.question.reply({
+        sessionID: sessionID(),
+        requestID: request.id,
+        answers,
+      })
+      await refreshQuestions()
+      setNotice("Question answered. Runtime is continuing.")
+    } catch (error) {
+      setNotice(messageFrom(error, "Question reply failed."))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function cancelQuestion(requestID: string) {
+    if (!sessionID()) return
+    try {
+      await client.experimental.headless.session.question.cancel({ sessionID: sessionID(), requestID })
+      await refreshQuestions()
+      setNotice("Question cancelled. No answer was fabricated.")
+    } catch (error) {
+      setNotice(messageFrom(error, "Question cancellation failed."))
     }
   }
 
@@ -333,9 +411,87 @@ function App() {
         </section>
       </section>
 
-      <section class="permission-strip">
+      <section class="question-strip">
         <div class="permission-title">
           <span class="panel-index">04</span>
+          <div>
+            <h3>User input queue</h3>
+            <p>Questions pause the runtime until every answer is explicit.</p>
+          </div>
+        </div>
+        <Show when={questions().length > 0} fallback={<span class="queue-empty">No pending questions</span>}>
+          <div class="question-list">
+            <For each={questions()}>
+              {(request) => (
+                <article class="question-card">
+                  <div class="question-card-head">
+                    <span class="permission-action">{request.id}</span>
+                    <button class="text-button" onClick={() => cancelQuestion(request.id)}>
+                      Cancel question
+                    </button>
+                  </div>
+                  <For each={request.questions}>
+                    {(question, questionIndex) => (
+                      <div class="question-block">
+                        <strong>{question.question}</strong>
+                        <div class="answer-options">
+                          <For each={question.options}>
+                            {(option) => (
+                              <button
+                                class={`answer-option ${answerSelected(request.id, questionIndex(), option.label) ? "is-selected" : ""}`}
+                                aria-pressed={answerSelected(request.id, questionIndex(), option.label)}
+                                onClick={() => chooseAnswer(request, questionIndex(), option.label)}
+                              >
+                                <span>{option.label}</span>
+                                <small>{option.description}</small>
+                              </button>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                    )}
+                  </For>
+                  <button class="primary-button" disabled={busy()} onClick={() => replyQuestion(request)}>
+                    Submit answers
+                  </button>
+                </article>
+              )}
+            </For>
+          </div>
+        </Show>
+      </section>
+
+      <section class="context-strip">
+        <div class="context-card">
+          <span class="panel-index">05</span>
+          <div>
+            <h3>Context compaction</h3>
+            <p class="context-value">{compactionStatus()}</p>
+          </div>
+        </div>
+        <div class="context-card context-sources">
+          <span class="panel-index">06</span>
+          <div>
+            <h3>Project context sources</h3>
+            <Show when={contextSources().length > 0} fallback={<p class="context-value">Waiting for Core sources</p>}>
+              <div class="source-list">
+                <For each={contextSources()}>
+                  {(source) => (
+                    <div class="source-row">
+                      <span>{source.kind}</span>
+                      <code>{source.path}</code>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
+        </div>
+      </section>
+
+      <section class="permission-strip">
+        <div class="permission-title">
+          <span class="panel-index">07</span>
           <div>
             <h3>Permission queue</h3>
             <p>Nothing executes without an explicit decision.</p>
@@ -386,6 +542,17 @@ function App() {
 
 function messageFrom(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
+}
+
+function sourcesFromEvent(data: unknown): ContextSource[] {
+  if (!data || typeof data !== "object" || !Array.isArray((data as { sources?: unknown }).sources)) return []
+  return (data as { sources: unknown[] }).sources.filter(isContextSource)
+}
+
+function isContextSource(value: unknown): value is ContextSource {
+  if (!value || typeof value !== "object") return false
+  const source = value as Record<string, unknown>
+  return typeof source.sourceID === "string" && typeof source.kind === "string" && typeof source.path === "string"
 }
 
 export default App

@@ -49,6 +49,7 @@ test("restores project context after compaction before the next model step", asy
   const sessions = createHeadlessSessionService()
   const session = await sessions.create({ directory })
   const prompts: Array<Parameters<ModelPort["prompt"]>[0]> = []
+  const eventTypes: string[] = []
   let step = 0
   const context = createHeadlessProjectContextPort({
     sources: [{ sourceID: "instruction:project", kind: "instruction", path: "AGENTS.md" }],
@@ -81,7 +82,11 @@ test("restores project context after compaction before the next model step", asy
       return "allow"
     },
   }
-  const events: EventSink = { async publish() {} }
+  const events: EventSink = {
+    async publish(event) {
+      eventTypes.push(event.type)
+    },
+  }
 
   await createHeadlessCodingLoop({
     model,
@@ -105,5 +110,14 @@ test("restores project context after compaction before the next model step", asy
   expect(prompts[1]?.messages?.filter((message) => message.role === "system")).toEqual([
     { role: "system", content: "Context summary:\n任务摘要", sourceID: "context:summary" },
     { role: "system", content: "Project context from AGENTS.md\n必须先读取项目规范", sourceID: "instruction:project" },
+  ])
+  expect(eventTypes).toEqual([
+    "context.project.loaded",
+    "tool.request",
+    "tool.result",
+    "context.compaction.started",
+    "context.compaction.completed",
+    "context.project.loaded",
+    "session.completed",
   ])
 })
