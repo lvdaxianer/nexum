@@ -405,7 +405,11 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
               const result = await options.tool.execute(request)
               const toolResult = { ...result, toolCallID }
               toolResults.push(toolResult)
-              await publish("tool.result", { toolCallID, ok: result.ok, output: result.output })
+              await publish("tool.result", {
+                toolCallID,
+                ok: result.ok,
+                output: redactHeadlessSensitiveValue(result.output) as string,
+              })
               messages = [...messages, { role: "tool", toolCallID, content: result.output }]
             }
             prompt = {

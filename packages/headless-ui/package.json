@@ -15,6 +15,7 @@
     "solid-js": "catalog:"
   },
   "devDependencies": {
+    "@opencode/headless-core": "workspace:*",
     "@tsconfig/node22": "catalog:",
     "@types/bun": "catalog:",
     "@playwright/test": "catalog:",
