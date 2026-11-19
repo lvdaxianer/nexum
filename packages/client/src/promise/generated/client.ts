@@ -329,8 +329,11 @@ import type {
   ExperimentalHeadlessModelGetOutput,
   ExperimentalHeadlessModelUpdateInput,
   ExperimentalHeadlessModelUpdateOutput,
+  ExperimentalHeadlessModelProbeInput,
+  ExperimentalHeadlessModelProbeOutput,
   ExperimentalHeadlessSessionCreateInput,
   ExperimentalHeadlessSessionCreateOutput,
+  ExperimentalHeadlessSessionListOutput,
   ExperimentalHeadlessSessionPromptInput,
   ExperimentalHeadlessSessionPromptOutput,
   ExperimentalHeadlessSessionQuestionListInput,
@@ -1850,6 +1853,18 @@ export function make(options: ClientOptions) {
               },
               requestOptions,
             ).then((value) => value.data),
+          probe: (input?: ExperimentalHeadlessModelProbeInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessModelProbeOutput }>(
+              {
+                method: "POST",
+                path: `/api/experimental/headless/model/probe`,
+                body: { mode: input?.["mode"] },
+                successStatus: 200,
+                declaredStatuses: [400, 401, 503],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
         },
         session: {
           create: (input: ExperimentalHeadlessSessionCreateInput, requestOptions?: RequestOptions) =>
@@ -1860,6 +1875,17 @@ export function make(options: ClientOptions) {
                 body: { directory: input["directory"] },
                 successStatus: 200,
                 declaredStatuses: [400],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          list: (requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSessionListOutput }>(
+              {
+                method: "GET",
+                path: `/api/experimental/headless/session`,
+                successStatus: 200,
+                declaredStatuses: [],
                 empty: false,
               },
               requestOptions,

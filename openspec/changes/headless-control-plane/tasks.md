@@ -6,8 +6,8 @@
 
 ## 2. Headless API 与客户端契约
 
-- [ ] 2.1 在 `packages/headless-server` 增加 Session 列表和模型 Probe 路由，补齐输入校验、稳定错误、traceId 和凭据不回显；先写 HTTP RED 测试，再通过 Server 全量测试、类型检查和 API 文档检查。
-- [ ] 2.2 在 `packages/protocol` 和 `packages/client` 增加对应 Schema、OpenAPI 注解和生成客户端接口，验证 Protocol 全量测试、Headless generated client 测试和类型检查通过。
+- [x] 2.1 在 `packages/headless-server` 增加 Session 列表和模型 Probe 路由，补齐输入校验、稳定错误、traceId 和凭据不回显；先写 HTTP RED 测试，再通过 Server 全量测试和类型检查。
+- [x] 2.2 在 `packages/protocol` 和 `packages/client` 增加对应 Schema、OpenAPI 注解和生成客户端接口，验证 Protocol 定向测试、Headless generated client 测试和类型检查通过。
 
 ## 3. 页面控制台
 

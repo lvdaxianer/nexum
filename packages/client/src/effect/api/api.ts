@@ -2872,6 +2872,15 @@ export type ExperimentalHeadlessModelUpdateOperation<E = never> = (
   input: ExperimentalHeadlessModelUpdateInput,
 ) => Effect.Effect<ExperimentalHeadlessModelUpdateOutput, E>
 
+export type ExperimentalHeadlessModelProbeInput = { readonly mode?: "text" | "function_calling" | "both" | undefined }
+export type ExperimentalHeadlessModelProbeOutput = {
+  readonly text: "pass" | "skipped"
+  readonly functionCalling: "pass" | "skipped"
+}
+export type ExperimentalHeadlessModelProbeOperation<E = never> = (
+  input?: ExperimentalHeadlessModelProbeInput,
+) => Effect.Effect<ExperimentalHeadlessModelProbeOutput, E>
+
 export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string }
 export type ExperimentalHeadlessSessionCreateOutput = {
   readonly id: string
@@ -2881,6 +2890,16 @@ export type ExperimentalHeadlessSessionCreateOutput = {
 export type ExperimentalHeadlessSessionCreateOperation<E = never> = (
   input: ExperimentalHeadlessSessionCreateInput,
 ) => Effect.Effect<ExperimentalHeadlessSessionCreateOutput, E>
+
+export type ExperimentalHeadlessSessionListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly directory: string
+  readonly status: "idle" | "running" | "completed" | "failed" | "cancelled"
+}>
+export type ExperimentalHeadlessSessionListOperation<E = never> = () => Effect.Effect<
+  ExperimentalHeadlessSessionListOutput,
+  E
+>
 
 export type ExperimentalHeadlessSessionPromptInput = { readonly sessionID: string; readonly text: string }
 export type ExperimentalHeadlessSessionPromptOutput = { readonly status: "accepted" }
@@ -2976,9 +2995,11 @@ export interface ExperimentalHeadlessApi<E = never> {
   readonly model: {
     readonly get: ExperimentalHeadlessModelGetOperation<E>
     readonly update: ExperimentalHeadlessModelUpdateOperation<E>
+    readonly probe: ExperimentalHeadlessModelProbeOperation<E>
   }
   readonly session: {
     readonly create: ExperimentalHeadlessSessionCreateOperation<E>
+    readonly list: ExperimentalHeadlessSessionListOperation<E>
     readonly prompt: ExperimentalHeadlessSessionPromptOperation<E>
     readonly question: {
       readonly list: ExperimentalHeadlessSessionQuestionListOperation<E>

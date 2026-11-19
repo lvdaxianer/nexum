@@ -5,6 +5,7 @@ test("generated promise client exposes the headless experimental surface", () =>
   const client = OpenCode.make({ baseUrl: "http://127.0.0.1:4097" })
 
   expect(client.experimental.headless.session.create).toBeFunction()
+  expect(client.experimental.headless.session.list).toBeFunction()
   expect(client.experimental.headless.session.prompt).toBeFunction()
   expect(client.experimental.headless.session.cancel).toBeFunction()
   expect(client.experimental.headless.session.events).toBeFunction()
@@ -15,4 +16,5 @@ test("generated promise client exposes the headless experimental surface", () =>
   expect(client.experimental.headless.session.question.cancel).toBeFunction()
   expect(client.experimental.headless.model.get).toBeFunction()
   expect(client.experimental.headless.model.update).toBeFunction()
+  expect(client.experimental.headless.model.probe).toBeFunction()
 })
