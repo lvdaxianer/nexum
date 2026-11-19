@@ -12,12 +12,14 @@
 
 ### 1.1 对外 route 覆盖表
 
-| Controller / 路由归属          | 对外端点                                                    | 文档章节                         | 覆盖状态 |
-| ------------------------------ | ----------------------------------------------------------- | -------------------------------- | -------- |
-| `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready`                     | [健康检查](#21-健康检查)         | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session`                   | [Session 创建](#31-session-创建) | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/prompt` | [Prompt 提交](#41-prompt-提交)   | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/cancel` | [Session 取消](#51-session-取消) | 已覆盖   |
+| Controller / 路由归属          | 对外端点                                                                         | 文档章节                         | 覆盖状态 |
+| ------------------------------ | -------------------------------------------------------------------------------- | -------------------------------- | -------- |
+| `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready`                                          | [健康检查](#21-健康检查)         | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session`                                        | [Session 创建](#31-session-创建) | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/prompt`                      | [Prompt 提交](#41-prompt-提交)   | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/cancel`                      | [Session 取消](#51-session-取消) | 已覆盖   |
+| `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/permission`                   | [权限列表](#61-权限列表)         | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/permission/:requestID/reply` | [权限审批](#71-权限审批)         | 已覆盖   |
 
 ## 2. 健康检查
 
@@ -451,4 +453,90 @@ Cache-Control: no-store
 X-Trace-Id: cancel_trace_001
 
 {"data":{"status":"cancelled"}}
+```
+
+## 6. 权限列表
+
+### 6.1 接口概览
+
+| 项目     | 内容                                                          |
+| -------- | ------------------------------------------------------------- |
+| 接口名称 | Headless Pending Permission 列表                              |
+| 接口用途 | 查询指定 Session 当前阻塞 Coding Loop 的工具权限请求          |
+| 业务场景 | UI 订阅或轮询列表后展示 action、resource 和审批按钮           |
+| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制 |
+| 幂等性   | GET 幂等；只读取内存中的 pending request                      |
+
+### 6.2 请求定义
+
+```http
+GET http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/permission
+```
+
+请求体和 Query 参数：不适用。
+
+### 6.3 响应定义
+
+```json
+{
+  "data": [
+    {
+      "id": "permission-request-id",
+      "sessionID": "2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7",
+      "action": "shell",
+      "resource": "pnpm test",
+      "reason": "工具 shell 需要权限审批"
+    }
+  ]
+}
+```
+
+未有待审批请求时返回 `{"data":[]}`。请求项只包含审批所需的 action/resource 摘要，不包含凭据。
+
+## 7. 权限审批
+
+### 7.1 接口概览
+
+| 项目     | 内容                                                          |
+| -------- | ------------------------------------------------------------- |
+| 接口名称 | Headless Permission Reply                                     |
+| 接口用途 | 对 pending tool request 提交一次性允许、永久允许或拒绝决策    |
+| 业务场景 | UI 用户点击审批按钮后唤醒阻塞的 Coding Loop                   |
+| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制 |
+| 幂等性   | 同一 request 的重复 reply 返回第一次已生效的决策              |
+
+### 7.2 请求定义
+
+```http
+POST http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/permission/{requestID}/reply
+```
+
+```json
+{
+  "decision": "allow_once"
+}
+```
+
+`decision` 可选值：`allow_once`、`allow_always`、`deny`。`allow_always` 按 action/resource 组合记录内存策略；POC 重启后策略丢失。
+
+### 7.3 响应定义
+
+允许响应：
+
+```json
+{
+  "data": {
+    "status": "approved"
+  }
+}
+```
+
+拒绝响应的 `status` 为 `denied`。未知 request 返回 `404 HEADLESS_PERMISSION_NOT_FOUND`；非法决策返回 `400 HEADLESS_INVALID_REQUEST`。
+
+### 7.4 Complete example
+
+```bash
+curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/session/2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7/permission/permission-request-id/reply' \
+  --header 'Content-Type: application/json' \
+  --data '{"decision":"allow_once"}'
 ```

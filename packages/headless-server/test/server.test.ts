@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createHeadlessSessionService } from "@opencode/headless-core"
+import { createHeadlessPermissionBroker, createHeadlessSessionService } from "@opencode/headless-core"
 import { startHeadlessServer, type HeadlessServer } from "../src/index.ts"
 
 const FORBIDDEN_UI_PACKAGES = ["@opencode/app", "@opencode/tui", "@opencode/desktop", "@opencode/cli"]
@@ -133,6 +133,35 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
   )
   expect(cancelResponse.status).toBe(200)
   expect(await cancelResponse.json()).toEqual({ data: { status: "cancelled" } })
+})
+
+test("lists pending permissions and returns stable approval errors", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-permission-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createHeadlessSessionService()
+  const session = await sessionService.create({ directory })
+  const permissionBroker = createHeadlessPermissionBroker()
+  const server = await startHeadlessServer({ port: 0, sessionService, permissionBroker })
+  servers.push(server)
+
+  const listResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${session.sessionID}/permission`, server.url),
+  )
+  expect(listResponse.status).toBe(200)
+  expect(await listResponse.json()).toEqual({ data: [] })
+
+  const replyResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${session.sessionID}/permission/unknown/reply`, server.url),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: "allow_once" }),
+    },
+  )
+  const replyBody = (await replyResponse.json()) as { errorCode: string; message: string }
+  expect(replyResponse.status).toBe(404)
+  expect(replyBody.errorCode).toBe("HEADLESS_PERMISSION_NOT_FOUND")
+  expect(replyBody.message).toBe("权限请求不存在")
 })
 
 test("headless-server package stays independent from UI packages", async () => {

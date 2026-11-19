@@ -6,9 +6,11 @@
  */
 
 import {
+  HeadlessPermissionError,
   HeadlessSessionError,
   createHeadlessSessionService,
   type HeadlessCodingLoop,
+  type HeadlessPermissionBroker,
   type HeadlessSessionService,
 } from "@opencode/headless-core"
 
@@ -23,6 +25,7 @@ export interface HeadlessServerOptions {
   readonly port?: number
   readonly sessionService?: HeadlessSessionService
   readonly codingLoop?: HeadlessCodingLoop
+  readonly permissionBroker?: HeadlessPermissionBroker
 }
 
 /** 已启动的 Headless Service 控制句柄。 */
@@ -45,12 +48,13 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
   const port = options.port ?? DEFAULT_PORT
   const sessionService = options.sessionService ?? createHeadlessSessionService()
   const codingLoop = options.codingLoop
+  const permissionBroker = options.permissionBroker
   assertPort(port)
 
   const server = Bun.serve({
     hostname,
     port,
-    fetch: (request) => handleRequest(request, sessionService, codingLoop),
+    fetch: (request) => handleRequest(request, sessionService, codingLoop, permissionBroker),
   })
 
   return {
@@ -71,6 +75,7 @@ async function handleRequest(
   request: Request,
   sessionService: HeadlessSessionService,
   codingLoop?: HeadlessCodingLoop,
+  permissionBroker?: HeadlessPermissionBroker,
 ): Promise<Response> {
   const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
   const url = new URL(request.url)
@@ -105,6 +110,31 @@ async function handleRequest(
       return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
     return cancelSession(decodeURIComponent(cancelMatch[1]!), sessionService, codingLoop, traceId)
+  }
+
+  const permissionListMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/permission$/)
+  if (permissionListMatch) {
+    if (request.method !== "GET") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return listPermissions(decodeURIComponent(permissionListMatch[1]!), sessionService, permissionBroker, traceId)
+  }
+
+  const permissionReplyMatch = url.pathname.match(
+    /^\/api\/experimental\/headless\/session\/([^/]+)\/permission\/([^/]+)\/reply$/,
+  )
+  if (permissionReplyMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return replyPermission(
+      request,
+      decodeURIComponent(permissionReplyMatch[1]!),
+      decodeURIComponent(permissionReplyMatch[2]!),
+      sessionService,
+      permissionBroker,
+      traceId,
+    )
   }
 
   return errorResponse(404, "HEADLESS_ROUTE_NOT_FOUND", "请求路径不存在", traceId)
@@ -180,6 +210,75 @@ async function cancelSession(
       return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", error.message, traceId)
     }
     return errorResponse(409, "HEADLESS_SESSION_CANCEL_CONFLICT", "Session 当前状态不允许取消", traceId)
+  }
+}
+
+/** 返回指定 Session 的待审批权限请求。 */
+async function listPermissions(
+  sessionID: string,
+  sessionService: HeadlessSessionService,
+  permissionBroker: HeadlessPermissionBroker | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!permissionBroker) {
+    return errorResponse(503, "HEADLESS_PERMISSION_NOT_CONFIGURED", "Headless Permission 尚未配置", traceId)
+  }
+  if (!(await sessionService.get(sessionID))) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  return jsonResponse({ data: await permissionBroker.list(sessionID) }, traceId)
+}
+
+/**
+ * 处理权限审批回复。
+ *
+ * @param request - 标准 Web 请求
+ * @param sessionID - 目标 Session ID
+ * @param requestID - 待审批权限请求 ID
+ * @param sessionService - Session 查询服务
+ * @param permissionBroker - 权限审批 Broker
+ * @param traceId - 当前请求链路标识
+ * @returns 审批结果或 caller-safe 错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-19
+ */
+async function replyPermission(
+  request: Request,
+  sessionID: string,
+  requestID: string,
+  sessionService: HeadlessSessionService,
+  permissionBroker: HeadlessPermissionBroker | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!permissionBroker) {
+    return errorResponse(503, "HEADLESS_PERMISSION_NOT_CONFIGURED", "Headless Permission 尚未配置", traceId)
+  }
+  if (!(await sessionService.get(sessionID))) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload) || typeof payload.decision !== "string") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "decision 必须是有效的权限决策", traceId)
+  }
+
+  try {
+    const decision = await permissionBroker.reply({
+      sessionID,
+      requestID,
+      decision: payload.decision as "allow_once" | "allow_always" | "deny",
+    })
+    return jsonResponse({ data: { status: decision === "deny" ? "denied" : "approved" } }, traceId)
+  } catch (error) {
+    if (error instanceof HeadlessPermissionError && error.code === "not_found") {
+      return errorResponse(404, "HEADLESS_PERMISSION_NOT_FOUND", error.message, traceId)
+    }
+    if (error instanceof HeadlessPermissionError && error.code === "session_mismatch") {
+      return errorResponse(409, "HEADLESS_PERMISSION_SESSION_MISMATCH", error.message, traceId)
+    }
+    if (error instanceof HeadlessPermissionError && error.code === "invalid_decision") {
+      return errorResponse(400, "HEADLESS_INVALID_REQUEST", error.message, traceId)
+    }
+    return errorResponse(500, "HEADLESS_PERMISSION_REPLY_FAILED", "权限审批失败", traceId)
   }
 }
 

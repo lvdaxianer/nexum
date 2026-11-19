@@ -428,3 +428,11 @@ export function createHeadlessCore(options: HeadlessCoreOptions): HeadlessCore {
 
 export { createHeadlessToolRegistry, normalizeHeadlessToolRequest } from "./tools.js"
 export type { HeadlessToolRegistry, HeadlessToolRegistryOptions, HeadlessBuiltinToolName } from "./tools.js"
+export { createHeadlessPermissionBroker, HeadlessPermissionError } from "./permission.js"
+export type {
+  HeadlessPermissionBroker,
+  HeadlessPermissionDecision,
+  HeadlessPermissionErrorCode,
+  HeadlessPermissionReply,
+  HeadlessPermissionRequest,
+} from "./permission.js"
