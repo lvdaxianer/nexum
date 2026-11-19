@@ -28,6 +28,7 @@ export interface ModelToolCall {
 
 /** OpenAI-compatible Chat Completions 消息的内部表示。 */
 export type ModelMessage =
+  | { readonly role: "system"; readonly content: string; readonly sourceID?: string }
   | { readonly role: "user"; readonly content: string }
   | {
       readonly role: "assistant"

@@ -121,6 +121,7 @@ function createChatCompletionBody(model: string, input: ModelPrompt): Record<str
 }
 
 function serializeMessage(message: ModelMessage): Record<string, unknown> {
+  if (message.role === "system") return { role: "system", content: message.content }
   if (message.role === "user") return { role: "user", content: message.content }
   if (message.role === "tool") {
     return { role: "tool", tool_call_id: message.toolCallID, content: message.content }
