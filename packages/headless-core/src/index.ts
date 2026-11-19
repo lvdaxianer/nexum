@@ -12,6 +12,7 @@ import { isAbsolute, normalize } from "node:path"
 export interface ModelPrompt {
   readonly sessionID: string
   readonly text: string
+  readonly toolResults?: readonly ToolResult[]
 }
 
 /** 模型生成过程中向 Coding Loop 输出的最小增量。 */
@@ -19,6 +20,7 @@ export interface ModelChunk {
   readonly type: "text" | "tool-call" | "completed"
   readonly content?: string
   readonly toolName?: string
+  readonly toolInput?: Record<string, unknown>
 }
 
 /** 模型端口负责产生 Agent 下一步所需的增量结果。 */
@@ -212,6 +214,114 @@ export function createHeadlessSessionService(options: HeadlessSessionServiceOpti
   }
 }
 
+/** Coding Loop 的一次 Prompt 输入。 */
+export interface HeadlessCodingLoopInput {
+  readonly sessionID: string
+  readonly text: string
+}
+
+/** Coding Loop 的可替换运行依赖。 */
+export interface HeadlessCodingLoopOptions {
+  readonly model: ModelPort
+  readonly tool: ToolPort
+  readonly permission: PermissionPort
+  readonly sessions: HeadlessSessionService
+  readonly events: EventSink
+  readonly maxSteps?: number
+}
+
+/** 单 Agent Headless Coding Loop。 */
+export interface HeadlessCodingLoop {
+  readonly run: (input: HeadlessCodingLoopInput) => Promise<SessionRecord>
+}
+
+/**
+ * 创建最小单 Agent Coding Loop。
+ *
+ * 每次工具调用都会先经过 PermissionPort；被允许后执行工具，
+ * 再把工具结果作为下一次 ModelPort 输入继续运行。
+ *
+ * @param options - 模型、工具、权限、Session 和事件端口
+ * @returns 可执行一次 Prompt 的 Coding Loop
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-19
+ */
+export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): HeadlessCodingLoop {
+  const maxSteps = options.maxSteps ?? 16
+
+  return {
+    async run(input) {
+      const session = await options.sessions.get(input.sessionID)
+      if (!session) {
+        throw new HeadlessSessionError("session_not_found", "Session 不存在", input.sessionID)
+      }
+
+      await options.sessions.setStatus(input.sessionID, "running")
+      let sequence = 0
+      let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text }
+
+      const publish = async (type: string, data?: Record<string, unknown>) => {
+        await options.events.publish({ sessionID: input.sessionID, type, sequence: ++sequence, data })
+      }
+
+      try {
+        for (let step = 0; step < maxSteps; step++) {
+          let continued = false
+          for await (const chunk of options.model.prompt(prompt)) {
+            if (chunk.type === "text") {
+              await publish("assistant.text", { content: chunk.content ?? "" })
+              continue
+            }
+            if (chunk.type === "completed") {
+              const completed = await options.sessions.setStatus(input.sessionID, "completed")
+              await publish("session.completed")
+              return completed
+            }
+
+            const request = makeToolRequest(input.sessionID, chunk)
+            await publish("tool.request", { toolName: request.toolName, input: request.input })
+            const effect = await options.permission.evaluate(request)
+            if (effect !== "allow") {
+              throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
+            }
+            const result = await options.tool.execute(request)
+            await publish("tool.result", { ok: result.ok, output: result.output })
+            prompt = { sessionID: input.sessionID, text: input.text, toolResults: [result] }
+            continued = true
+            break
+          }
+
+          if (continued) continue
+          const completed = await options.sessions.setStatus(input.sessionID, "completed")
+          await publish("session.completed")
+          return completed
+        }
+
+        throw new Error("Coding Loop 超过最大模型步骤数")
+      } catch (error) {
+        await options.sessions.setStatus(input.sessionID, "failed")
+        await publish("session.failed", { message: safeErrorMessage(error) })
+        throw error
+      }
+    },
+  }
+}
+
+/** 从模型增量构造规范化工具请求。 */
+function makeToolRequest(sessionID: string, chunk: ModelChunk): ToolRequest {
+  if (!chunk.toolName) throw new Error("模型返回了缺少名称的工具请求")
+  return {
+    sessionID,
+    toolName: chunk.toolName,
+    input: chunk.toolInput ?? {},
+  }
+}
+
+/** 把未知错误转换为可安全发布到事件流的消息。 */
+function safeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Coding Loop 执行失败"
+}
+
 /** 判断 Session 是否允许进入目标状态。 */
 function isAllowedTransition(from: HeadlessSessionStatus, to: HeadlessSessionStatus): boolean {
   if (from === "idle") return to === "running" || to === "cancelled"
@@ -224,6 +334,7 @@ export interface RuntimeEvent {
   readonly type: string
   readonly sessionID: string
   readonly sequence: number
+  readonly data?: Record<string, unknown>
 }
 
 /** 运行事件端口。 */

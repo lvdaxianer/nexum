@@ -8,6 +8,7 @@
 import {
   HeadlessSessionError,
   createHeadlessSessionService,
+  type HeadlessCodingLoop,
   type HeadlessSessionService,
 } from "@opencode/headless-core"
 
@@ -21,6 +22,7 @@ export interface HeadlessServerOptions {
   readonly hostname?: string
   readonly port?: number
   readonly sessionService?: HeadlessSessionService
+  readonly codingLoop?: HeadlessCodingLoop
 }
 
 /** 已启动的 Headless Service 控制句柄。 */
@@ -42,12 +44,13 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
   const port = options.port ?? DEFAULT_PORT
   const sessionService = options.sessionService ?? createHeadlessSessionService()
+  const codingLoop = options.codingLoop
   assertPort(port)
 
   const server = Bun.serve({
     hostname,
     port,
-    fetch: (request) => handleRequest(request, sessionService),
+    fetch: (request) => handleRequest(request, sessionService, codingLoop),
   })
 
   return {
@@ -64,7 +67,11 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
  * @author lvdaxianer@yeah.net
  * @date 2026-11-19
  */
-async function handleRequest(request: Request, sessionService: HeadlessSessionService): Promise<Response> {
+async function handleRequest(
+  request: Request,
+  sessionService: HeadlessSessionService,
+  codingLoop?: HeadlessCodingLoop,
+): Promise<Response> {
   const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
   const url = new URL(request.url)
 
@@ -84,7 +91,52 @@ async function handleRequest(request: Request, sessionService: HeadlessSessionSe
     return createSession(request, sessionService, traceId)
   }
 
+  const promptMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/prompt$/)
+  if (promptMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return createPrompt(request, decodeURIComponent(promptMatch[1]!), sessionService, codingLoop, traceId)
+  }
+
   return errorResponse(404, "HEADLESS_ROUTE_NOT_FOUND", "请求路径不存在", traceId)
+}
+
+/**
+ * 接受 Prompt 并异步启动 Headless Coding Loop。
+ *
+ * @param request - 标准 Web 请求
+ * @param sessionID - 目标 Session ID
+ * @param sessionService - Session 查询服务
+ * @param codingLoop - 可选的 Coding Loop 适配器
+ * @param traceId - 当前请求链路标识
+ * @returns accepted 响应或 caller-safe 错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-19
+ */
+async function createPrompt(
+  request: Request,
+  sessionID: string,
+  sessionService: HeadlessSessionService,
+  codingLoop: HeadlessCodingLoop | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!codingLoop) {
+    return errorResponse(503, "HEADLESS_RUNTIME_NOT_CONFIGURED", "Headless Runtime 尚未配置", traceId)
+  }
+
+  const session = await sessionService.get(sessionID)
+  if (!session) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload) || typeof payload.text !== "string" || payload.text.trim() === "") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "text 必须是非空字符串", traceId)
+  }
+
+  void codingLoop.run({ sessionID, text: payload.text }).catch(() => undefined)
+  return jsonResponse({ data: { status: "accepted" } }, traceId)
 }
 
 /**

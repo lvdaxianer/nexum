@@ -12,10 +12,11 @@
 
 ### 1.1 对外 route 覆盖表
 
-| Controller / 路由归属          | 对外端点                                  | 文档章节                         | 覆盖状态 |
-| ------------------------------ | ----------------------------------------- | -------------------------------- | -------- |
-| `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready`   | [健康检查](#21-健康检查)         | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session` | [Session 创建](#31-session-创建) | 已覆盖   |
+| Controller / 路由归属          | 对外端点                                                    | 文档章节                         | 覆盖状态 |
+| ------------------------------ | ----------------------------------------------------------- | -------------------------------- | -------- |
+| `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready`                     | [健康检查](#21-健康检查)         | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session`                   | [Session 创建](#31-session-创建) | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/prompt` | [Prompt 提交](#41-prompt-提交)   | 已覆盖   |
 
 ## 2. 健康检查
 
@@ -291,4 +292,94 @@ Cache-Control: no-store
 X-Trace-Id: session_create_trace
 
 {"data":{"id":"2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7","directory":"/Users/example/project","status":"idle"}}
+```
+
+## 4. Prompt 提交
+
+### 4.1 接口概览
+
+| 项目     | 内容                                                                               |
+| -------- | ---------------------------------------------------------------------------------- |
+| 接口名称 | Headless Prompt 提交                                                               |
+| 接口用途 | 将文本 Prompt 投递到指定 Session 的 Coding Loop                                    |
+| 业务场景 | UI 在 Session 创建成功后提交用户任务；模型输出、工具事件和完成状态通过事件端口发布 |
+| 权限要求 | 当前 POC 不要求认证；工具执行仍必须经过 Headless Core 的 PermissionPort            |
+| 幂等性   | 当前 POC 不承诺幂等；重复提交可能启动多个运行请求                                  |
+| 版本     | 当前为实验性 `/api/experimental` 路由                                              |
+
+### 4.2 请求定义
+
+#### 4.2.1 Method and URL
+
+```http
+POST http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/prompt
+```
+
+| 项目         | 内容                                                   |
+| ------------ | ------------------------------------------------------ |
+| Method       | `POST`                                                 |
+| URL          | `/api/experimental/headless/session/:sessionID/prompt` |
+| Content-Type | `application/json`                                     |
+
+#### 4.2.2 Path parameters
+
+| 参数        | 类型   | 必有/可选 | 说明                |
+| ----------- | ------ | --------- | ------------------- |
+| `sessionID` | string | 必有      | 已创建的 Session ID |
+
+#### 4.2.3 requestBody
+
+```json
+{
+  "text": "请读取 README.md 并总结主要内容"
+}
+```
+
+| 字段路径 | 类型   | 必有/可选 | 约束       | 说明             |
+| -------- | ------ | --------- | ---------- | ---------------- |
+| `text`   | string | 必有      | 非空字符串 | 用户 Prompt 文本 |
+
+### 4.3 响应定义
+
+#### 4.3.1 Response overview
+
+| HTTP 状态码               | 业务含义       | 触发条件                         | 调用方处理             |
+| ------------------------- | -------------- | -------------------------------- | ---------------------- |
+| `200 OK`                  | 已接受         | Prompt 校验通过且 Runtime 已配置 | 订阅事件并等待终态事件 |
+| `400 Bad Request`         | 请求无效       | `text` 缺失或为空                | 修正请求后重试         |
+| `404 Not Found`           | Session 不存在 | 目标 Session ID 未找到           | 先创建或刷新 Session   |
+| `503 Service Unavailable` | Runtime 未配置 | 尚未注入 Model/Tool/Permission   | 完成运行时配置后重试   |
+
+#### 4.3.2 Success response
+
+```json
+{
+  "data": {
+    "status": "accepted"
+  }
+}
+```
+
+接口只确认 Prompt 已进入异步 Coding Loop；模型文本、工具请求、工具结果和完成/失败事件不在本响应中返回。
+
+### 4.4 Complete example
+
+#### 4.4.1 curl request
+
+```bash
+curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/session/2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7/prompt' \
+  --header 'Content-Type: application/json' \
+  --header 'X-Trace-Id: prompt_trace_001' \
+  --data '{"text":"请读取 README.md 并总结主要内容"}'
+```
+
+#### 4.4.2 Success response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+X-Trace-Id: prompt_trace_001
+
+{"data":{"status":"accepted"}}
 ```

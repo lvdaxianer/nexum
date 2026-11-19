@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { createHeadlessSessionService } from "@opencode/headless-core"
 import { startHeadlessServer, type HeadlessServer } from "../src/index.ts"
 
 const FORBIDDEN_UI_PACKAGES = ["@opencode/app", "@opencode/tui", "@opencode/desktop", "@opencode/cli"]
@@ -90,6 +91,36 @@ test("rejects an invalid session directory at the HTTP boundary", async () => {
   expect(body.errorCode).toBe("HEADLESS_INVALID_DIRECTORY")
   expect(body.traceId).toBe("session_create_trace")
   expect(body.message).toBeString()
+})
+
+test("accepts a prompt and delegates it to the injected coding loop", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-prompt-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createHeadlessSessionService()
+  const session = await sessionService.create({ directory })
+  const prompts: Array<{ sessionID: string; text: string }> = []
+  const server = await startHeadlessServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        prompts.push(input)
+        return (await sessionService.get(input.sessionID))!
+      },
+    },
+  })
+  servers.push(server)
+
+  const response = await fetch(new URL(`/api/experimental/headless/session/${session.sessionID}/prompt`, server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "请读取 README.md" }),
+  })
+  const body = (await response.json()) as { data: { status: string } }
+
+  expect(response.status).toBe(200)
+  expect(body.data).toEqual({ status: "accepted" })
+  expect(prompts).toEqual([{ sessionID: session.sessionID, text: "请读取 README.md" }])
 })
 
 test("headless-server package stays independent from UI packages", async () => {
