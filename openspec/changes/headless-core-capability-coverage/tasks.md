@@ -9,7 +9,7 @@
 ## 2. Headless Core 交互与安全边界
 
 - [x] 2.1 实现 Question pending/reply/cancel 状态机并接入 Coding Loop，覆盖单题、多题、回答回传、取消和重复回答；用 Core tests 验证工具不会绕过 pending
-- [ ] 2.2 扩展 Function Calling 和 Permission 测试矩阵，覆盖多工具、非法参数、allow-once、allow-always、deny、取消、重复审批和凭据脱敏；用 Core 全量测试验证既有行为不回归
+- [x] 2.2 扩展 Function Calling 和 Permission 测试矩阵，覆盖多工具、非法参数、allow-once、allow-always、deny、取消、重复审批和凭据脱敏；用 Core 全量测试验证既有行为不回归
 
 ## 3. Headless Server 协议与集成
 
