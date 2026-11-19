@@ -3,7 +3,7 @@
 ## 1. Headless Core 消息与上下文能力
 
 - [x] 1.1 扩展 Headless 消息模型和端口契约，支持 system/project context、Question 调用、上下文压缩结果及生命周期事件；用类型检查和新增契约测试验证 UI 无关边界
-- [ ] 1.2 实现可替换的上下文估算与压缩流程，覆盖阈值跳过、摘要替换、最近消息保留、压缩失败和压缩后 Function Calling 续跑；用 Core focused tests 验证消息历史和事件顺序
+- [x] 1.2 实现可替换的上下文估算与压缩流程，覆盖阈值跳过、摘要替换、最近消息保留、压缩失败和压缩后 Function Calling 续跑；用 Core focused tests 验证消息历史和事件顺序
 - [ ] 1.3 实现项目 instructions/skill/reference 上下文端口，覆盖来源去重、不可读来源跳过和压缩后恢复；用 Core tests 验证同一来源不会重复注入
 
 ## 2. Headless Core 交互与安全边界

@@ -9,6 +9,7 @@ import { access, constants, stat } from "node:fs/promises"
 import { isAbsolute, normalize } from "node:path"
 import { createOpenAICompatibleModelPort } from "./model.js"
 import type { HeadlessModelConfigStore } from "./model-config.js"
+import type { ContextCompactionPort, ContextCompactionResult } from "./context.js"
 import { redactHeadlessSensitiveValue } from "./permission.js"
 import { normalizeHeadlessToolRequest } from "./tools.js"
 
@@ -266,6 +267,9 @@ export interface HeadlessCodingLoopOptions {
   readonly sessions: HeadlessSessionService
   readonly events: EventSink
   readonly tools?: readonly ModelToolDefinition[]
+  readonly contextCompaction?: ContextCompactionPort
+  readonly compactionThreshold?: number
+  readonly compactionKeepRecent?: number
   readonly maxSteps?: number
 }
 
@@ -321,6 +325,8 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
       try {
         for (let step = 0; step < maxSteps; step++) {
           throwIfCancelled(runState)
+          messages = await compactMessagesIfNeeded(messages, options, publish)
+          prompt = { ...prompt, messages }
           let continued = false
           for await (const chunk of options.model.prompt({ ...prompt, signal: runState.controller.signal })) {
             throwIfCancelled(runState)
@@ -461,6 +467,54 @@ function legacyToolCall(chunk: ModelChunk): ModelToolCall {
     name: chunk.toolName,
     input: chunk.toolInput ?? {},
   }
+}
+
+/** 在模型步骤前按策略压缩消息，并把压缩结果转换为统一消息历史。 */
+async function compactMessagesIfNeeded(
+  messages: readonly ModelMessage[],
+  options: HeadlessCodingLoopOptions,
+  publish: (type: string, data?: Record<string, unknown>) => Promise<void>,
+): Promise<ModelMessage[]> {
+  const compaction = options.contextCompaction
+  const threshold = options.compactionThreshold
+  if (!compaction || threshold === undefined) return [...messages]
+  const estimatedTokens = compaction.estimate(messages)
+  if (estimatedTokens < threshold) return [...messages]
+  await publish("context.compaction.started", { estimatedTokens })
+  return compactWithEvents(compaction, messages, options.compactionKeepRecent ?? 4, publish)
+}
+
+/** 执行摘要并把失败转换为可观察的压缩失败事件。 */
+async function compactWithEvents(
+  compaction: ContextCompactionPort,
+  messages: readonly ModelMessage[],
+  keepRecent: number,
+  publish: (type: string, data?: Record<string, unknown>) => Promise<void>,
+): Promise<ModelMessage[]> {
+  try {
+    const result = await compaction.compact({ messages, keepRecent })
+    await publish("context.compaction.completed", {
+      summaryLength: result.summary.length,
+      keptMessages: result.recentMessages.length,
+    })
+    return compactedMessages(result)
+  } catch (error) {
+    await publish("context.compaction.failed", { message: safeErrorMessage(error) })
+    throw error
+  }
+}
+
+/** 把摘要、项目上下文和最近消息合并为下一次模型请求。 */
+function compactedMessages(result: ContextCompactionResult): ModelMessage[] {
+  return [
+    { role: "system", content: `Context summary:\n${result.summary}`, sourceID: "context:summary" },
+    ...result.context.map((entry) => ({
+      role: "system" as const,
+      content: `Project context from ${entry.path}\n${entry.content}`,
+      sourceID: entry.sourceID,
+    })),
+    ...result.recentMessages,
+  ]
 }
 
 /** 把未知错误转换为可安全发布到事件流的消息。 */
