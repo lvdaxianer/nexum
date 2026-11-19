@@ -9,7 +9,7 @@ import { access, constants, stat } from "node:fs/promises"
 import { isAbsolute, normalize } from "node:path"
 import { createOpenAICompatibleModelPort } from "./model.js"
 import type { HeadlessModelConfigStore } from "./model-config.js"
-import type { ContextCompactionPort, ContextCompactionResult } from "./context.js"
+import type { ContextCompactionPort, ContextCompactionResult, ProjectContextPort } from "./context.js"
 import { redactHeadlessSensitiveValue } from "./permission.js"
 import { normalizeHeadlessToolRequest } from "./tools.js"
 
@@ -268,6 +268,7 @@ export interface HeadlessCodingLoopOptions {
   readonly events: EventSink
   readonly tools?: readonly ModelToolDefinition[]
   readonly contextCompaction?: ContextCompactionPort
+  readonly projectContext?: ProjectContextPort
   readonly compactionThreshold?: number
   readonly compactionKeepRecent?: number
   readonly maxSteps?: number
@@ -311,6 +312,7 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
       activeRuns.set(input.sessionID, runState)
       let sequence = 0
       let messages: ModelMessage[] = [{ role: "user", content: input.text }]
+      messages = await restoreProjectContext(input.sessionID, messages, options.projectContext)
       let prompt: ModelPrompt = {
         sessionID: input.sessionID,
         text: input.text,
@@ -326,6 +328,7 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
         for (let step = 0; step < maxSteps; step++) {
           throwIfCancelled(runState)
           messages = await compactMessagesIfNeeded(messages, options, publish)
+          messages = await restoreProjectContext(input.sessionID, messages, options.projectContext)
           prompt = { ...prompt, messages }
           let continued = false
           for await (const chunk of options.model.prompt({ ...prompt, signal: runState.controller.signal })) {
@@ -517,6 +520,29 @@ function compactedMessages(result: ContextCompactionResult): ModelMessage[] {
   ]
 }
 
+/** 恢复当前项目来源，并按 sourceID 去重。 */
+async function restoreProjectContext(
+  sessionID: string,
+  messages: readonly ModelMessage[],
+  projectContext?: ProjectContextPort,
+): Promise<ModelMessage[]> {
+  if (!projectContext) return [...messages]
+  const entries = await projectContext.load(sessionID)
+  const existingSourceIDs = new Set(
+    messages.flatMap((message) => (message.role === "system" && message.sourceID ? [message.sourceID] : [])),
+  )
+  const additions = entries
+    .filter((entry) => !existingSourceIDs.has(entry.sourceID))
+    .map((entry) => ({
+      role: "system" as const,
+      content: `Project context from ${entry.path}\n${entry.content}`,
+      sourceID: entry.sourceID,
+    }))
+  const firstNonSystemIndex = messages.findIndex((message) => message.role !== "system")
+  const insertAt = firstNonSystemIndex === -1 ? messages.length : firstNonSystemIndex
+  return [...messages.slice(0, insertAt), ...additions, ...messages.slice(insertAt)]
+}
+
 /** 把未知错误转换为可安全发布到事件流的消息。 */
 function safeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Coding Loop 执行失败"
@@ -598,3 +624,12 @@ export type {
 } from "./model-config.js"
 export { createOpenAICompatibleModelPort, HeadlessModelError } from "./model.js"
 export type { HeadlessFetch, HeadlessModelErrorCode, OpenAICompatibleModelPortOptions } from "./model.js"
+export { createHeadlessProjectContextPort } from "./context.js"
+export type {
+  ContextCompactionPort,
+  ContextCompactionResult,
+  HeadlessProjectContextPortOptions,
+  ProjectContextEntry,
+  ProjectContextPort,
+  ProjectContextSource,
+} from "./context.js"
