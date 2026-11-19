@@ -27,14 +27,14 @@
 ## 5. 独立 Web POC
 
 - [x] 5.1 新增不依赖完整 `packages/app` 的最小 Solid/Vite Web 客户端，验证页面只通过 Headless API 创建 Session、发送 Prompt 和订阅事件
-- [ ] 5.2 增加模型配置、工作目录、事件时间线和权限审批交互，验证页面能完成一次允许工具执行的 Coding Task
-- [ ] 5.3 增加页面级冒烟测试或 Playwright 测试，验证拒绝权限时任务显示失败/拒绝状态且页面不会直接执行本地工具
+- [x] 5.2 增加模型配置、工作目录、事件时间线和权限审批交互，验证页面能完成一次允许工具执行的 Coding Task
+- [x] 5.3 增加页面级冒烟测试或 Playwright 测试，验证拒绝权限时任务显示失败/拒绝状态且页面不会直接执行本地工具
 
 ## 6. POC 集成验证与交付文档
 
-- [ ] 6.1 增加端到端 Fixture 项目和 Headless Service 集成测试，验证创建 Session → Prompt → Permission → Tool → Completion 的完整链路
-- [ ] 6.2 运行受影响包的 `bun typecheck`、`bun run typecheck:tsc`、单元测试、协议生成检查和 Headless UI 构建，记录基线与结果
-- [ ] 6.3 编写 Headless Service 启动、API 示例、模型配置和 POC 安全边界文档，验证新开发者可按文档启动服务并完成一次任务
+- [x] 6.1 增加端到端 Fixture 项目和 Headless Service 集成测试，验证创建 Session → Prompt → Permission → Tool → Completion 的完整链路
+- [x] 6.2 运行受影响包的 `bun typecheck`、`bun run typecheck:tsc`、单元测试、协议生成检查和 Headless UI 构建，记录基线与结果
+- [x] 6.3 编写 Headless Service 启动、API 示例、模型配置和 POC 安全边界文档，验证新开发者可按文档启动服务并完成一次任务
 
 ## Workflow follow-up
 

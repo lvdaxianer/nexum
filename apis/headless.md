@@ -2,13 +2,13 @@
 
 ## 1. 模块概览与覆盖范围
 
-| 项目            | 内容                                                                         |
-| --------------- | ---------------------------------------------------------------------------- |
-| 业务模块        | Headless Service 健康检查与最小 Session 创建（`headless`）                   |
-| 文档路径        | `apis/headless.md`                                                           |
-| 模块职责        | 为任意 UI 或运行编排器提供独立 Headless Service 的健康状态与 Session 创建    |
-| 基础 URL / 版本 | `http://127.0.0.1:4097`；当前为 POC，暂无版本前缀                            |
-| 通用认证与约定  | 健康检查不要求认证；响应为 JSON；所有响应带 `X-Trace-Id`；响应 Cookie 不适用 |
+| 项目            | 内容                                                                                                            |
+| --------------- | --------------------------------------------------------------------------------------------------------------- |
+| 业务模块        | Headless Service 健康检查与最小 Session 创建（`headless`）                                                      |
+| 文档路径        | `apis/headless.md`                                                                                              |
+| 模块职责        | 为任意 UI 或运行编排器提供独立 Headless Service 的健康状态与 Session 创建                                       |
+| 基础 URL / 版本 | `http://127.0.0.1:4097`；当前为 POC，暂无版本前缀                                                               |
+| 通用认证与约定  | 健康检查不要求认证；响应为 JSON；所有响应带 `X-Trace-Id`；浏览器 POC 默认允许本地 UI origin；响应 Cookie 不适用 |
 
 ### 1.1 对外 route 覆盖表
 
@@ -21,6 +21,24 @@
 | `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/events`                       | [Session 事件](#81-session-事件) | 已覆盖   |
 | `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/permission`                   | [权限列表](#61-权限列表)         | 已覆盖   |
 | `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/permission/:requestID/reply` | [权限审批](#71-权限审批)         | 已覆盖   |
+
+### 1.2 浏览器跨域约定
+
+Headless UI 默认运行在 Vite 的 `http://127.0.0.1:5173` 或
+`http://localhost:5173`，Headless Server 默认运行在
+`http://127.0.0.1:4097`。服务对这两个本地 origin 返回
+`Access-Control-Allow-Origin`，并处理浏览器的 `OPTIONS` 预检请求。
+
+| 项目          | 内容                                                                       |
+| ------------- | -------------------------------------------------------------------------- |
+| 允许 origin   | `http://127.0.0.1:5173`、`http://localhost:5173`                           |
+| 允许 method   | `GET`、`POST`、`PUT`、`OPTIONS`                                            |
+| 允许 header   | `Content-Type`、`X-Trace-Id`                                               |
+| 凭据 Cookie   | 不使用；不返回 `Access-Control-Allow-Credentials`                          |
+| 自定义配置    | 通过 `startHeadlessServer({ corsOrigins })` 传入明确 origin 列表           |
+| 非允许 origin | 预检返回 `403 HEADLESS_CORS_ORIGIN_NOT_ALLOWED`；普通响应不返回允许 origin |
+
+SSE 连接默认关闭 Bun 的空闲超时（`idleTimeout: 0`），避免任务等待人工权限审批时被服务端在 10 秒后断开。部署方可以通过 `startHeadlessServer({ idleTimeout })` 设置非零超时，但必须确保大于最长审批等待时间。
 
 ## 2. 健康检查
 
@@ -622,3 +640,61 @@ data: {"type":"tool.requested","sessionID":"2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7
 ```
 
 `id` 使用 Session 内递增的 `sequence`；`data` 是 JSON 编码的 RuntimeEvent。当前 POC 事件 Hub 为进程内内存实现，不提供断线补发和跨进程持久化；生产版本应在部署拓扑确定后替换为可恢复的事件总线或事件存储。
+
+## 10. 完整 POC 联调
+
+### 10.1 启动服务和 UI
+
+```bash
+bun --cwd packages/headless-server run dev
+bun --cwd packages/headless-ui run dev
+```
+
+默认服务地址为 `http://127.0.0.1:4097`，UI 地址为
+`http://127.0.0.1:5173`。服务默认组装 OpenAI-compatible ModelPort、内置
+`read`/`write`/`edit`/`shell` 工具、Permission Broker、Coding Loop 和 SSE
+EventHub；UI 不直接导入这些运行时实现。
+
+页面级拒绝权限冒烟测试使用真实 Headless Service、fixture Model 和 Playwright
+驱动的构建产物；首次运行需要准备 Chromium：
+
+```bash
+bunx playwright install chromium
+bun --cwd packages/headless-ui run test:smoke
+```
+
+测试会验证点击 `Deny` 后 Session 进入 `failed`，且工作目录内不会出现被拒绝写入的文件。
+
+### 10.2 配置模型
+
+```bash
+curl --request PUT 'http://127.0.0.1:4097/api/experimental/headless/model' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "baseUrl": "https://model.example.com/v1",
+    "model": "coding-model",
+    "credentialRef": "HEADLESS_MODEL_API_KEY"
+  }'
+```
+
+`HEADLESS_MODEL_API_KEY` 只应由服务进程环境注入；不要把真实 API Key 写入
+请求脚本、仓库、浏览器 localStorage 或事件数据。模型请求会携带工具定义，
+模型返回 `tool_calls` 后，Core 会生成权限请求并暂停工具执行。
+
+### 10.3 一次允许工具执行的链路
+
+1. UI 创建一个绝对路径工作目录绑定的 Session，并订阅
+   `/events` SSE。
+2. UI 提交 Prompt；ModelPort 请求 `/chat/completions`，请求体包含
+   `tools` 和 `tool_choice: "auto"`。
+3. 模型返回 `tool_calls`；事件流发布 `tool.request`，Permission Broker
+   暂停 Coding Loop，UI 展示 action/resource 审批卡片。
+4. UI 调用权限 reply 接口提交 `allow_once`；Core 在权限边界之后调用内置
+   工具，并发布 `tool.result`。
+5. Core 将原始 user message、assistant `tool_calls` 和 tool result 组成下一次
+   模型消息历史；模型返回最终文本后，事件流依次发布 `assistant.text` 和
+   `session.completed`。
+
+拒绝权限时，工具不会执行，Session 进入 `failed`，UI 保留失败事件和可排障
+的 trace ID。该链路验证的是 POC 权限边界，不等同于生产级沙箱；生产部署仍需
+增加执行 Worker、目录隔离、网络出口控制和身份认证。

@@ -49,3 +49,75 @@ test("returns a safe authentication error without provider fallback", async () =
     expect(String(error)).not.toContain("super-secret-value")
   }
 })
+
+test("sends tool definitions and parses an OpenAI-compatible function call", async () => {
+  const config = createHeadlessModelConfigStore()
+  await config.update({
+    baseUrl: "https://model.example.com/v1",
+    model: "coding-model",
+  })
+  let requestBody: Record<string, unknown> | undefined
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_write_001",
+                  type: "function",
+                  function: {
+                    name: "write",
+                    arguments: JSON.stringify({ path: "notes.txt", content: "hello" }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      })
+    },
+  })
+
+  const chunks = []
+  for await (const chunk of model.prompt({
+    sessionID: "session-model",
+    text: "请写入 notes.txt",
+    tools: [
+      {
+        name: "write",
+        description: "写入 Session 工作目录内的文件",
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" }, content: { type: "string" } },
+          required: ["path", "content"],
+        },
+      },
+    ],
+  } as never)) {
+    chunks.push(chunk)
+  }
+
+  expect(chunks).toEqual([
+    {
+      type: "tool-call",
+      toolCalls: [{ id: "call_write_001", name: "write", input: { path: "notes.txt", content: "hello" } }],
+      toolCallID: "call_write_001",
+      toolName: "write",
+      toolInput: { path: "notes.txt", content: "hello" },
+    },
+  ])
+  expect(requestBody).toMatchObject({
+    tools: [
+      {
+        type: "function",
+        function: { name: "write", description: "写入 Session 工作目录内的文件" },
+      },
+    ],
+    tool_choice: "auto",
+  })
+})

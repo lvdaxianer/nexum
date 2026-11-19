@@ -45,6 +45,28 @@ test("headless server starts independently and exposes liveness and readiness", 
   })
 })
 
+test("allows the local headless UI origin and answers CORS preflight", async () => {
+  const server = await startHeadlessServer({ port: 0 })
+  servers.push(server)
+
+  const preflight = await fetch(new URL("/api/experimental/headless/session", server.url), {
+    method: "OPTIONS",
+    headers: {
+      origin: "http://127.0.0.1:5173",
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "content-type",
+    },
+  })
+  const response = await fetch(new URL("/health/live", server.url), {
+    headers: { origin: "http://127.0.0.1:5173" },
+  })
+
+  expect(preflight.status).toBe(204)
+  expect(preflight.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173")
+  expect(preflight.headers.get("access-control-allow-methods")).toContain("POST")
+  expect(response.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173")
+})
+
 test("unknown routes return a stable caller-safe error", async () => {
   const server = await startHeadlessServer({ port: 0 })
   servers.push(server)
@@ -203,6 +225,123 @@ test("composes the default coding loop when no runtime is injected", async () =>
   await reader.cancel()
 })
 
+test("completes a function-calling task after an allow-once permission reply", async () => {
+  const modelRequests: Array<Record<string, unknown>> = []
+  const upstream = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = JSON.parse(await request.text()) as Record<string, unknown>
+      modelRequests.push(body)
+      if (modelRequests.length === 1) {
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: "call_write_001",
+                    type: "function",
+                    function: {
+                      name: "write",
+                      arguments: JSON.stringify({ path: "notes.txt", content: "hello from function calling" }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        })
+      }
+
+      return Response.json({ choices: [{ message: { content: "文件已写入" } }] })
+    },
+  })
+  upstreamServers.push(upstream)
+  const server = await startHeadlessServer({ port: 0 })
+  servers.push(server)
+
+  const modelResponse = await fetch(new URL("/api/experimental/headless/model", server.url), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ baseUrl: upstream.url.toString().replace(/\/$/, ""), model: "fixture-model" }),
+  })
+  expect(modelResponse.status).toBe(200)
+
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-function-calling-"))
+  temporaryDirectories.push(directory)
+  const sessionResponse = await fetch(new URL("/api/experimental/headless/session", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ directory }),
+  })
+  const sessionBody = (await sessionResponse.json()) as { data: { id: string } }
+  const sessionID = sessionBody.data.id
+  const eventsResponse = await fetch(new URL(`/api/experimental/headless/session/${sessionID}/events`, server.url))
+  const reader = eventsResponse.body?.getReader()
+  if (!reader) throw new Error("SSE 响应缺少可读流")
+  await reader.read()
+
+  const promptResponse = await fetch(new URL(`/api/experimental/headless/session/${sessionID}/prompt`, server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "请写入 notes.txt" }),
+  })
+  expect(promptResponse.status).toBe(200)
+
+  const toolEventText = await readSseUntil(reader, '"type":"tool.request"')
+  expect(toolEventText).toContain('"toolCallID":"call_write_001"')
+
+  const permissionListResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${sessionID}/permission`, server.url),
+  )
+  const permissionBody = (await permissionListResponse.json()) as {
+    data: Array<{ id: string; action: string; resource: string }>
+  }
+  expect(permissionBody.data).toHaveLength(1)
+  expect(permissionBody.data[0]).toMatchObject({ action: "write", resource: "notes.txt" })
+
+  const replyResponse = await fetch(
+    new URL(
+      `/api/experimental/headless/session/${sessionID}/permission/${permissionBody.data[0]!.id}/reply`,
+      server.url,
+    ),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: "allow_once" }),
+    },
+  )
+  expect(replyResponse.status).toBe(200)
+
+  const completionText = await readSseUntil(reader, '"type":"session.completed"')
+  const notes = await Bun.file(join(directory, "notes.txt")).text()
+  expect(notes).toBe("hello from function calling")
+  expect(completionText).toContain('"type":"tool.result"')
+  expect(completionText).toContain('"type":"assistant.text"')
+  expect(completionText).toContain("文件已写入")
+  expect(modelRequests).toHaveLength(2)
+  expect(modelRequests[1]?.messages).toEqual([
+    { role: "user", content: "请写入 notes.txt" },
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id: "call_write_001",
+          type: "function",
+          function: {
+            name: "write",
+            arguments: JSON.stringify({ path: "notes.txt", content: "hello from function calling" }),
+          },
+        },
+      ],
+    },
+    { role: "tool", tool_call_id: "call_write_001", content: "" },
+  ])
+  await reader.cancel()
+})
+
 test("streams ordered session events over SSE", async () => {
   const directory = await mkdtemp(join(tmpdir(), "headless-server-events-"))
   temporaryDirectories.push(directory)
@@ -242,7 +381,30 @@ test("streams ordered session events over SSE", async () => {
   expect(text).toContain('"type":"session.started"')
   expect(text).toContain('"status":"running"')
   await reader.cancel()
+  await eventHub.publish({
+    type: "session.completed",
+    sessionID: session.sessionID,
+    sequence: 2,
+  })
+  await Bun.sleep(10)
 })
+
+async function readSseUntil(
+  reader: Pick<ReadableStreamDefaultReader<Uint8Array>, "read">,
+  marker: string,
+): Promise<string> {
+  let text = ""
+  const decoder = new TextDecoder()
+  for (let attempt = 0; attempt < 12 && !text.includes(marker); attempt++) {
+    const chunk = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`SSE 事件读取超时: ${marker}`)), 1_000)),
+    ])
+    text += decoder.decode(chunk.value ?? new Uint8Array())
+  }
+  if (!text.includes(marker)) throw new Error(`SSE 未收到目标事件: ${marker}`)
+  return text
+}
 
 test("lists pending permissions and returns stable approval errors", async () => {
   const directory = await mkdtemp(join(tmpdir(), "headless-server-permission-"))

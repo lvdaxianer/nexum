@@ -1,4 +1,5 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
+import { render } from "solid-js/web"
 import { OpenCode } from "@opencode/client"
 import type {
   ExperimentalHeadlessSessionEventsOutput,
@@ -26,6 +27,7 @@ function App() {
   const [busy, setBusy] = createSignal(false)
   const [notice, setNotice] = createSignal("Ready for a headless run.")
   const [connected, setConnected] = createSignal(false)
+  const [pendingDecisionID, setPendingDecisionID] = createSignal("")
   let streamController: AbortController | undefined
 
   onMount(async () => {
@@ -96,6 +98,8 @@ function App() {
         if (event.type === "session.completed") setSessionStatus("completed")
         if (event.type === "session.failed") setSessionStatus("failed")
         if (event.type === "session.cancelled") setSessionStatus("cancelled")
+        if (event.type === "tool.request") setSessionStatus("awaiting permission")
+        if (event.type === "tool.result" || event.type === "assistant.text") setSessionStatus("running")
         void refreshPermissions(id)
       }
     } catch (error) {
@@ -141,12 +145,16 @@ function App() {
   }
 
   async function decide(requestID: string, decision: "allow_once" | "allow_always" | "deny") {
+    if (pendingDecisionID()) return
+    setPendingDecisionID(requestID)
     try {
       await client.experimental.headless.session.permission.reply({ sessionID: sessionID(), requestID, decision })
       await refreshPermissions()
       setNotice(decision === "deny" ? "Permission denied." : "Permission approved.")
     } catch (error) {
       setNotice(messageFrom(error, "Permission reply failed."))
+    } finally {
+      setPendingDecisionID("")
     }
   }
 
@@ -347,9 +355,17 @@ function App() {
                     <small>{request.reason}</small>
                   </div>
                   <div class="permission-actions">
-                    <button onClick={() => decide(request.id, "allow_once")}>Allow once</button>
-                    <button onClick={() => decide(request.id, "allow_always")}>Always</button>
-                    <button class="deny" onClick={() => decide(request.id, "deny")}>
+                    <button disabled={Boolean(pendingDecisionID())} onClick={() => decide(request.id, "allow_once")}>
+                      {pendingDecisionID() === request.id ? "Saving…" : "Allow once"}
+                    </button>
+                    <button disabled={Boolean(pendingDecisionID())} onClick={() => decide(request.id, "allow_always")}>
+                      Always
+                    </button>
+                    <button
+                      class="deny"
+                      disabled={Boolean(pendingDecisionID())}
+                      onClick={() => decide(request.id, "deny")}
+                    >
                       Deny
                     </button>
                   </div>
@@ -373,3 +389,7 @@ function messageFrom(error: unknown, fallback: string): string {
 }
 
 export default App
+
+const root = document.getElementById("root")
+if (!root) throw new Error("Headless UI root element is missing")
+render(() => <App />, root)
