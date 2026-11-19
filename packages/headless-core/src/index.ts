@@ -321,8 +321,11 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
       const runState: ActiveRun = { controller: new AbortController(), cancelled: false }
       activeRuns.set(input.sessionID, runState)
       let sequence = 0
+      const publish = async (type: string, data?: Record<string, unknown>) => {
+        await options.events.publish({ sessionID: input.sessionID, type, sequence: ++sequence, data })
+      }
       let messages: ModelMessage[] = [{ role: "user", content: input.text }]
-      messages = await restoreProjectContext(input.sessionID, messages, options.projectContext)
+      messages = await restoreProjectContext(input.sessionID, messages, options.projectContext, publish)
       let prompt: ModelPrompt = {
         sessionID: input.sessionID,
         text: input.text,
@@ -330,15 +333,11 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
         ...(options.tools ? { tools: options.tools } : {}),
       }
 
-      const publish = async (type: string, data?: Record<string, unknown>) => {
-        await options.events.publish({ sessionID: input.sessionID, type, sequence: ++sequence, data })
-      }
-
       try {
         for (let step = 0; step < maxSteps; step++) {
           throwIfCancelled(runState)
           messages = await compactMessagesIfNeeded(messages, options, publish)
-          messages = await restoreProjectContext(input.sessionID, messages, options.projectContext)
+          messages = await restoreProjectContext(input.sessionID, messages, options.projectContext, publish)
           prompt = { ...prompt, messages }
           let continued = false
           for await (const chunk of options.model.prompt({ ...prompt, signal: runState.controller.signal })) {
@@ -617,6 +616,7 @@ async function restoreProjectContext(
   sessionID: string,
   messages: readonly ModelMessage[],
   projectContext?: ProjectContextPort,
+  publish?: (type: string, data?: Record<string, unknown>) => Promise<void>,
 ): Promise<ModelMessage[]> {
   if (!projectContext) return [...messages]
   const entries = await projectContext.load(sessionID)
@@ -630,6 +630,11 @@ async function restoreProjectContext(
       content: `Project context from ${entry.path}\n${entry.content}`,
       sourceID: entry.sourceID,
     }))
+  if (additions.length > 0) {
+    await publish?.("context.project.loaded", {
+      sources: entries.map(({ sourceID, kind, path }) => ({ sourceID, kind, path })),
+    })
+  }
   const firstNonSystemIndex = messages.findIndex((message) => message.role !== "system")
   const insertAt = firstNonSystemIndex === -1 ? messages.length : firstNonSystemIndex
   return [...messages.slice(0, insertAt), ...additions, ...messages.slice(insertAt)]

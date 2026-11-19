@@ -420,6 +420,116 @@ textarea:focus {
   margin-top: 18px;
   padding: 20px 24px;
 }
+.question-strip,
+.context-strip {
+  margin-top: 18px;
+  border: 1px solid #3d3831;
+  background: rgba(25, 24, 21, 0.82);
+}
+.question-strip {
+  padding: 20px 24px;
+}
+.question-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+.question-card {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #5b4730;
+  background: #231d16;
+}
+.question-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.question-block {
+  display: grid;
+  gap: 10px;
+}
+.question-block strong {
+  color: #ded5c7;
+  font-size: 12px;
+  font-weight: 400;
+}
+.answer-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.answer-option {
+  display: grid;
+  gap: 4px;
+  min-width: 140px;
+  padding: 10px 12px;
+  border: 1px solid #63503a;
+  background: transparent;
+  color: #d6cbbd;
+  text-align: left;
+}
+.answer-option small {
+  color: #817a70;
+  font-size: 9px;
+}
+.answer-option.is-selected {
+  border-color: #c88a3d;
+  background: #3a2b1d;
+  color: #f0b46d;
+}
+.text-button {
+  border: 0;
+  background: transparent;
+  color: #d58d7d;
+  font-size: 9px;
+}
+.context-strip {
+  display: grid;
+  grid-template-columns: 0.6fr 1.4fr;
+  gap: 1px;
+  background: #3d3831;
+}
+.context-card {
+  display: flex;
+  gap: 12px;
+  min-height: 106px;
+  padding: 20px 24px;
+  background: rgba(25, 24, 21, 0.92);
+}
+.context-card h3 {
+  color: #e6ddd0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.context-card > div {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.context-value {
+  color: #d39249;
+  font-size: 10px;
+}
+.source-list {
+  display: grid;
+  gap: 6px;
+}
+.source-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: #9caa8b;
+  font-size: 9px;
+}
+.source-row span {
+  color: #d39249;
+  text-transform: uppercase;
+}
+.source-row code {
+  color: #b9b0a3;
+}
 .permission-title {
   justify-content: flex-start;
   gap: 12px;
@@ -508,7 +618,8 @@ footer {
     width: min(100% - 30px, 720px);
   }
   .hero-grid,
-  .workspace-grid {
+  .workspace-grid,
+  .context-strip {
     grid-template-columns: 1fr;
   }
   .hero-grid {

@@ -101,6 +101,7 @@ export const HeadlessEventType = Schema.Literals([
   "context.compaction.started",
   "context.compaction.completed",
   "context.compaction.failed",
+  "context.project.loaded",
   "session.completed",
   "session.failed",
   "session.cancelled",

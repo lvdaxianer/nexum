@@ -18,7 +18,7 @@
 
 ## 4. 独立 UI 能力验收
 
-- [ ] 4.1 增加 Question 表单、压缩状态和项目上下文来源时间线，保持 UI 只通过 Headless API 交互；通过 UI tsc/build 验证
+- [x] 4.1 增加 Question 表单、压缩状态和项目上下文来源时间线，保持 UI 只通过 Headless API 交互；通过 UI tsc/build 验证
 - [ ] 4.2 扩展页面级 Playwright/Bun smoke，验证允许工具、拒绝工具、回答 Question、压缩后继续和凭据不出现在页面/事件中
 
 ## 5. 真实模型 Smoke 与交付
