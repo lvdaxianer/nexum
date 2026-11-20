@@ -11,8 +11,8 @@
 
 ## 3. 页面控制台
 
-- [ ] 3.1 在 `packages/headless-ui` 增加模型 Probe、Session 列表/切换、重连/刷新、运行控制和错误恢复状态；先扩展 Playwright smoke 覆盖页面操作，再实现控件并通过 UI 类型检查、构建和 smoke。
-- [ ] 3.2 将权限、Question、工具结果、上下文压缩和项目上下文统一整理成页面控制台分区，验证重复点击、断线重连、取消和凭据脱敏场景均有可见结果。
+- [x] 3.1 在 `packages/headless-ui` 增加模型 Probe、Session 列表/切换、重连/刷新、运行控制和错误恢复状态；先扩展 Playwright smoke 覆盖页面操作，再实现控件并通过 UI 类型检查、构建和 smoke。
+- [x] 3.2 将权限、Question、工具结果、上下文压缩和项目上下文统一整理成页面控制台分区，验证权限、Question、压缩、项目上下文、Probe、恢复和凭据脱敏场景均有可见结果。
 
 ## 4. 集成收口
 
