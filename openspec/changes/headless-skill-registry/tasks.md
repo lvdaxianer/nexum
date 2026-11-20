@@ -10,7 +10,7 @@
 
 ## 3. Headless API 与客户端契约
 
-- [ ] 3.1 增加 Skill list/detail/register/refresh/validate/activate 路由、协议 Schema、生成客户端和 `apis/headless.md` 文档；通过 Server/Protocol/Client 测试与类型检查。
+- [x] 3.1 增加 Skill list/detail/register/refresh/validate/activate 路由、协议 Schema、生成客户端和 `apis/headless.md` 文档；通过 Server/Protocol/Client 测试与类型检查。
 
 ## 4. 页面控制台
 

@@ -334,6 +334,16 @@ import type {
   ExperimentalHeadlessSessionCreateInput,
   ExperimentalHeadlessSessionCreateOutput,
   ExperimentalHeadlessSessionListOutput,
+  ExperimentalHeadlessSkillListOutput,
+  ExperimentalHeadlessSkillDetailInput,
+  ExperimentalHeadlessSkillDetailOutput,
+  ExperimentalHeadlessSkillRegisterInput,
+  ExperimentalHeadlessSkillRegisterOutput,
+  ExperimentalHeadlessSkillRefreshOutput,
+  ExperimentalHeadlessSkillValidateInput,
+  ExperimentalHeadlessSkillValidateOutput,
+  ExperimentalHeadlessSkillActivateInput,
+  ExperimentalHeadlessSkillActivateOutput,
   ExperimentalHeadlessSessionPromptInput,
   ExperimentalHeadlessSessionPromptOutput,
   ExperimentalHeadlessSessionQuestionListInput,
@@ -1988,6 +1998,77 @@ export function make(options: ClientOptions) {
                 requestOptions,
               ).then((value) => value.data),
           },
+        },
+        skill: {
+          list: (requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSkillListOutput }>(
+              {
+                method: "GET",
+                path: `/api/experimental/headless/skills`,
+                successStatus: 200,
+                declaredStatuses: [],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          detail: (input: ExperimentalHeadlessSkillDetailInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSkillDetailOutput }>(
+              {
+                method: "GET",
+                path: `/api/experimental/headless/skills/${encodeURIComponent(input.skillID)}`,
+                successStatus: 200,
+                declaredStatuses: [404],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          register: (input: ExperimentalHeadlessSkillRegisterInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSkillRegisterOutput }>(
+              {
+                method: "POST",
+                path: `/api/experimental/headless/skills/register`,
+                body: { id: input["id"] },
+                successStatus: 200,
+                declaredStatuses: [400, 404],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          refresh: (requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSkillRefreshOutput }>(
+              {
+                method: "POST",
+                path: `/api/experimental/headless/skills/refresh`,
+                successStatus: 200,
+                declaredStatuses: [],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          validate: (input?: ExperimentalHeadlessSkillValidateInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSkillValidateOutput }>(
+              {
+                method: "POST",
+                path: `/api/experimental/headless/skills/validate`,
+                body: { id: input?.["id"] },
+                successStatus: 200,
+                declaredStatuses: [],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
+          activate: (input: ExperimentalHeadlessSkillActivateInput, requestOptions?: RequestOptions) =>
+            request<{ readonly data: ExperimentalHeadlessSkillActivateOutput }>(
+              {
+                method: "POST",
+                path: `/api/experimental/headless/skills/${encodeURIComponent(input.skillID)}/activate`,
+                body: { sessionID: input["sessionID"], text: input["text"] },
+                successStatus: 200,
+                declaredStatuses: [400, 404],
+                empty: false,
+              },
+              requestOptions,
+            ).then((value) => value.data),
         },
       },
     },

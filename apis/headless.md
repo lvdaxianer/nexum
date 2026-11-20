@@ -23,6 +23,12 @@
 | `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/events`                       | [Session 事件](#81-session-事件)  | 已覆盖   |
 | `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/permission`                   | [权限列表](#61-权限列表)          | 已覆盖   |
 | `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/permission/:requestID/reply` | [权限审批](#71-权限审批)          | 已覆盖   |
+| `headless-server/src/index.ts` | `GET /api/experimental/headless/skills`                                          | [Skill 列表](#131-skill-列表)     | 已覆盖   |
+| `headless-server/src/index.ts` | `GET /api/experimental/headless/skills/:skillID`                                 | [Skill 详情](#132-skill-详情)     | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/skills/register`                                | [Skill 注册](#133-skill-注册)     | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/skills/refresh`                                 | [Skill 刷新](#134-skill-刷新)     | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/skills/validate`                                | [Skill 校验](#135-skill-校验)     | 已覆盖   |
+| `headless-server/src/index.ts` | `POST /api/experimental/headless/skills/:skillID/activate`                       | [Skill 激活](#136-skill-激活)     | 已覆盖   |
 
 ### 1.2 浏览器跨域约定
 
@@ -839,3 +845,96 @@ curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/model/probe
 ```
 
 真实凭据不通过此接口传入；先使用 `PUT /api/experimental/headless/model` 保存配置，或通过服务端环境变量引用凭据。
+
+## 13. Skill 管理与激活
+
+Headless Server 默认扫描启动工作目录下的 `skills/`；生产环境可通过
+`startHeadlessServer({ skillRoots })` 指定受控 Skill root。Skill API 只返回安全摘要、相对文件清单和脱敏诊断，不返回宿主绝对路径或凭据。
+
+### 13.1 Skill 列表
+
+```http
+GET /api/experimental/headless/skills
+```
+
+成功响应 `200 OK`：
+
+```json
+{
+  "data": [
+    {
+      "id": "metric-view-lifecycle",
+      "name": "metric-view-lifecycle",
+      "description": "Metric view lifecycle skill",
+      "version": "0.1.0",
+      "digest": "sha256...",
+      "fileCount": 71,
+      "files": ["SKILL.md", "README.md"],
+      "status": "ready",
+      "diagnostics": []
+    }
+  ]
+}
+```
+
+### 13.2 Skill 详情
+
+```http
+GET /api/experimental/headless/skills/{skillID}
+```
+
+返回与列表相同的安全摘要。Skill 不存在返回 `404 HEADLESS_SKILL_NOT_FOUND`。
+
+### 13.3 Skill 注册
+
+```http
+POST /api/experimental/headless/skills/register
+Content-Type: application/json
+
+{"id":"metric-view-lifecycle"}
+```
+
+注册只接受已经位于受控 `skillRoots` 的 Skill ID，不接受任意本地路径或文件上传；服务端会刷新 Registry 并返回当前摘要。对同一 ID 重复调用是幂等的。未知 ID 返回 `404 HEADLESS_SKILL_NOT_FOUND`。
+
+### 13.4 Skill 刷新
+
+```http
+POST /api/experimental/headless/skills/refresh
+```
+
+服务端重新扫描配置的 Skill roots，并返回最新摘要数组。目录缺失、`SKILL.md` 无效、符号链接或超出文件大小限制的 Skill 会显示为 `invalid`；重复 ID 会显示为 `conflict`，两者均不可激活。
+
+### 13.5 Skill 校验
+
+```http
+POST /api/experimental/headless/skills/validate
+Content-Type: application/json
+
+{"id":"metric-view-lifecycle"}
+```
+
+`id` 可选；省略时校验全部 Skill。响应：
+
+```json
+{
+  "data": {
+    "valid": true,
+    "data": [{ "id": "metric-view-lifecycle", "status": "ready" }]
+  }
+}
+```
+
+`valid=true` 仅表示返回集合中的 Skill 全部处于 `ready`，不表示已经执行 Skill 脚本或外部业务校验。
+
+### 13.6 Skill 激活
+
+```http
+POST /api/experimental/headless/skills/{skillID}/activate
+Content-Type: application/json
+
+{"sessionID":"session-id","text":"执行 @metric-view-lifecycle"}
+```
+
+激活会复用 Core 的 `skill.use` PermissionPort；权限未决时请求会等待页面审批，拒绝返回 `409 HEADLESS_SKILL_PERMISSION_DENIED`，取消会沿用 Session 的终态取消语义。成功返回 Skill attachment 和带 `skill:{id}` `sourceID` 的 system message。Skill 指令本身不会执行脚本，也不会绕过普通文件、Shell、HTTP 或工具权限。
+
+错误响应统一包含 `errorCode`、`message`、`traceId`，不包含 Skill root 绝对路径、原始凭据或堆栈。
