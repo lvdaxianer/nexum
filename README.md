@@ -68,12 +68,12 @@ OpenCode Headless Core 是本项目基于 OpenCode 重构出的 UI 无关 Coding
 
 ### 7. Skill Registry 与 `@skill` 调用
 
-项目级 Skill 已经成为 Core 的一等能力。当前已注册并验收 `metric-view-lifecycle`：
+项目级 Skill 已经成为 Core 的一等能力。仓库不内置具体业务 Skill，宿主可以通过配置外部 Skill root 接入自己的能力包：
 
 - 从项目 `skills/` 目录发现目录型 Skill。
 - 校验 manifest、`SKILL.md`、文件大小、路径边界和内容摘要。
 - 检查重复 ID、内容漂移和非法符号链接。
-- Prompt 中输入 `@metric-view-lifecycle` 即可触发 Skill 调用。
+- Prompt 中输入 `@skill-id` 即可触发 Skill 调用。
 - Skill 调用使用独立的 `skill.use` 权限，不默认绕过人工审批。
 - 获得批准后，将 Skill 内容以稳定 `sourceID` 注入模型 system message。
 - 发布 `skill.activated`、`skill.failed` 等运行时事件。
@@ -183,16 +183,6 @@ bun run --cwd packages/headless-ui build
 bun run --cwd packages/headless-ui test:smoke
 ```
 
-验证项目 Skill：
-
-```bash
-cd skills/metric-view-lifecycle
-python3 scripts/check_contract_drift.py
-for test_file in scripts/test_*.py; do
-  PYTHONPATH=scripts python3 "$test_file" || exit 1
-done
-```
-
 当前验收结果：
 
 - Headless Core：50 个测试，160 个断言
@@ -200,8 +190,7 @@ done
 - Protocol：17 个测试，32 个断言
 - Client：4 个测试，32 个断言
 - UI Smoke：6 个测试全部通过
-- `metric-view-lifecycle`：15 个 Python 测试文件，共 100 个测试全部通过
-- Skill contract drift：`{"ok": true}`
+- Skill Registry、`@skill` 激活、权限门禁和上下文注入由 Headless Core/Server/UI 测试覆盖
 
 ## 目录结构
 
@@ -231,7 +220,7 @@ packages/merman/              Mermaid 内容渲染
 packages/simulation/          测试模拟与录制
 packages/script/              构建与打包脚本
 
-skills/metric-view-lifecycle/ MetricView 生命周期 Skill
+skills/                       外部 Skill 的默认挂载目录（仓库不内置业务 Skill）
 docs/headless-core-poc.md     Headless Core POC 使用与验收
 openspec/changes/              设计变更与能力规格
 ```

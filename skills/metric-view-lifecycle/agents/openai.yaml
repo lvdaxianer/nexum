@@ -1,4 +1,0 @@
-interface:
-  display_name: "Metric View Lifecycle"
-  short_description: "Generate, test, repair, save, and verify MetricView definitions"
-  default_prompt: "根据业务需求和已登记 DDL references 完成指标视图生成、测试、修复、空结果结构回退、保存和复核。"

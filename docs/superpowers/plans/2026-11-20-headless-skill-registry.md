@@ -13,7 +13,7 @@
 ### Task 1: 项目 Skill 包与 Core Registry
 
 **Files:**
-- Create: `skills/metric-view-lifecycle/**`（从已验证的本机完整目录复制，保留 `SKILL.md`、`README.md`、`agents/`、`references/`、`scripts/`、`evals/`）
+- Test fixture: 临时目录型 Skill（保留 `SKILL.md`、`references/` 和 `scripts/`）
 - Create: `packages/headless-core/src/skill-registry.ts`
 - Modify: `packages/headless-core/src/index.ts`
 - Test: `packages/headless-core/test/skill-registry.test.ts`
@@ -52,7 +52,7 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-  覆盖 `@metric-view-lifecycle` mention range、未知 Skill、重复 mention 去重、Skill content 注入、`skill.use` deny、pending permission cancel 和 ordered activation event。
+  覆盖 `@skill-id` mention range、未知 Skill、重复 mention 去重、Skill content 注入、`skill.use` deny、pending permission cancel 和 ordered activation event。
 
 - [ ] **Step 2: Run RED**
 
@@ -116,7 +116,7 @@
 
 - [ ] **Step 1: Write the failing smoke test**
 
-  覆盖页面加载 Skill 列表、输入 `@metric-view-lifecycle` 出现补全、激活后显示 Skill chip、点击 Validate 显示 pass/fail、刷新后恢复激活状态和错误可重试。
+  覆盖页面加载 Skill 列表、输入 `@skill-id` 出现补全、激活后显示 Skill chip、点击 Validate 显示 pass/fail、刷新后恢复激活状态和错误可重试。
 
 - [ ] **Step 2: Run RED**
 
@@ -141,16 +141,16 @@
 **Files:**
 - Modify: `openspec/changes/headless-skill-registry/tasks.md`
 - Modify: `docs/headless-core-poc.md`
-- Test: `skills/metric-view-lifecycle/scripts/test_*.py`
+- Test: 临时 Skill fixture 与 Headless Core/Server/UI 测试
 
 - [ ] **Step 1: Run complete Skill package verification**
 
-  Run from `skills/metric-view-lifecycle`: `python3 scripts/check_contract_drift.py && for test_file in scripts/test_*.py; do PYTHONPATH=scripts python3 "$test_file" || exit 1; done`
+  Run Headless Core/Server/UI 测试，验证 Skill Registry、权限和激活链路。
   Expected: contract drift `{ "ok": true }` and all local tests pass; no real token/database access.
 
 - [ ] **Step 2: Run Headless page-to-Core Skill smoke**
 
-  Start the Headless Server/UI, use the page to register/select `metric-view-lifecycle`, submit a prompt with `@metric-view-lifecycle`, observe the Skill activation event, and verify Permission/Question/cancel behavior.
+  Start the Headless Server/UI, use the page to register/select a temporary Skill, submit a prompt with `@skill-id`, observe the Skill activation event, and verify Permission/Question/cancel behavior.
 
 - [ ] **Step 3: Run final audit**
 

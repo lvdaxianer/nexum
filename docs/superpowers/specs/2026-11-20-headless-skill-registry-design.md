@@ -2,13 +2,13 @@
 
 ## 背景
 
-`metric-view-lifecycle` 是一个完整的目录型 Skill，包含 `SKILL.md`、references、scripts 和 evals。现有 OpenCode 原生 Core 已有 Skill discovery、Skill service、Prompt attachment 和 `session.skill`，但当前 Headless POC 没有把这些能力迁移到 UI 无关的 Core，也没有让页面控制台使用 `@skill`。
+目录型 Skill 可以包含 `SKILL.md`、references、scripts 和 evals。现有 OpenCode 原生 Core 已有 Skill discovery、Skill service、Prompt attachment 和 `session.skill`，但当前 Headless POC 没有把这些能力迁移到 UI 无关的 Core，也没有让页面控制台使用 `@skill`。
 
 ## 目标
 
 - 让项目可复现地注册完整 Skill 包，而不是依赖某台机器的全局目录。
 - 让任何 UI 通过 Headless API 列出、校验和激活 Skill。
-- 让 Session Prompt 支持 `@metric-view-lifecycle`，并把 Skill 指令作为受控上下文注入。
+- 让 Session Prompt 支持 `@skill-id`，并把 Skill 指令作为受控上下文注入。
 - 让 Skill 引起的文件、shell 和 HTTP 操作仍然经过现有 Permission、取消和事件链路。
 - 通过页面运行 Skill 验证，并保留 Skill 自带 100 个本地测试作为独立证据。
 
@@ -39,8 +39,8 @@ Skill 校验默认只运行本地声明的 eval/test，限制 cwd、环境变量
 
 ## 验收
 
-- Registry 可发现 `metric-view-lifecycle` 的完整文件清单，并拒绝路径逃逸、重复 ID 和坏 manifest。
-- `@metric-view-lifecycle` 能在 Session 中形成 attachment，权限拒绝和取消均为 terminal 状态。
+- Registry 可发现配置目录中的完整文件清单，并拒绝路径逃逸、重复 ID 和坏 manifest。
+- `@skill-id` 能在 Session 中形成 attachment，权限拒绝和取消均为 terminal 状态。
 - API、生成客户端和页面能完成 list/detail/register/refresh/validate/activate。
 - UI smoke 覆盖自动补全、激活、验证失败恢复和凭据脱敏。
 - Skill contract drift 与全部 100 个本地 Python 测试通过。

@@ -20,11 +20,11 @@ afterEach(async () => {
 test("exposes safe Skill management and activation routes", async () => {
   const root = await mkdtemp(join(tmpdir(), "headless-skill-api-"))
   temporaryDirectories.push(root)
-  const skillRoot = join(root, "metric-view-lifecycle")
+  const skillRoot = join(root, "example-skill")
   await mkdir(skillRoot)
   await writeFile(
     join(skillRoot, "SKILL.md"),
-    "---\nname: metric-view-lifecycle\ndescription: Metric view test skill\nversion: 0.1.0\n---\n\n# Test instructions\n",
+    "---\nname: example-skill\ndescription: Example test skill\nversion: 0.1.0\n---\n\n# Test instructions\n",
   )
   const registry = createHeadlessSkillRegistry({ roots: [root] })
   await registry.refresh()
@@ -41,23 +41,23 @@ test("exposes safe Skill management and activation routes", async () => {
 
   const listResponse = await fetch(new URL("/api/experimental/headless/skills", server.url))
   const listBody = (await listResponse.json()) as { data: Array<Record<string, unknown>> }
-  const detailResponse = await fetch(new URL("/api/experimental/headless/skills/metric-view-lifecycle", server.url))
+  const detailResponse = await fetch(new URL("/api/experimental/headless/skills/example-skill", server.url))
   const registerResponse = await fetch(new URL("/api/experimental/headless/skills/register", server.url), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: "metric-view-lifecycle" }),
+    body: JSON.stringify({ id: "example-skill" }),
   })
   const validateResponse = await fetch(new URL("/api/experimental/headless/skills/validate", server.url), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: "metric-view-lifecycle" }),
+    body: JSON.stringify({ id: "example-skill" }),
   })
   const activateRequest = fetch(
-    new URL("/api/experimental/headless/skills/metric-view-lifecycle/activate", server.url),
+    new URL("/api/experimental/headless/skills/example-skill/activate", server.url),
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionID: session.sessionID, text: "执行 @metric-view-lifecycle" }),
+      body: JSON.stringify({ sessionID: session.sessionID, text: "执行 @example-skill" }),
     },
   )
   while ((await permission.list(session.sessionID)).length === 0) await Bun.sleep(1)
@@ -66,13 +66,13 @@ test("exposes safe Skill management and activation routes", async () => {
   const activateResponse = await activateRequest
 
   expect(listResponse.status).toBe(200)
-  expect(listBody.data[0]).toMatchObject({ id: "metric-view-lifecycle", status: "ready", fileCount: 1 })
+  expect(listBody.data[0]).toMatchObject({ id: "example-skill", status: "ready", fileCount: 1 })
   expect(JSON.stringify(listBody)).not.toContain(root)
   expect(detailResponse.status).toBe(200)
   expect(registerResponse.status).toBe(200)
   expect(validateResponse.status).toBe(200)
   expect(activateResponse.status).toBe(200)
   expect(await activateResponse.json()).toMatchObject({
-    data: { skills: [{ id: "metric-view-lifecycle" }] },
+    data: { skills: [{ id: "example-skill" }] },
   })
 })

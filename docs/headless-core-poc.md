@@ -34,7 +34,7 @@ bun run --cwd packages/headless-ui dev
 3. 在 Runtime timeline 查看事件、刷新运行时状态、重连事件流或取消当前运行。
 4. 在 Permission queue 处理工具权限，在 Question queue 补充模型所需信息；允许、拒绝、回答和取消都会回到同一个 Session。
 5. 在 Context 查看压缩状态、最近消息和项目上下文来源。
-6. 在 Skill Registry 管理项目级 Skill，刷新或验证 `metric-view-lifecycle` 等 Skill；在 Prompt 中输入 `@skill-id` 可触发权限审批，批准后由 Core 注入 `SKILL.md` 系统提示并发布激活事件。
+6. 在 Skill Registry 管理宿主配置的项目级 Skill；在 Prompt 中输入 `@skill-id` 可触发权限审批，批准后由 Core 注入 `SKILL.md` 系统提示并发布激活事件。
 
 页面只依赖 Headless Client/Server，不导入 Core，也不会把 credential 原文放入 DOM、SSE 或浏览器存储。
 

@@ -2,18 +2,16 @@
 
 日期：2026-11-20  
 分支：`dev-v0.0.1` 集成链路上的 T5 验收分支  
-范围：项目级 `metric-view-lifecycle` Skill、页面控制台、Headless API、Core 权限与 Prompt 注入链路。
+范围：项目级目录型 Skill、页面控制台、Headless API、Core 权限与 Prompt 注入链路。
 
 ## 验收结论
 
-通过。页面可以输入 `@metric-view-lifecycle`，经 Headless Server 进入 Core Coding Loop，触发 `skill.use` 权限；页面批准后，Skill 内容以稳定 `sourceID` 注入模型 system message，Core 发布 `skill.activated`，模型完成后页面显示完成状态。
+通过。页面可以输入 `@skill-id`，经 Headless Server 进入 Core Coding Loop，触发 `skill.use` 权限；页面批准后，Skill 内容以稳定 `sourceID` 注入模型 system message，Core 发布 `skill.activated`，模型完成后页面显示完成状态。
 
 真实页面链路由 `packages/headless-ui/test/permission.smoke.spec.ts` 的新增测试覆盖，UI smoke 共 6/6 通过。
 
-## Skill 本体验证
+## Skill 能力验证
 
-- `scripts/check_contract_drift.py`：通过，结果 `{ "ok": true }`。
-- `scripts/test_*.py`：15 个测试文件，合计 100 个测试，全部通过。
 - 校验内容包括 manifest、目录路径边界、摘要/内容漂移、注册发现和 Skill 资产契约。
 
 ## 分层测试证据
@@ -35,7 +33,7 @@
 
 ## 交付物
 
-- 项目级 `skills/metric-view-lifecycle` Skill 包。
+- UI 无关的目录型 Skill 注册与验证能力。
 - UI 无关的 Core Skill Registry 与 Skill Invocation Port。
 - Headless Skill 管理 API、协议 Schema、Promise/Effect 生成客户端。
 - Skill 控制台、`@` 自动补全、权限队列和激活事件展示。

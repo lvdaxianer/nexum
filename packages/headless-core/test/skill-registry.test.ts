@@ -19,16 +19,16 @@ async function makeSkill(root: string, directory: string, name = directory) {
 
 test("discovers a complete directory skill with a stable digest and safe file manifest", async () => {
   const root = await mkdtemp(join(tmpdir(), "headless-skill-"))
-  await makeSkill(root, "metric-view-lifecycle")
+  await makeSkill(root, "example-skill")
   const registry = createHeadlessSkillRegistry({ roots: [root] })
 
   await registry.refresh()
   const [summary] = await registry.list()
-  const skill = await registry.get("metric-view-lifecycle")
+  const skill = await registry.get("example-skill")
 
   expect(summary).toMatchObject({
-    id: "metric-view-lifecycle",
-    name: "metric-view-lifecycle",
+    id: "example-skill",
+    name: "example-skill",
     description: "A test skill",
     version: "0.1.0",
     status: "ready",

@@ -63,6 +63,7 @@ function App() {
   const [activeSkillIDs, setActiveSkillIDs] = createSignal<string[]>([])
   const [notice, setNotice] = createSignal("准备开始一次 Headless 运行")
   const [connected, setConnected] = createSignal(false)
+  const [modelConfigured, setModelConfigured] = createSignal(false)
   const [pendingDecisionID, setPendingDecisionID] = createSignal("")
   const [pendingQuestionID, setPendingQuestionID] = createSignal("")
   const [cancelBusy, setCancelBusy] = createSignal(false)
@@ -77,6 +78,7 @@ function App() {
         setBaseUrl(active.data.baseUrl)
         setModel(active.data.model)
         setCredentialRef(active.data.credentialRef ?? "")
+        setModelConfigured(true)
         setNotice(active.data.credentialConfigured ? "模型配置已加载" : "模型服务地址已加载")
       }
       await Promise.all([restoreSession(), loadSkills()])
@@ -97,6 +99,7 @@ function App() {
         credentialRef: credentialRef().trim() || undefined,
       })
       setCredential("")
+      setModelConfigured(true)
       setNotice(`模型 ${saved.data.model} 已就绪：${saved.data.baseUrl}`)
     } catch (error) {
       setNotice(messageFrom(error, "模型配置未通过，请检查地址和凭据"))
@@ -710,35 +713,45 @@ function App() {
             <span class="capability-icon">↯</span>
             <div>
               <span>Function Calling</span>
-              <strong>{probeResult()?.functionCalling ?? "待探测"}</strong>
+              <strong class={capabilityStateClass(probeResult()?.functionCalling ?? "待探测")}>
+                {probeResult()?.functionCalling ?? "待探测"}
+              </strong>
             </div>
           </article>
           <article class="capability-card">
             <span class="capability-icon">✓</span>
             <div>
               <span>权限门禁</span>
-              <strong>{permissions().length > 0 ? `${permissions().length} 个待处理` : "安全"}</strong>
+              <strong class={capabilityStateClass(permissions().length > 0 ? "待处理" : "安全")}>
+                {permissions().length > 0 ? `${permissions().length} 个待处理` : "安全"}
+              </strong>
             </div>
           </article>
           <article class="capability-card">
             <span class="capability-icon">?</span>
             <div>
               <span>补充信息</span>
-              <strong>{questions().length > 0 ? `${questions().length} 个问题` : "空闲"}</strong>
+              <strong class={capabilityStateClass(questions().length > 0 ? "个问题" : "空闲")}>
+                {questions().length > 0 ? `${questions().length} 个问题` : "空闲"}
+              </strong>
             </div>
           </article>
           <article class="capability-card">
             <span class="capability-icon">≈</span>
             <div>
               <span>上下文压缩</span>
-              <strong class="context-value">{compactionStatus()}</strong>
+              <strong class={`context-value ${capabilityStateClass(compactionStatus())}`}>
+                {compactionStatus()}
+              </strong>
             </div>
           </article>
           <article class="capability-card">
             <span class="capability-icon">✦</span>
             <div>
               <span>Skill</span>
-              <strong>{activeSkillIDs().length > 0 ? `${activeSkillIDs().length} 个已激活` : "未激活"}</strong>
+              <strong class={capabilityStateClass(activeSkillIDs().length > 0 ? "已激活" : "未激活")}>
+                {activeSkillIDs().length > 0 ? `${activeSkillIDs().length} 个已激活` : "未激活"}
+              </strong>
             </div>
           </article>
         </section>
@@ -757,11 +770,39 @@ function App() {
                 <Show
                   when={chatItems().length > 0}
                   fallback={
-                    <div class="empty-state">
-                      <span>◌</span>
-                      <strong>等待一次 Prompt</strong>
-                      <p>创建 Session 后，在下方输入你的第一个 Coding 任务。</p>
-                    </div>
+                    <Show
+                      when={sessionID()}
+                      fallback={
+                        <div class="empty-state">
+                          <span>◌</span>
+                          <strong>等待一次 Prompt</strong>
+                          <p>按下面的顺序准备好运行环境，Agent 的执行过程会实时出现在这里。</p>
+                          <div class="empty-steps">
+                            <div class={`empty-step ${modelConfigured() ? "is-done" : ""}`}>
+                              <span class="step-mark">{modelConfigured() ? "✓" : "1"}</span>
+                              在左侧保存模型服务配置
+                              <small>{modelConfigured() ? "已配置" : "待完成"}</small>
+                            </div>
+                            <div class="empty-step">
+                              <span class="step-mark">2</span>
+                              填写工作目录并创建 Session
+                              <small>待完成</small>
+                            </div>
+                            <div class="empty-step">
+                              <span class="step-mark">3</span>
+                              在下方输入第一个 Coding 任务
+                              <small>待开始</small>
+                            </div>
+                          </div>
+                        </div>
+                      }
+                    >
+                      <div class="empty-state">
+                        <span>◌</span>
+                        <strong>Session 已就绪</strong>
+                        <p>在下方输入你的第一个 Coding 任务，Agent 的流式输出、工具调用和权限请求都会出现在这里。</p>
+                      </div>
+                    </Show>
                   }
                 >
                   <For each={chatItems()}>
@@ -1254,6 +1295,18 @@ function projectChatEvent(items: ChatItem[], event: ExperimentalHeadlessSessionE
     default:
       return items
   }
+}
+
+/**
+ * 根据能力卡片当前值计算状态色，让一眼可扫的正异常状态有区分。
+ * @param value 卡片显示值
+ * @returns 状态修饰类名
+ */
+function capabilityStateClass(value: string): string {
+  if (value.includes("待处理") || value.includes("个问题") || value === "compressing") return "is-attention"
+  if (value === "fail" || value === "failed") return "is-danger"
+  if (value === "待探测" || value === "idle" || value === "空闲" || value === "未激活") return "is-idle"
+  return "is-good"
 }
 
 /**

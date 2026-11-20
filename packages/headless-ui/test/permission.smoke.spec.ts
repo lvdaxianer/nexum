@@ -260,25 +260,25 @@ describe.serial("Headless UI smoke", () => {
     browser = await chromium.launch({ headless: true })
     const page = await browser.newPage()
     skillRoot = await mkdtemp(join(tmpdir(), "headless-ui-skill-root-"))
-    const skillDirectory = join(skillRoot, "metric-view-lifecycle")
+    const skillDirectory = join(skillRoot, "example-skill")
     await mkdir(skillDirectory)
     await writeFile(
       join(skillDirectory, "SKILL.md"),
-      "---\nname: metric-view-lifecycle\ndescription: Metric view lifecycle test skill\nversion: 0.1.0\n---\n\n# Test Skill\n",
+      "---\nname: example-skill\ndescription: Example test skill\nversion: 0.1.0\n---\n\n# Test Skill\n",
     )
     apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin], skillRoots: [skillRoot] })
     uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
 
     await page.goto(uiOrigin)
-    await expect(page.getByText("metric-view-lifecycle", { exact: true }).first()).toBeVisible()
+    await expect(page.getByText("example-skill", { exact: true }).first()).toBeVisible()
     directory = await mkdtemp(join(tmpdir(), "headless-ui-skill-session-"))
     await page.getByLabel("工作目录").fill(directory)
     await page.getByRole("button", { name: /创建新 Session/ }).click()
     await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
-    await page.getByPlaceholder("描述下一步 Coding 任务…").fill("@met")
-    await expect(page.getByRole("option", { name: "@metric-view-lifecycle" })).toBeVisible()
-    await page.getByRole("option", { name: "@metric-view-lifecycle" }).click()
-    await expect(page.locator(".skill-chip")).toContainText("metric-view-lifecycle")
+    await page.getByPlaceholder("描述下一步 Coding 任务…").fill("@exa")
+    await expect(page.getByRole("option", { name: "@example-skill" })).toBeVisible()
+    await page.getByRole("option", { name: "@example-skill" }).click()
+    await expect(page.locator(".skill-chip")).toContainText("example-skill")
     await page.getByRole("button", { name: "校验" }).click()
     await expect(page.getByText("validated / ready", { exact: true })).toBeVisible()
   })
@@ -315,13 +315,20 @@ describe.serial("Headless UI smoke", () => {
     await page.getByRole("button", { name: "刷新状态" }).click()
     await expect(page.getByText("运行状态已刷新", { exact: true })).toBeVisible()
   })
-  test.serial("runs the project metric Skill from page mention through Core permission", async () => {
+  test.serial("runs a configured Skill from page mention through Core permission", async () => {
     browser = await chromium.launch({ headless: true })
     const page = await browser.newPage()
     const sessions = createHeadlessSessionService()
     const eventHub = createHeadlessEventHub()
     const permission = createHeadlessPermissionBroker()
-    const projectSkillRoot = normalize(join(import.meta.dir, "../../../skills"))
+    skillRoot = await mkdtemp(join(tmpdir(), "headless-ui-project-skill-root-"))
+    const projectSkillDirectory = join(skillRoot, "example-skill")
+    await mkdir(projectSkillDirectory)
+    await writeFile(
+      join(projectSkillDirectory, "SKILL.md"),
+      "---\nname: example-skill\ndescription: Example project skill\nversion: 0.1.0\n---\n\n# Example Skill\n",
+    )
+    const projectSkillRoot = normalize(skillRoot)
     const registry = createHeadlessSkillRegistry({ roots: [projectSkillRoot] })
     await registry.refresh()
     const skills = createHeadlessSkillInvocationPort({ registry, permission })
@@ -329,7 +336,7 @@ describe.serial("Headless UI smoke", () => {
       async *prompt(input) {
         expect(
           input.messages?.some(
-            (message) => message.role === "system" && message.sourceID === "skill:metric-view-lifecycle",
+            (message) => message.role === "system" && message.sourceID === "skill:example-skill",
           ),
         ).toBe(true)
         yield { type: "completed" }
@@ -364,7 +371,7 @@ describe.serial("Headless UI smoke", () => {
     await page.goto(uiOrigin)
     await page.getByLabel("工作目录").fill(directory)
     await page.getByRole("button", { name: /创建新 Session/ }).click()
-    await page.getByPlaceholder("描述下一步 Coding 任务…").fill("@metric-view-lifecycle 验证指标视图")
+    await page.getByPlaceholder("描述下一步 Coding 任务…").fill("@example-skill 验证 Skill 激活")
     await page.getByRole("button", { name: /发送 Prompt/ }).click()
     await expect(page.getByRole("button", { name: "允许一次" })).toBeVisible()
     await page.getByRole("button", { name: "允许一次" }).click()

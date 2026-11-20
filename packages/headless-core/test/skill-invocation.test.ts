@@ -17,7 +17,7 @@ function registryFor(ids: readonly string[]): HeadlessSkillRegistry {
       id,
       {
         id,
-        name: id === "metric-view-lifecycle" ? "Metric View Lifecycle" : id,
+        name: id === "example-skill" ? "Example Skill" : id,
         description: "test skill",
         version: "0.1.0",
         digest: `digest-${id}`,
@@ -52,24 +52,24 @@ test("parses @skill, preserves mention range, injects SKILL.md, and deduplicates
     },
   }
   const invocation = createHeadlessSkillInvocationPort({
-    registry: registryFor(["metric-view-lifecycle"]),
+    registry: registryFor(["example-skill"]),
     permission,
   })
 
-  const prompt = await invocation.resolve({ sessionID: "session-1", text: "请执行 @metric-view-lifecycle 再执行 @metric-view-lifecycle" })
+  const prompt = await invocation.resolve({ sessionID: "session-1", text: "请执行 @example-skill 再执行 @example-skill" })
 
   expect(prompt.skills).toHaveLength(1)
   expect(prompt.skills[0]).toMatchObject({
-    id: "metric-view-lifecycle",
-    name: "Metric View Lifecycle",
-    mention: { start: 4, end: 26, text: "@metric-view-lifecycle" },
+    id: "example-skill",
+    name: "Example Skill",
+    mention: { start: 4, end: 18, text: "@example-skill" },
   })
   expect(prompt.systemMessages[0]).toMatchObject({
     role: "system",
-    sourceID: "skill:metric-view-lifecycle",
+    sourceID: "skill:example-skill",
   })
-  expect(prompt.systemMessages[0]?.content).toContain("Skill instructions for metric-view-lifecycle")
-  expect(requests).toEqual([{ action: "skill.use", resource: "metric-view-lifecycle" }])
+  expect(prompt.systemMessages[0]?.content).toContain("Skill instructions for example-skill")
+  expect(requests).toEqual([{ action: "skill.use", resource: "example-skill" }])
 })
 
 test("returns stable not-found and permission-denied invocation errors", async () => {
