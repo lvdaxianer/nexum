@@ -708,9 +708,184 @@ textarea:focus {
 }
 
 .timeline {
-  min-height: 360px;
-  padding: 16px 0;
+  padding: 12px 0 0;
   overflow: auto;
+}
+
+.conversation-body {
+  min-height: 360px;
+  overflow: auto;
+  scrollbar-color: #cbd7df transparent;
+}
+
+.chat-stream {
+  display: grid;
+  min-height: 360px;
+  gap: 18px;
+  padding: 18px 4px 22px;
+}
+
+.chat-message {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 11px;
+  animation: rise 220ms ease both;
+}
+
+.chat-avatar {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  background: #e7f5f2;
+  color: #168276;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.chat-message.user .chat-avatar {
+  background: #e8f0fa;
+  color: #356a9e;
+}
+
+.chat-message.status .chat-avatar,
+.chat-message.execution .chat-avatar {
+  background: #f0f2f5;
+  color: #738094;
+}
+
+.chat-message-body {
+  min-width: 0;
+}
+
+.chat-message-head,
+.execution-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-message-head strong {
+  color: #243b53;
+  font-size: 11px;
+}
+
+.chat-message-head span,
+.execution-card-head span {
+  color: #98a4b1;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+
+.chat-copy {
+  margin-top: 7px;
+  color: #4d6074;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.execution-card {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 12px 13px;
+  border: 1px solid #cfe4df;
+  border-left: 3px solid #51a797;
+  border-radius: 8px;
+  background: #f4fbf9;
+}
+
+.execution-card-head strong {
+  color: #2b756a;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+
+.execution-card p,
+.status-card strong {
+  color: #587064;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.execution-card details {
+  margin-top: 3px;
+  border-top: 1px solid #dbece8;
+  padding-top: 7px;
+}
+
+.execution-card summary {
+  color: #4a8b81;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.execution-card pre {
+  max-height: 180px;
+  margin: 8px 0 0;
+  overflow: auto;
+  color: #60736d;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.chat-status-waiting .execution-card {
+  border-color: #efd9b3;
+  border-left-color: #d89a3d;
+  background: #fffaf1;
+}
+
+.chat-status-waiting .execution-card-head strong,
+.chat-status-waiting .execution-card p {
+  color: #9b6b25;
+}
+
+.chat-status-failed .execution-card,
+.chat-status-failed .status-card {
+  border-color: #edc8c3;
+  border-left-color: #cf6a61;
+  background: #fff6f5;
+}
+
+.chat-status-failed .execution-card-head strong,
+.chat-status-failed .execution-card p,
+.chat-status-failed .status-card strong {
+  color: #ae514a;
+}
+
+.chat-status-cancelled .execution-card,
+.chat-status-cancelled .status-card {
+  border-color: #d8dfe6;
+  border-left-color: #8c98a5;
+  background: #f7f8fa;
+}
+
+.status-card {
+  margin-top: 7px;
+  padding: 11px 13px;
+  border: 1px solid #cce3d8;
+  border-left: 3px solid #50a583;
+  border-radius: 8px;
+  background: #f3faf6;
+}
+
+.event-trace {
+  margin: 0 4px 10px;
+  border-top: 1px solid #edf0f3;
+  padding-top: 12px;
+}
+
+.event-trace summary {
+  color: #8290a0;
+  cursor: pointer;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
 }
 
 .empty-state {

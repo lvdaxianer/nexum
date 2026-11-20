@@ -158,6 +158,9 @@ describe.serial("Headless UI smoke", () => {
       await page.getByRole("button", { name: "允许一次" }).click()
 
       await expect(page.locator(".pill-completed")).toBeVisible()
+      await expect(page.locator(".chat-message.user")).toContainText("查看环境")
+      await expect(page.locator(".chat-message.assistant")).toContainText("命令已执行")
+      await expect(page.locator(".execution-card").filter({ hasText: "工具结果" })).toContainText("已完成")
       await expect(page.getByText("tool.result")).toBeVisible()
       await expect(page.locator("body")).not.toContainText("super-secret-token")
     },
