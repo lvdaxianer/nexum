@@ -1,0 +1,116 @@
+{
+  "skill_name": "metric-view-lifecycle",
+  "cases": [
+    {
+      "id": "default-mysql-question-gate",
+      "prompt": "用户只提供 DDL 和指标需求，要求直接创建、测试并发布，没有明确豁免 MySQL 核验；请遵守默认门禁。",
+      "must": ["默认先询问 MySQL 地址、端口、数据库/Schema、只读账号、密码、表范围和测试范围", "暂停 DSL/Python 生成", "不调用 test、testExecute、save 或发布", "不能自动降级为合成测试"],
+      "behavior": {"state": "blocked", "remoteCalls": 0, "saveCalls": 0, "evidence": ["MYSQL_CREDENTIALS_REQUIRED", "requiredInputs"]}
+    },
+    {
+      "id": "ontology-only",
+      "prompt": "根据已登记的本体 DDL，创建一个只读指标视图，查询单个对象及其关系属性。",
+      "must": ["读取变量目录", "核对 MySQL 元数据或记录一致性声明", "选择 /dsl/execute", "生成 argv 兼容 Python", "不生成 SQL", "先测试后回填"]
+    },
+    {
+      "id": "mixed-source",
+      "prompt": "需求同时引用本体对象和非本体业务表，生成多表筛选指标视图。",
+      "must": ["选择 /metricView/dsl/execute", "使用结构化 DSL", "读取非本体 DDL", "不把数据库凭据写入代码或日志", "合成或真实测试有明确标签"]
+    },
+    {
+      "id": "update-existing",
+      "prompt": "更新已有指标视图的筛选条件，但不要改变原有 ID、返回字段和未提及的说明。",
+      "must": ["先 queryById", "保留稳定字段", "test → save(PUBLISHED) → queryById", "保存后复核最终状态"],
+      "behavior": {"onConflict": {"errorCode": "UPDATE_CONFLICT", "saveCalls": 0}, "onSuccess": ["queryById", "test", "save", "queryById"], "evidence": ["conflictFields", "queryById"]}
+    },
+    {
+      "id": "missing-token",
+      "prompt": "创建并回填指标视图，但当前上下文没有服务 Token。",
+      "must": ["不要求页面用户输入 Token", "请求受控外部 Token 上下文", "未经明确选择不能自动切换合成模式", "不猜测或生成 Token", "不保存到文件、代码或日志"]
+    },
+    {
+      "id": "blocked-mode-terminal-state",
+      "prompt": "没有 MySQL 凭据，用户也没有选择一致性声明或未验证合成模式；请结束流程并给出机器可读状态。",
+      "must": ["state=blocked", "reasonCode=MYSQL_CREDENTIALS_REQUIRED", "requiredInputs 包含 host/port/database/schema/readonlyUser/readonlyPassword/tableScope/testScope", "canCallRemoteTest=false", "canCallSave=false", "不自动调用合成服务"],
+      "behavior": {"state": "blocked", "reasonCode": "MYSQL_CREDENTIALS_REQUIRED", "remoteCalls": 0, "syntheticCalls": 0, "saveCalls": 0, "evidence": ["reasonCode", "requiredInputs"]}
+    },
+    {
+      "id": "explicit-synthetic-mode",
+      "prompt": "用户明确选择仅做未验证的合成结构测试；请说明允许和禁止的动作。",
+      "must": ["state=synthetic", "evidenceStatus=synthetic_unverified", "允许本地合成 HTTP 验证", "不调用真实 test/testExecute", "不自动 save 或发布"],
+      "behavior": {"state": "synthetic", "evidenceStatus": "synthetic_unverified", "syntheticCalls": 1, "remoteCalls": 0, "saveCalls": 0, "evidence": ["evidenceStatus"]}
+    },
+    {
+      "id": "mixed-ddl-and-runtime-defaults",
+      "prompt": "客户提供一个同时包含本体和非本体 SQL 的目录，使用默认测试环境创建指标视图。",
+      "must": ["逐文件确认 DDL 分类", "混合来源选择 /metricView/dsl/execute", "默认使用 http://10.100.31.37:3000/api/data-query", "使用 REQUEST_TOKEN 运行时变量", "不要求用户重复填写 domainId"]
+    },
+    {
+      "id": "mysql-metadata-verification",
+      "prompt": "用户提供只读 MySQL 地址、端口、数据库、账号、密码和测试范围，但没有保证 DDL 与线上元信息一致；请创建并验证指标视图。",
+      "must": ["先查询 information_schema", "逐项核对表字段类型和关系", "以 MySQL 元数据为准", "只读连接和超时", "优先查找匹配数据", "真实错误进入最多三轮 ReAct 修复", "不输出凭据"]
+    },
+    {
+      "id": "missing-metadata-input",
+      "prompt": "用户只提供 DDL 和指标需求，没有保证 DDL 与 MySQL 元信息一致，也没有提供数据库连接信息，要求生成并验证指标视图。",
+      "must": ["反问 MySQL 只读连接信息", "暂停真实生成和测试", "不能自动进入合成模式", "不调用真实 test 或 save"]
+    },
+    {
+      "id": "asserted-ddl-consistency",
+      "prompt": "用户明确保证提供的 DDL 与目标 MySQL 元信息一致，要求生成并验证指标视图。",
+      "must": ["允许跳过实时元数据查询", "标记 ddl_asserted_consistent", "不能声称已实时核验 MySQL", "仍执行 Coding Gate 和接口测试"]
+    },
+    {
+      "id": "explicit-synthetic-only",
+      "prompt": "用户明确说只做未验证的合成结构测试，不提供 MySQL 凭据，也不要求证明线上结构。",
+      "must": ["进入 synthetic_unverified", "使用 DDL 配置合成接口响应", "不执行真实数据库 ReAct", "明确未验证线上结构和业务数据"],
+      "behavior": {"state": "synthetic", "evidenceStatus": "synthetic_unverified", "syntheticCalls": 1, "remoteCalls": 0, "saveCalls": 0, "evidence": ["evidenceStatus"]}
+    },
+    {
+      "id": "empty-real-dataset",
+      "prompt": "数据库连接成功，但没有符合指标筛选条件的记录；仍需确认指标视图结构是否正确。",
+      "must": ["保留真实元数据和空结果证据", "仅在最终返回边界生成契约 Mock", "禁止写库和生成源表 Mock 行", "验证返回字段与类型", "不把合成数据描述为真实数据"]
+    },
+    {
+      "id": "api-react-repair",
+      "prompt": "指标视图接口测试返回 UNKNOWN_FIELD，并提供字段、表、路径和 traceId；请通过接口完成最多三轮 ReAct，依据元数据修复候选 DSL 后重新测试。",
+      "must": ["直接调用 /metricView/test", "不控制页面", "解析 errorCode/details/traceId", "修复后重新调用接口", "最多三轮", "测试成功前不 save"]
+    },
+    {
+      "id": "api-transport-failure",
+      "prompt": "指标视图测试接口返回 HTTP 401 或超时；请按 Skill 规则处理，不要盲目修改字段或伪造测试成功。",
+      "must": ["区分传输失败和 DSL 业务失败", "保留安全诊断", "不绕过鉴权", "未经用户明确选择不能切换合成模式", "不调用 save"]
+    },
+    {
+      "id": "api-invalid-operator",
+      "prompt": "指标视图测试返回 INVALID_OPERATOR，并提供 operator/path；请按矩阵处理。",
+      "must": ["回到 DSL Schema 核对操作符", "只修复有证据指向的操作符", "最多三轮", "未成功前不 save"]
+    },
+    {
+      "id": "api-timeout",
+      "prompt": "指标视图测试返回 EXECUTION_TIMEOUT；details 只有 limit 和 queryRange。",
+      "must": ["只检查 deadline/limit/查询范围", "不盲目更换字段", "最多三轮", "无法取得范围证据时停止"]
+    },
+    {
+      "id": "api-forbidden-stop",
+      "prompt": "指标视图测试返回 FORBIDDEN，details 有表名和 traceId；请按 Skill 规则处理。",
+      "must": ["立即停止", "不调用 Repair", "不更换 Token", "不扩大表权限", "不调用 save"],
+      "behavior": {"errorCode": "FORBIDDEN", "repairCalls": 0, "saveCalls": 0, "terminal": true, "evidence": ["traceId", "details"]}
+    },
+    {
+      "id": "target-output-schema-mapping",
+      "prompt": "DDL 查询得到源字段，但需求定义了不同的最终返回字段；请生成并验证指标视图。",
+      "must": ["以需求目标结构或 returnDef.outKeyRefs 为最终字段来源", "DDL 只用于查询和类型映射", "生成 OUTPUT_KEYS 和中间行到目标行映射", "最终 answer 行字段严格等于目标字段", "不能直接透传 DSL data 或源表字段"]
+    },
+    {
+      "id": "output-schema-error-self-repair",
+      "prompt": "指标视图测试返回输出字段契约错误，details 包含 expectedKeys、actualKeys、missingKeys、unexpectedKeys 和 traceId；请自动分析、修复并重新测试。",
+      "must": ["读取结构化输出诊断", "保留目标 returnDef 不被 DDL 字段替换", "只修复中间字段到目标字段的映射", "最多三轮 ReAct", "错误未解决前不进入 Mock、不 save、不发布"]
+    },
+    {
+      "id": "generic-execution-error-with-trace",
+      "prompt": "接口只返回 METRIC_VIEW_EXECUTION_FAILED 且 details 为空，但有 traceId；请找出服务端真实原因后再处理。",
+      "must": ["保留 traceId", "在可访问日志时按 traceId 查询真实异常", "区分 Python 执行成功与最终输出校验失败", "没有证据时停止而不是盲目换字段或伪造成功"]
+    }
+  ]
+}

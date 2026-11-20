@@ -1,0 +1,31 @@
+variables:
+  - id: engine.base_url
+    name: REQUEST_BASE_URL
+    placeholder: __request_path
+    meaning: 当前指标视图运行时访问数据查询引擎的基础地址
+    capabilities: [internal_dsl_request, ontology_query, non_ontology_query]
+    use_when: Python 需要请求数据查询引擎
+    value_source: RUNTIME_CONFIG
+    type: STRING
+    required: true
+    secret: false
+  - id: engine.trusted_token
+    name: REQUEST_TOKEN
+    placeholder: __request_token
+    meaning: 当前执行上下文访问受保护数据查询接口的身份占位符；页面测试由登录会话填充，页面外调用由受范围约束的 X-Trusted-Token 触发
+    capabilities: [authenticated_dsl_request]
+    use_when: Python 请求需要可信身份时；不得要求页面用户手工输入，也不得把实际值写入代码或日志
+    value_source: SESSION_OR_TRUSTED_REQUEST
+    type: STRING
+    required: true
+    secret: true
+  - id: identity.domain_id
+    name: REQUEST_DOMAIN_ID
+    placeholder: __request_domain_id
+    meaning: 当前登录会话或外部可信 Token 绑定的业务域 ID；仅用于 Python 执行器 argv[2] 兼容上下文，不作为授权来源
+    capabilities: [authenticated_dsl_request]
+    use_when: Python 执行器需要兼容的 domainId 运行参数
+    value_source: REQUEST_CONTEXT
+    type: STRING
+    required: false
+    secret: false

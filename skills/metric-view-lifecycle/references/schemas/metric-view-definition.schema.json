@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dinghai.local/metric-view-lifecycle/metric-view-definition.schema.json",
+  "title": "MetricView definition",
+  "description": "MetricView Lifecycle skill-side structural contract; backend-open values remain strings.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["name", "description", "status", "type", "origin", "function", "typeContext"],
+  "properties": {
+    "id": {"type": ["string", "number"]},
+    "name": {"type": "string", "minLength": 1},
+    "description": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "minLength": 1},
+    "type": {"type": "string", "minLength": 1},
+    "origin": {"type": "string", "minLength": 1},
+    "matchQuestions": {"type": "array", "items": {"type": "string"}},
+    "typeContext": {
+      "type": "object",
+      "required": ["fields", "predicates"],
+      "properties": {
+        "fields": {"type": "object"},
+        "predicates": {"type": "array", "items": {"type": "object"}},
+        "timezone": {"type": "string"},
+        "sessionTimezone": {"type": "string"}
+      }
+    },
+    "function": {
+      "type": "object",
+      "required": ["name", "operation", "parameters", "returnDef", "logic", "code"],
+      "properties": {
+        "id": {"type": ["string", "number"]},
+        "name": {"type": "string", "minLength": 1},
+        "operation": {"type": "string", "minLength": 1},
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "type": {"type": "string", "pattern": "^TYPE_(STRING|NUMBER|TIME)(_ARRAY)?$"}
+            }
+          }
+        },
+        "returnDef": {
+          "type": "object",
+          "required": ["outKeyRefs"],
+          "properties": {
+            "outKeyRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "oneOf": [
+                  {"type": "string", "minLength": 1},
+                  {"type": "object", "required": ["key"], "properties": {"key": {"type": "string", "minLength": 1}}}
+                ]
+              }
+            }
+          }
+        },
+        "logic": {"type": "string", "minLength": 1},
+        "code": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
