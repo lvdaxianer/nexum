@@ -1,6 +1,8 @@
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js"
 import { render } from "solid-js/web"
 import { OpenCode } from "@opencode/client"
+import { Drawer } from "./drawer"
+import { ConfirmDialog } from "./confirm-dialog"
 import type {
   ExperimentalHeadlessModelProbeOutput,
   ExperimentalHeadlessSessionEventsOutput,
@@ -68,6 +70,8 @@ function App() {
   const [sessionCreateState, setSessionCreateState] = createSignal<ActionState>("idle")
   const [sessionCreateMessage, setSessionCreateMessage] = createSignal("")
   const [refreshBusy, setRefreshBusy] = createSignal(false)
+  const [modelDrawerOpen, setModelDrawerOpen] = createSignal(false)
+  const [skillsDrawerOpen, setSkillsDrawerOpen] = createSignal(false)
   const [skills, setSkills] = createSignal<SkillSummary[]>([])
   const [skillBusy, setSkillBusy] = createSignal(false)
   const [skillValidation, setSkillValidation] = createSignal<Record<string, string>>({})
@@ -78,8 +82,10 @@ function App() {
   const [pendingDecisionID, setPendingDecisionID] = createSignal("")
   const [pendingQuestionID, setPendingQuestionID] = createSignal("")
   const [cancelBusy, setCancelBusy] = createSignal(false)
+  const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
   let streamController: AbortController | undefined
   let promptSequence = 0
+  let sessionSelectSequence = 0
   const seenEventKeys = new Set<string>()
 
   onMount(async () => {
@@ -363,8 +369,10 @@ function App() {
   }
 
   async function selectSession(session: SessionSummary, announce = true) {
+    const sequence = ++sessionSelectSequence
     streamController?.abort()
     const snapshot = await client.experimental.headless.session.state({ sessionID: session.id })
+    if (sequence !== sessionSelectSequence) return
     setSessionID(session.id)
     setSessionStatus(snapshot.data.session.status)
     setDirectory(snapshot.data.session.directory)
@@ -655,7 +663,22 @@ function App() {
     }
   }
 
-  async function cancelSession() {
+  /**
+   * 打开取消确认对话框；取消运行不可恢复，必须先让用户看到后果再提交。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-20
+   */
+  function requestCancel() {
+    if (!sessionID() || cancelBusy()) return
+    setCancelConfirmOpen(true)
+  }
+
+  /**
+   * 确认后请求 Core 取消当前运行；请求结束前确认按钮保持 busy，结果通过 notice 可发现。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-20
+   */
+  async function confirmCancelSession() {
     if (!sessionID() || cancelBusy()) return
     setCancelBusy(true)
     try {
@@ -666,6 +689,7 @@ function App() {
       setNotice(messageFrom(error, "取消运行失败，请重试"))
     } finally {
       setCancelBusy(false)
+      setCancelConfirmOpen(false)
     }
   }
 
@@ -713,127 +737,173 @@ function App() {
           <a class="nav-item" href="#session">
             <span>◌</span>Session
           </a>
-          <a class="nav-item" href="#skills">
-            <span>✦</span>Skills
-          </a>
-          <a class="nav-item" href="#model">
-            <span>◈</span>模型配置
-          </a>
-        </nav>
-
-        <section class="sidebar-card" id="model">
-          <div class="card-heading">
-            <div>
-              <span class="section-kicker">运行配置</span>
-              <h2>模型服务</h2>
+          <Drawer
+            title="Skills"
+            description="Skill 先注册、校验，再进入模型上下文。"
+            open={skillsDrawerOpen()}
+            onOpenChange={setSkillsDrawerOpen}
+            triggerClass="nav-item"
+            trigger={
+              <>
+                <span>✦</span>Skills
+                <Show when={skills().length > 0}>
+                  <span class="nav-badge">{skills().length}</span>
+                </Show>
+              </>
+            }
+          >
+            <div class="drawer-toolbar">
+              <p class="helper-text">在 Prompt 中输入 @ 可以引用 ready 状态的 Skill。</p>
+              <button class="text-button" disabled={skillBusy()} onClick={refreshSkills}>
+                {skillBusy() ? "刷新中…" : "刷新"}
+              </button>
             </div>
-            <span class={`status-badge ${modelConfigured() ? "success" : ""}`}>
-              {probeResult() ? "已探测" : modelConfigured() ? "已配置" : "待配置"}
-            </span>
-          </div>
-          <label class={`form-field ${modelErrors().baseUrl ? "field-invalid" : ""}`}>
-            <span>
-              服务地址 <span class="required-mark">必填</span>
-            </span>
-            <input
-              id="model-base-url"
-              aria-label="服务地址"
-              aria-invalid={Boolean(modelErrors().baseUrl)}
-              aria-describedby={modelErrors().baseUrl ? "model-base-url-error" : undefined}
-              value={baseUrl()}
-              onInput={(event) => {
-                setBaseUrl(event.currentTarget.value)
-                markModelEdited("baseUrl")
-              }}
-              placeholder="https://…/v1"
-            />
-            <Show when={modelErrors().baseUrl}>
-              <span id="model-base-url-error" class="field-error" role="alert">
-                {modelErrors().baseUrl}
+            <div class="skill-list" aria-live="polite">
+              <Show when={skills().length > 0} fallback={<p class="empty-copy">暂无已发现的项目 Skill</p>}>
+                <For each={skills()}>
+                  {(skill) => (
+                    <article class={`skill-row skill-row-${skill.status}`}>
+                      <div class="skill-row-copy">
+                        <div class="skill-row-title">
+                          <strong>{skill.id}</strong>
+                          <span class="skill-status">{skill.status}</span>
+                        </div>
+                        <p>{skill.description || "暂无描述"}</p>
+                        <small>
+                          {skill.fileCount} 个文件 · {skill.digest.slice(0, 10)}
+                        </small>
+                      </div>
+                      <button class="skill-validate" onClick={() => validateSkill(skill.id)} disabled={skillBusy()}>
+                        校验
+                      </button>
+                      <Show when={skillValidation()[skill.id]}>
+                        <span class="skill-validation">{skillValidation()[skill.id]}</span>
+                      </Show>
+                    </article>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </Drawer>
+          <Drawer
+            title="模型服务"
+            description="保存模型服务配置后，Core 才能发起模型调用。"
+            open={modelDrawerOpen()}
+            onOpenChange={setModelDrawerOpen}
+            triggerClass="nav-item"
+            trigger={
+              <>
+                <span>◈</span>模型配置
+                <span class={`nav-badge ${modelConfigured() ? "is-ready" : ""}`}>
+                  {modelConfigured() ? "已配置" : "待配置"}
+                </span>
+              </>
+            }
+          >
+            <label class={`form-field ${modelErrors().baseUrl ? "field-invalid" : ""}`}>
+              <span>
+                服务地址 <span class="required-mark">必填</span>
               </span>
-            </Show>
-          </label>
-          <label class={`form-field ${modelErrors().model ? "field-invalid" : ""}`}>
-            <span>
-              模型名称 <span class="required-mark">必填</span>
-            </span>
-            <input
-              id="model-name"
-              aria-label="模型名称"
-              aria-invalid={Boolean(modelErrors().model)}
-              aria-describedby={modelErrors().model ? "model-name-error" : undefined}
-              value={model()}
-              onInput={(event) => {
-                setModel(event.currentTarget.value)
-                markModelEdited("model")
-              }}
-              placeholder="coding-model"
-            />
-            <Show when={modelErrors().model}>
-              <span id="model-name-error" class="field-error" role="alert">
-                {modelErrors().model}
+              <input
+                id="model-base-url"
+                aria-label="服务地址"
+                aria-invalid={Boolean(modelErrors().baseUrl)}
+                aria-describedby={modelErrors().baseUrl ? "model-base-url-error" : undefined}
+                value={baseUrl()}
+                onInput={(event) => {
+                  setBaseUrl(event.currentTarget.value)
+                  markModelEdited("baseUrl")
+                }}
+                placeholder="https://…/v1"
+              />
+              <Show when={modelErrors().baseUrl}>
+                <span id="model-base-url-error" class="field-error" role="alert">
+                  {modelErrors().baseUrl}
+                </span>
+              </Show>
+            </label>
+            <label class={`form-field ${modelErrors().model ? "field-invalid" : ""}`}>
+              <span>
+                模型名称 <span class="required-mark">必填</span>
               </span>
+              <input
+                id="model-name"
+                aria-label="模型名称"
+                aria-invalid={Boolean(modelErrors().model)}
+                aria-describedby={modelErrors().model ? "model-name-error" : undefined}
+                value={model()}
+                onInput={(event) => {
+                  setModel(event.currentTarget.value)
+                  markModelEdited("model")
+                }}
+                placeholder="coding-model"
+              />
+              <Show when={modelErrors().model}>
+                <span id="model-name-error" class="field-error" role="alert">
+                  {modelErrors().model}
+                </span>
+              </Show>
+            </label>
+            <label class={`form-field ${modelErrors().credential ? "field-invalid" : ""}`}>
+              凭据引用 <span class="required-mark">二选一必填</span>
+              <input
+                aria-label="凭据引用"
+                value={credentialRef()}
+                aria-invalid={Boolean(modelErrors().credential)}
+                aria-describedby={modelErrors().credential ? "model-credential-error" : undefined}
+                onInput={(event) => {
+                  setCredentialRef(event.currentTarget.value)
+                  markModelEdited("credential")
+                }}
+                placeholder="MODEL_API_KEY"
+              />
+            </label>
+            <label class={`form-field ${modelErrors().credential ? "field-invalid" : ""}`}>
+              凭据值 <span class="label-note">仅写入运行时</span>
+              <input
+                id="model-credential"
+                aria-label="凭据值"
+                type="password"
+                value={credential()}
+                aria-invalid={Boolean(modelErrors().credential)}
+                aria-describedby={modelErrors().credential ? "model-credential-error" : undefined}
+                onInput={(event) => {
+                  setCredential(event.currentTarget.value)
+                  markModelEdited("credential")
+                }}
+                placeholder="输入后不会回显"
+              />
+              <span class="field-help">凭据引用与凭据值二选一，至少填写一项。</span>
+              <Show when={modelErrors().credential}>
+                <span id="model-credential-error" class="field-error" role="alert">
+                  {modelErrors().credential}
+                </span>
+              </Show>
+            </label>
+            <div class="button-stack">
+              <button class="button button-primary" disabled={modelSaveBusy()} onClick={saveModel}>
+                {modelSaveBusy() ? "保存中…" : "保存模型配置"}
+              </button>
+              <button class="button button-secondary" disabled={probeBusy()} onClick={probeModel}>
+                {probeBusy() ? "探测中…" : "探测模型能力"}
+                <span>↗</span>
+              </button>
+            </div>
+            <Show when={probeResult()}>
+              {(result) => (
+                <div class="probe-result" aria-live="polite">
+                  <span>文本响应：{result().text}</span>
+                  <span>Function Calling：{result().functionCalling}</span>
+                </div>
+              )}
             </Show>
-          </label>
-          <label class={`form-field ${modelErrors().credential ? "field-invalid" : ""}`}>
-            凭据引用 <span class="required-mark">二选一必填</span>
-            <input
-              aria-label="凭据引用"
-              value={credentialRef()}
-              aria-invalid={Boolean(modelErrors().credential)}
-              aria-describedby={modelErrors().credential ? "model-credential-error" : undefined}
-              onInput={(event) => {
-                setCredentialRef(event.currentTarget.value)
-                markModelEdited("credential")
-              }}
-              placeholder="MODEL_API_KEY"
-            />
-          </label>
-          <label class={`form-field ${modelErrors().credential ? "field-invalid" : ""}`}>
-            凭据值 <span class="label-note">仅写入运行时</span>
-            <input
-              id="model-credential"
-              aria-label="凭据值"
-              type="password"
-              value={credential()}
-              aria-invalid={Boolean(modelErrors().credential)}
-              aria-describedby={modelErrors().credential ? "model-credential-error" : undefined}
-              onInput={(event) => {
-                setCredential(event.currentTarget.value)
-                markModelEdited("credential")
-              }}
-              placeholder="输入后不会回显"
-            />
-            <span class="field-help">凭据引用与凭据值二选一，至少填写一项。</span>
-            <Show when={modelErrors().credential}>
-              <span id="model-credential-error" class="field-error" role="alert">
-                {modelErrors().credential}
-              </span>
+            <Show when={modelSaveMessage()}>
+              <p class={`form-feedback form-feedback-${modelSaveState()}`} role="status" aria-live="polite">
+                {modelSaveMessage()}
+              </p>
             </Show>
-          </label>
-          <div class="button-stack">
-            <button class="button button-primary" disabled={modelSaveBusy()} onClick={saveModel}>
-              {modelSaveBusy() ? "保存中…" : "保存模型配置"}
-            </button>
-            <button class="button button-secondary" disabled={probeBusy()} onClick={probeModel}>
-              {probeBusy() ? "探测中…" : "探测模型能力"}
-              <span>↗</span>
-            </button>
-          </div>
-          <Show when={probeResult()}>
-            {(result) => (
-              <div class="probe-result" aria-live="polite">
-                <span>文本响应：{result().text}</span>
-                <span>Function Calling：{result().functionCalling}</span>
-              </div>
-            )}
-          </Show>
-          <Show when={modelSaveMessage()}>
-            <p class={`form-feedback form-feedback-${modelSaveState()}`} role="status" aria-live="polite">
-              {modelSaveMessage()}
-            </p>
-          </Show>
-        </section>
+          </Drawer>
+        </nav>
 
         <section class="sidebar-card" id="session">
           <div class="card-heading">
@@ -896,45 +966,6 @@ function App() {
           </Show>
         </section>
 
-        <section class="sidebar-card skill-card" id="skills">
-          <div class="card-heading">
-            <div>
-              <span class="section-kicker">能力目录</span>
-              <h2>Skills</h2>
-            </div>
-            <button class="text-button" disabled={skillBusy()} onClick={refreshSkills}>
-              {skillBusy() ? "刷新中…" : "刷新"}
-            </button>
-          </div>
-          <p class="helper-text">Skill 先注册、校验，再进入模型上下文。</p>
-          <div class="skill-list" aria-live="polite">
-            <Show when={skills().length > 0} fallback={<p class="empty-copy">暂无已发现的项目 Skill</p>}>
-              <For each={skills()}>
-                {(skill) => (
-                  <article class={`skill-row skill-row-${skill.status}`}>
-                    <div class="skill-row-copy">
-                      <div class="skill-row-title">
-                        <strong>{skill.id}</strong>
-                        <span class="skill-status">{skill.status}</span>
-                      </div>
-                      <p>{skill.description || "暂无描述"}</p>
-                      <small>
-                        {skill.fileCount} 个文件 · {skill.digest.slice(0, 10)}
-                      </small>
-                    </div>
-                    <button class="skill-validate" onClick={() => validateSkill(skill.id)} disabled={skillBusy()}>
-                      校验
-                    </button>
-                    <Show when={skillValidation()[skill.id]}>
-                      <span class="skill-validation">{skillValidation()[skill.id]}</span>
-                    </Show>
-                  </article>
-                )}
-              </For>
-            </Show>
-          </div>
-        </section>
-
         <div class="notice" aria-live="polite">
           <span class={`notice-light ${connected() ? "is-live" : ""}`} />
           {notice()}
@@ -972,9 +1003,9 @@ function App() {
             <button
               class="toolbar-button toolbar-danger"
               disabled={!sessionID() || cancelBusy()}
-              onClick={cancelSession}
+              onClick={requestCancel}
             >
-              {cancelBusy() ? "取消中…" : "取消运行"}
+              取消运行
             </button>
           </div>
         </div>
@@ -1049,7 +1080,7 @@ function App() {
                           <div class="empty-steps">
                             <div class={`empty-step ${modelConfigured() ? "is-done" : ""}`}>
                               <span class="step-mark">{modelConfigured() ? "✓" : "1"}</span>
-                              在左侧保存模型服务配置
+                              打开「模型配置」抽屉保存模型服务配置
                               <small>{modelConfigured() ? "已配置" : "待完成"}</small>
                             </div>
                             <div class="empty-step">
@@ -1341,6 +1372,16 @@ function App() {
           <span>HEADLESS CORE / INTERNAL DEMO</span>
           <span>UI 是控制面，Runtime 在 Core</span>
         </footer>
+
+        <ConfirmDialog
+          title="取消当前运行？"
+          description="取消后正在执行的 Agent 任务会立即停止，本轮进度不可恢复。确认要继续吗？"
+          confirmLabel="确认取消运行"
+          open={cancelConfirmOpen()}
+          onOpenChange={setCancelConfirmOpen}
+          busy={cancelBusy()}
+          onConfirm={confirmCancelSession}
+        />
       </section>
     </main>
   )

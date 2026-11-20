@@ -1,4 +1,4 @@
-import { chromium, expect, type Browser } from "@playwright/test"
+import { chromium, expect, type Browser, type Page } from "@playwright/test"
 import { afterEach, describe, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { join, normalize } from "node:path"
@@ -57,8 +57,12 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByText("权限队列", { exact: true })).toBeVisible()
     await expect(page.getByRole("heading", { name: "补充信息" })).toBeVisible()
     await expect(page.getByText("上下文压缩", { exact: true })).toBeVisible()
+    await openDrawer(page, /模型配置/)
     await expect(page.getByLabel("服务地址")).toHaveValue("")
     await expect(page.getByLabel("模型名称")).toHaveValue("")
+    await closeDrawer(page)
+    await openDrawer(page, /Skills/)
+    await expect(page.getByRole("heading", { name: "Skills" })).toBeVisible()
   })
 
   test.serial("validates model and workspace inputs before sending requests", async () => {
@@ -73,6 +77,7 @@ describe.serial("Headless UI smoke", () => {
     uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
 
     await page.goto(uiOrigin)
+    await openDrawer(page, /模型配置/)
     await page.getByLabel("服务地址").fill("not-a-url")
     await page.getByLabel("模型名称").fill("   ")
     await page.getByRole("button", { name: "保存模型配置" }).click()
@@ -81,6 +86,7 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByText("请输入模型名称", { exact: true })).toBeVisible()
     await expect(page.getByText("请填写凭据引用或凭据值", { exact: true })).toBeVisible()
     expect(modelUpdateCalls).toBe(0)
+    await closeDrawer(page)
 
     await page.getByLabel("工作目录").fill("relative/project")
     await page.getByRole("button", { name: /创建新 Session/ }).click()
@@ -128,6 +134,68 @@ describe.serial("Headless UI smoke", () => {
     expect(validations).toBe(1)
   })
 
+  test.serial("asks for confirmation before cancelling a run", async () => {
+    browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage()
+    apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    directory = await mkdtemp(join(tmpdir(), "headless-ui-cancel-"))
+
+    await page.goto(uiOrigin)
+    await page.getByLabel("工作目录").fill(directory)
+    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+
+    await page.getByRole("button", { name: "取消运行" }).click()
+    await expect(page.getByRole("alertdialog")).toBeVisible()
+    await expect(page.getByText("取消后正在执行的 Agent 任务会立即停止", { exact: false })).toBeVisible()
+
+    await page.getByRole("button", { name: "返回" }).click()
+    await expect(page.getByRole("alertdialog")).toHaveCount(0)
+    await expect(page.getByText("已请求取消运行", { exact: true })).toHaveCount(0)
+
+    await page.getByRole("button", { name: "取消运行" }).click()
+    await page.getByRole("button", { name: "确认取消运行" }).click()
+    await expect(page.getByText("已请求取消运行", { exact: true })).toBeVisible()
+    await expect(page.locator(".pill-cancelled")).toBeVisible()
+  })
+
+  test.serial("ignores a stale session snapshot when switching sessions quickly", async () => {
+    browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage()
+    apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    const firstDirectory = await mkdtemp(join(tmpdir(), "headless-ui-race-a-"))
+    const secondDirectory = await mkdtemp(join(tmpdir(), "headless-ui-race-b-"))
+    directory = firstDirectory
+
+    let stateCalls = 0
+    await page.route("**/api/experimental/headless/session/*/state", async (route) => {
+      stateCalls += 1
+      if (stateCalls === 1) await new Promise((resolve) => setTimeout(resolve, 400))
+      await route.continue()
+    })
+
+    await page.goto(uiOrigin)
+    await page.getByLabel("工作目录").fill(firstDirectory)
+    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+    const firstID = await page.locator(".session-id").innerText()
+
+    await page.getByLabel("工作目录").fill(secondDirectory)
+    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await expect(page.locator(".session-id")).not.toHaveText(firstID)
+    const secondID = await page.locator(".session-id").innerText()
+
+    await page.locator(".session-item", { hasText: firstID.slice(0, 8) }).click()
+    await page.locator(".session-item", { hasText: secondID.slice(0, 8) }).click()
+    await page.waitForTimeout(700)
+
+    expect(stateCalls).toBe(2)
+    await expect(page.locator(".session-id")).toHaveText(secondID)
+    await rm(secondDirectory, { recursive: true, force: true })
+  })
+
   test.serial("denying a tool request fails the task without writing to the session directory", async () => {
     browser = await chromium.launch({ headless: true })
     const page = await browser.newPage()
@@ -160,11 +228,13 @@ describe.serial("Headless UI smoke", () => {
     directory = await mkdtemp(join(tmpdir(), "headless-ui-deny-"))
 
     await page.goto(uiOrigin)
+    await openDrawer(page, /模型配置/)
     await page.getByLabel("服务地址").fill(upstream.url.toString().replace(/\/$/, ""))
     await page.getByLabel("模型名称").fill("fixture-model")
     await page.getByLabel("凭据值").fill("fixture-secret")
     await page.getByRole("button", { name: "保存模型配置" }).click()
     await expect(page.getByText("模型 fixture-model 已就绪")).toBeVisible()
+    await closeDrawer(page)
 
     await page.getByLabel("工作目录").fill(directory)
     await page.getByRole("button", { name: /创建新 Session/ }).click()
@@ -218,10 +288,12 @@ describe.serial("Headless UI smoke", () => {
       directory = await mkdtemp(join(tmpdir(), "headless-ui-allow-"))
 
       await page.goto(uiOrigin)
+      await openDrawer(page, /模型配置/)
       await page.getByLabel("服务地址").fill(upstream.url.toString().replace(/\/$/, ""))
       await page.getByLabel("模型名称").fill("fixture-model")
       await page.getByLabel("凭据值").fill("fixture-secret")
       await page.getByRole("button", { name: "保存模型配置" }).click()
+      await closeDrawer(page)
       await page.getByLabel("工作目录").fill(directory)
       await page.getByRole("button", { name: /创建新 Session/ }).click()
       await page.getByPlaceholder("描述下一步 Coding 任务…").fill("查看环境")
@@ -341,7 +413,9 @@ describe.serial("Headless UI smoke", () => {
     uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
 
     await page.goto(uiOrigin)
+    await openDrawer(page, /Skills/)
     await expect(page.getByText("example-skill", { exact: true }).first()).toBeVisible()
+    await closeDrawer(page)
     directory = await mkdtemp(join(tmpdir(), "headless-ui-skill-session-"))
     await page.getByLabel("工作目录").fill(directory)
     await page.getByRole("button", { name: /创建新 Session/ }).click()
@@ -350,6 +424,7 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByRole("option", { name: "@example-skill" })).toBeVisible()
     await page.getByRole("option", { name: "@example-skill" }).click()
     await expect(page.locator(".skill-chip")).toContainText("example-skill")
+    await openDrawer(page, /Skills/)
     await page.getByRole("button", { name: "校验" }).click()
     await expect(page.getByText("validated / ready", { exact: true })).toBeVisible()
   })
@@ -370,12 +445,14 @@ describe.serial("Headless UI smoke", () => {
     directory = await mkdtemp(join(tmpdir(), "headless-ui-control-plane-"))
 
     await page.goto(uiOrigin)
+    await openDrawer(page, /模型配置/)
     await page.getByLabel("服务地址").fill("https://model.example.com/v1")
     await page.getByLabel("模型名称").fill("fixture-model")
     await page.getByLabel("凭据值").fill("fixture-secret")
     await page.getByRole("button", { name: "探测模型能力" }).click()
     await expect(page.getByText("文本响应：pass", { exact: true })).toBeVisible()
     await expect(page.getByText("Function Calling：pass", { exact: true })).toBeVisible()
+    await closeDrawer(page)
 
     await page.getByLabel("工作目录").fill(directory)
     await page.getByRole("button", { name: /创建新 Session/ }).click()
@@ -451,6 +528,16 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.locator(".pill-completed")).toBeVisible()
   })
 })
+
+async function openDrawer(page: Page, name: RegExp) {
+  await page.getByRole("button", { name }).click()
+  await expect(page.getByRole("dialog")).toBeVisible()
+}
+
+async function closeDrawer(page: Page) {
+  await page.getByRole("button", { name: "关闭抽屉" }).click()
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+}
 
 async function serveBuiltUi(request: Request): Promise<Response> {
   const pathname = decodeURIComponent(new URL(request.url).pathname)
