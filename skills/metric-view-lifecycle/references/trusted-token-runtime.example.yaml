@@ -1,0 +1,24 @@
+# 仅用于说明运行时绑定位置，不是可直接部署的凭据文件。
+# 明文 Token 和 token-hash 必须由 Secret Manager/部署注入，不能提交到 Git。
+# 页面内测试不读取这里的外部 Token，而是复用当前登录会话。
+trusted_tokens:
+  - variable: REQUEST_TOKEN
+    user_id: "<指标查询服务账号>"
+    domain_id: "<指标服务目标业务域 ID>"
+    token_hash: "<由部署系统注入的 SHA-256>"
+    path_patterns:
+      - "^/runtime-variables/catalog$"
+      - "^/metricView/queryList$"
+      - "^/metricView/queryById$"
+      - "^/metricView/test$"
+      - "^/metricView/save$"
+      - "^/dsl/execute$"
+      - "^/metricView/dsl/execute$"
+  - variable: REQUEST_TOKEN
+    user_id: "<只读报表服务账号>"
+    domain_id: "<报表服务目标业务域 ID>"
+    token_hash: "<由部署系统注入的 SHA-256>"
+    path_patterns:
+      - "^/metricView/queryList$"
+      - "^/metricView/queryById$"
+      - "^/metricView/test$"

@@ -18,6 +18,14 @@ import type {
   ProjectContextPort,
 } from "./context.js"
 import { redactHeadlessSensitiveValue } from "./permission.js"
+export {
+  createHeadlessSkillRegistry,
+  type HeadlessSkillPackage,
+  type HeadlessSkillRegistry,
+  type HeadlessSkillRegistryOptions,
+  type HeadlessSkillStatus,
+  type HeadlessSkillSummary,
+} from "./skill-registry.js"
 import { normalizeHeadlessToolRequest } from "./tools.js"
 
 /** Agent 请求模型生成时携带的最小输入。 */
