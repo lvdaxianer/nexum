@@ -16,14 +16,26 @@ bun run --cwd packages/headless-ui dev
 
 | 能力                    | HTTP 入口                                                                                                               |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| 模型配置                | `GET/PUT /api/experimental/headless/model`                                                                              |
-| Session                 | `POST /api/experimental/headless/session`                                                                               |
+| 模型配置                | `GET/PUT /api/experimental/headless/model`、`POST /api/experimental/headless/model/probe`                              |
+| Session                 | `GET/POST /api/experimental/headless/session`                                                                            |
 | Prompt                  | `POST /api/experimental/headless/session/:sessionID/prompt`                                                             |
 | SSE 事件                | `GET /api/experimental/headless/session/:sessionID/events`                                                              |
 | Permission 查询/回答    | `GET/POST /api/experimental/headless/session/:sessionID/permission...`                                                  |
 | Question 查询/回答/取消 | `GET /api/experimental/headless/session/:sessionID/question`、`POST .../:requestID/reply`、`POST .../:requestID/cancel` |
 
 模型配置返回 `credentialConfigured`，不会返回 credential 原文。Question 回答按问题顺序提交二维字符串数组；取消不会伪造答案。SSE 会发布工具、Question、上下文压缩、项目上下文来源和 Session 生命周期事件。
+
+## 页面控制台
+
+页面是所有运行时操作的控制面：
+
+1. 在 Model runtime 保存模型配置，并通过 `Probe model` 验证文本与 Function Calling 通道；页面只展示 `pass/skipped`，不展示密钥或模型原文。
+2. 在 Session admission 创建、列出和切换 Session；页面使用 `sessionStorage` 恢复最近 Session，并在切换后重新建立事件流。
+3. 在 Runtime timeline 查看事件、刷新运行时状态、重连事件流或取消当前运行。
+4. 在 Permission queue 处理工具权限，在 Question queue 补充模型所需信息；允许、拒绝、回答和取消都会回到同一个 Session。
+5. 在 Context 查看压缩状态、最近消息和项目上下文来源。
+
+页面只依赖 Headless Client/Server，不导入 Core，也不会把 credential 原文放入 DOM、SSE 或浏览器存储。
 
 ## 真实模型 Smoke
 
@@ -48,7 +60,7 @@ bun test --cwd packages/client test/headless-generated.test.ts
 bun run --cwd packages/headless-ui typecheck:tsc
 bun run --cwd packages/headless-ui build
 bun run --cwd packages/headless-ui test:smoke
-bunx openspec validate headless-core-capability-coverage --strict
+bunx openspec validate headless-control-plane --strict
 ```
 
 验收重点：
@@ -57,4 +69,5 @@ bunx openspec validate headless-core-capability-coverage --strict
 - allow-once、allow-always、deny、取消、跨 Session 审批和凭据脱敏；
 - Question pending/reply/cancel，不回答不执行后续工具；
 - 阈值压缩、摘要/最近消息保留、压缩失败和压缩后项目上下文恢复；
-- UI 允许/拒绝工具、Question 表单、Compaction 状态、项目来源和 secret 不出页面/事件。
+- UI 允许/拒绝工具、Question 表单、Compaction 状态、项目来源和 secret 不出页面/事件；
+- 页面 Probe、Session 恢复/重连、运行时刷新和取消操作均可见且可回归。

@@ -16,7 +16,7 @@
 
 ## 4. 集成收口
 
-- [ ] 4.1 完成跨包回归、OpenSpec strict validate、`git diff --check`、安全模式审计和最终页面验收，确认 `dev-v0.0.1` 合并后工作区干净。
+- [x] 4.1 完成跨包回归、OpenSpec strict validate、`git diff --check`、安全模式审计和最终页面验收，确认 `dev-v0.0.1` 合并后工作区干净。
 
 ## Workflow follow-up
 
