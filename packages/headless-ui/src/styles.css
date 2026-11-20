@@ -242,6 +242,35 @@ label {
   font-weight: 600;
 }
 
+.form-field {
+  min-width: 0;
+}
+
+.required-mark {
+  margin-left: 4px;
+  color: #9aa7b5;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.field-help {
+  color: #8491a2;
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.field-error {
+  color: #b34e47;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.field-invalid {
+  color: #a54842;
+}
+
 .label-note {
   margin-left: 4px;
   color: #93a1b1;
@@ -289,10 +318,38 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(27, 155, 154, 0.12);
 }
 
+input[aria-invalid="true"] {
+  border-color: #d47a70;
+  background: #fffafa;
+}
+
+input[aria-invalid="true"]:focus {
+  border-color: #c45b52;
+  box-shadow: 0 0 0 3px rgba(196, 91, 82, 0.12);
+}
+
 .button-stack {
   display: grid;
   gap: 8px;
   margin-top: 14px;
+}
+
+.form-feedback {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.form-feedback-pending {
+  color: #a76716;
+}
+
+.form-feedback-success {
+  color: #1c8a73;
+}
+
+.form-feedback-error {
+  color: #b34e47;
 }
 
 .button,

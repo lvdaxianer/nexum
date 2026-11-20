@@ -30,6 +30,9 @@ type ChatItem = {
   localTime: string
   eventType?: string
 }
+type ModelField = "baseUrl" | "model" | "credential"
+type ModelFieldErrors = Partial<Record<ModelField, string>>
+type ActionState = "idle" | "pending" | "success" | "error"
 
 const maxChatItems = 160
 
@@ -54,8 +57,16 @@ function App() {
   const [compactionStatus, setCompactionStatus] = createSignal("idle")
   const [contextSources, setContextSources] = createSignal<ContextSource[]>([])
   const [busy, setBusy] = createSignal(false)
+  const [modelSaveBusy, setModelSaveBusy] = createSignal(false)
+  const [sessionBusy, setSessionBusy] = createSignal(false)
   const [probeBusy, setProbeBusy] = createSignal(false)
   const [probeResult, setProbeResult] = createSignal<ModelProbeResult | undefined>()
+  const [modelErrors, setModelErrors] = createSignal<ModelFieldErrors>({})
+  const [modelSaveState, setModelSaveState] = createSignal<ActionState>("idle")
+  const [modelSaveMessage, setModelSaveMessage] = createSignal("")
+  const [directoryError, setDirectoryError] = createSignal("")
+  const [sessionCreateState, setSessionCreateState] = createSignal<ActionState>("idle")
+  const [sessionCreateMessage, setSessionCreateMessage] = createSignal("")
   const [refreshBusy, setRefreshBusy] = createSignal(false)
   const [skills, setSkills] = createSignal<SkillSummary[]>([])
   const [skillBusy, setSkillBusy] = createSignal(false)
@@ -89,27 +100,163 @@ function App() {
 
   onCleanup(() => streamController?.abort())
 
-  async function saveModel() {
-    setBusy(true)
+  /**
+   * 校验模型配置表单，并返回字段级错误。
+   * @returns 模型配置错误集合
+   * @author lvdaxianer@yeah.net
+   */
+  function validateModelInputs(): ModelFieldErrors {
+    const errors: ModelFieldErrors = {}
+    const candidate = baseUrl().trim()
     try {
-      const saved = await client.experimental.headless.model.update({
-        baseUrl: baseUrl().trim(),
-        model: model().trim(),
-        credential: credential().trim() || undefined,
-        credentialRef: credentialRef().trim() || undefined,
-      })
-      setCredential("")
-      setModelConfigured(true)
-      setNotice(`模型 ${saved.data.model} 已就绪：${saved.data.baseUrl}`)
-    } catch (error) {
-      setNotice(messageFrom(error, "模型配置未通过，请检查地址和凭据"))
-    } finally {
-      setBusy(false)
+      const url = new URL(candidate)
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error()
+      if (url.username || url.password || url.search || url.hash) throw new Error()
+    } catch {
+      errors.baseUrl = candidate ? "请输入有效的 HTTP 或 HTTPS 服务地址" : "请输入模型服务地址"
     }
+    if (!model().trim()) errors.model = "请输入模型名称"
+    if (credential().trim() && credentialRef().trim()) errors.credential = "凭据引用和凭据值只能填写一个"
+    return errors
+  }
+
+  /**
+   * 校验工作目录的本地格式。
+   * @param value - 用户输入的工作目录
+   * @returns 可直接展示的错误消息，空字符串表示通过
+   * @author lvdaxianer@yeah.net
+   */
+  function validateDirectoryInput(value: string): string {
+    const candidate = value.trim()
+    if (!candidate) return "请输入工作目录"
+    if (!candidate.startsWith("/")) return "请输入服务器上的绝对路径，例如 /workspace/project"
+    return ""
+  }
+
+  /**
+   * 清理用户正在修正的模型字段错误。
+   * @param field - 待清理的字段
+   * @author lvdaxianer@yeah.net
+   */
+  function clearModelError(field: ModelField) {
+    if (!modelErrors()[field]) return
+    const next = { ...modelErrors() }
+    delete next[field]
+    setModelErrors(next)
+  }
+
+  /**
+   * 标记模型配置已被编辑，避免继续显示旧的成功状态。
+   * @param field - 正在编辑的模型字段
+   * @author lvdaxianer@yeah.net
+   */
+  function markModelEdited(field: ModelField) {
+    setModelConfigured(false)
+    setModelSaveState("idle")
+    setModelSaveMessage("")
+    setProbeResult(undefined)
+    clearModelError(field)
+  }
+
+  /**
+   * 将焦点移动到首个需要修正的输入框。
+   * @param id - 输入框 DOM id
+   * @author lvdaxianer@yeah.net
+   */
+  function focusField(id: string) {
+    queueMicrotask(() => document.getElementById(id)?.focus())
+  }
+
+  /**
+   * 将 Core 返回的模型配置错误映射到对应字段。
+   * @param message - Core 返回的安全错误消息
+   * @author lvdaxianer@yeah.net
+   */
+  function applyModelError(message: string) {
+    const next: ModelFieldErrors = {}
+    if (message.includes("Base URL") || message.includes("服务地址")) next.baseUrl = message
+    else if (message.includes("模型名称")) next.model = message
+    else if (message.includes("credential") || message.includes("凭据")) next.credential = message
+    setModelErrors(next)
+  }
+
+  /**
+   * 校验模型配置并在失败时聚焦首个错误字段。
+   * @returns 配置是否可以提交
+   * @author lvdaxianer@yeah.net
+   */
+  function canSubmitModel(): boolean {
+    const errors = validateModelInputs()
+    setModelErrors(errors)
+    if (Object.keys(errors).length > 0) {
+      setModelSaveState("error")
+      setModelSaveMessage("请先修正标记的配置项")
+      setNotice("模型配置未提交，请先修正输入")
+      focusField(errors.baseUrl ? "model-base-url" : errors.model ? "model-name" : "model-credential")
+      return false
+    }
+    return true
+  }
+
+  /**
+   * 保存当前模型配置到 Headless Core。
+   * @author lvdaxianer@yeah.net
+   */
+  async function saveModel() {
+    if (modelSaveBusy() || !canSubmitModel()) return
+    setModelSaveBusy(true)
+    setModelSaveState("pending")
+    setModelSaveMessage("正在保存模型配置…")
+    try {
+      await persistModelConfiguration()
+    } catch (error) {
+      handleModelSaveFailure(error)
+    } finally {
+      setModelSaveBusy(false)
+    }
+  }
+
+  /**
+   * 调用 Core 保存模型配置并更新成功状态。
+   * @author lvdaxianer@yeah.net
+   */
+  async function persistModelConfiguration() {
+    const saved = await client.experimental.headless.model.update({
+      baseUrl: baseUrl().trim(),
+      model: model().trim(),
+      credential: credential().trim() || undefined,
+      credentialRef: credentialRef().trim() || undefined,
+    })
+    setCredential("")
+    setModelConfigured(true)
+    setProbeResult(undefined)
+    setModelSaveState("success")
+    setModelSaveMessage("模型配置已保存，可以继续探测能力")
+    setNotice(`模型 ${saved.data.model} 已就绪：${saved.data.baseUrl}`)
+  }
+
+  /**
+   * 展示模型配置保存失败，并保留用户输入用于重试。
+   * @param error - 保存失败原因
+   * @author lvdaxianer@yeah.net
+   */
+  function handleModelSaveFailure(error: unknown) {
+    const message = messageFrom(error, "模型配置未通过，请检查地址和凭据")
+    applyModelError(message)
+    setModelSaveState("error")
+    setModelSaveMessage(message)
+    setNotice(message)
   }
 
   async function probeModel() {
     if (probeBusy()) return
+    const errors = validateModelInputs()
+    setModelErrors(errors)
+    if (Object.keys(errors).length > 0) {
+      setNotice("模型能力探测未开始，请先修正输入")
+      focusField(errors.baseUrl ? "model-base-url" : errors.model ? "model-name" : "model-credential")
+      return
+    }
     setProbeBusy(true)
     try {
       const result = await client.experimental.headless.model.probe({ mode: "both" })
@@ -232,30 +379,79 @@ function App() {
     if (announce) setNotice(`已选择 Session：${session.id.slice(0, 8)}`)
   }
 
+  /**
+   * 校验工作目录并在失败时保留输入。
+   * @returns 目录是否可以提交
+   * @author lvdaxianer@yeah.net
+   */
+  function canCreateSession(): boolean {
+    const error = validateDirectoryInput(directory())
+    setDirectoryError(error)
+    if (error) {
+      setSessionCreateState("error")
+      setSessionCreateMessage(error)
+      setNotice("Session 未创建，请先修正工作目录")
+      focusField("session-directory")
+      return false
+    }
+    return true
+  }
+
+  /**
+   * 校验目录并请求 Core 创建 Session。
+   * @author lvdaxianer@yeah.net
+   */
   async function createSession() {
-    setBusy(true)
+    if (sessionBusy() || !canCreateSession()) return
+    setSessionBusy(true)
+    setSessionCreateState("pending")
+    setSessionCreateMessage("正在检查目录并创建 Session…")
     try {
       const created = await client.experimental.headless.session.create({ directory: directory().trim() })
-      setSessionID(created.data.id)
-      setSessionStatus(created.data.status)
-      setDirectory(created.data.directory)
-      sessionStorage.setItem("headless.sessionID", created.data.id)
-      setSessions((current) => [...current.filter((item) => item.id !== created.data.id), created.data])
-      setEvents([])
-      setChatItems([])
-      setPermissions([])
-      setQuestions([])
-      setQuestionAnswers({})
-      setCompactionStatus("idle")
-      setContextSources([])
-      seenEventKeys.clear()
-      connectEvents(created.data.id)
-      setNotice(`Session ${created.data.id.slice(0, 8)} 已创建，等待 Prompt`)
+      applyCreatedSession(created.data)
     } catch (error) {
-      setNotice(messageFrom(error, "Session 创建失败，请检查工作目录"))
+      handleSessionCreateFailure(error)
     } finally {
-      setBusy(false)
+      setSessionBusy(false)
     }
+  }
+
+  /**
+   * 将新建 Session 的数据同步到页面状态。
+   * @param created - Core 返回的 Session 摘要
+   * @author lvdaxianer@yeah.net
+   */
+  function applyCreatedSession(created: SessionSummary) {
+    setSessionID(created.id)
+    setSessionStatus(created.status)
+    setDirectory(created.directory)
+    sessionStorage.setItem("headless.sessionID", created.id)
+    setSessions((current) => [...current.filter((item) => item.id !== created.id), created])
+    setEvents([])
+    setChatItems([])
+    setPermissions([])
+    setQuestions([])
+    setQuestionAnswers({})
+    setCompactionStatus("idle")
+    setContextSources([])
+    seenEventKeys.clear()
+    connectEvents(created.id)
+    setSessionCreateState("success")
+    setSessionCreateMessage("目录已校验，Session 创建成功")
+    setNotice(`Session ${created.id.slice(0, 8)} 已创建，等待 Prompt`)
+  }
+
+  /**
+   * 展示 Session 创建失败，并保留目录用于重试。
+   * @param error - 创建失败原因
+   * @author lvdaxianer@yeah.net
+   */
+  function handleSessionCreateFailure(error: unknown) {
+    const message = messageFrom(error, "Session 创建失败，请检查工作目录")
+    setDirectoryError(message)
+    setSessionCreateState("error")
+    setSessionCreateMessage(message)
+    setNotice(message)
   }
 
   async function connectEvents(id: string) {
@@ -529,48 +725,93 @@ function App() {
               <span class="section-kicker">运行配置</span>
               <h2>模型服务</h2>
             </div>
-            <span class="status-badge">{probeResult() ? "已探测" : "待配置"}</span>
+            <span class={`status-badge ${modelConfigured() ? "success" : ""}`}>
+              {probeResult() ? "已探测" : modelConfigured() ? "已配置" : "待配置"}
+            </span>
           </div>
-          <label>
-            服务地址
+          <label class={`form-field ${modelErrors().baseUrl ? "field-invalid" : ""}`}>
+            <span>
+              服务地址 <span class="required-mark">必填</span>
+            </span>
             <input
+              id="model-base-url"
               aria-label="服务地址"
+              aria-invalid={Boolean(modelErrors().baseUrl)}
+              aria-describedby={modelErrors().baseUrl ? "model-base-url-error" : undefined}
               value={baseUrl()}
-              onInput={(event) => setBaseUrl(event.currentTarget.value)}
+              onInput={(event) => {
+                setBaseUrl(event.currentTarget.value)
+                markModelEdited("baseUrl")
+              }}
               placeholder="https://…/v1"
             />
+            <Show when={modelErrors().baseUrl}>
+              <span id="model-base-url-error" class="field-error" role="alert">
+                {modelErrors().baseUrl}
+              </span>
+            </Show>
           </label>
-          <label>
-            模型名称
+          <label class={`form-field ${modelErrors().model ? "field-invalid" : ""}`}>
+            <span>
+              模型名称 <span class="required-mark">必填</span>
+            </span>
             <input
+              id="model-name"
               aria-label="模型名称"
+              aria-invalid={Boolean(modelErrors().model)}
+              aria-describedby={modelErrors().model ? "model-name-error" : undefined}
               value={model()}
-              onInput={(event) => setModel(event.currentTarget.value)}
+              onInput={(event) => {
+                setModel(event.currentTarget.value)
+                markModelEdited("model")
+              }}
               placeholder="coding-model"
             />
+            <Show when={modelErrors().model}>
+              <span id="model-name-error" class="field-error" role="alert">
+                {modelErrors().model}
+              </span>
+            </Show>
           </label>
-          <label>
+          <label class={`form-field ${modelErrors().credential ? "field-invalid" : ""}`}>
             凭据引用
             <input
               aria-label="凭据引用"
               value={credentialRef()}
-              onInput={(event) => setCredentialRef(event.currentTarget.value)}
+              aria-invalid={Boolean(modelErrors().credential)}
+              aria-describedby={modelErrors().credential ? "model-credential-error" : undefined}
+              onInput={(event) => {
+                setCredentialRef(event.currentTarget.value)
+                markModelEdited("credential")
+              }}
               placeholder="MODEL_API_KEY"
             />
           </label>
-          <label>
+          <label class={`form-field ${modelErrors().credential ? "field-invalid" : ""}`}>
             凭据值 <span class="label-note">仅写入运行时</span>
             <input
+              id="model-credential"
               aria-label="凭据值"
               type="password"
               value={credential()}
-              onInput={(event) => setCredential(event.currentTarget.value)}
+              aria-invalid={Boolean(modelErrors().credential)}
+              aria-describedby={modelErrors().credential ? "model-credential-error" : undefined}
+              onInput={(event) => {
+                setCredential(event.currentTarget.value)
+                markModelEdited("credential")
+              }}
               placeholder="输入后不会回显"
             />
+            <span class="field-help">凭据引用与凭据值二选一，也可以暂不配置。</span>
+            <Show when={modelErrors().credential}>
+              <span id="model-credential-error" class="field-error" role="alert">
+                {modelErrors().credential}
+              </span>
+            </Show>
           </label>
           <div class="button-stack">
-            <button class="button button-primary" disabled={busy()} onClick={saveModel}>
-              {busy() ? "保存中…" : "保存模型配置"}
+            <button class="button button-primary" disabled={modelSaveBusy()} onClick={saveModel}>
+              {modelSaveBusy() ? "保存中…" : "保存模型配置"}
             </button>
             <button class="button button-secondary" disabled={probeBusy()} onClick={probeModel}>
               {probeBusy() ? "探测中…" : "探测模型能力"}
@@ -585,6 +826,11 @@ function App() {
               </div>
             )}
           </Show>
+          <Show when={modelSaveMessage()}>
+            <p class={`form-feedback form-feedback-${modelSaveState()}`} role="status" aria-live="polite">
+              {modelSaveMessage()}
+            </p>
+          </Show>
         </section>
 
         <section class="sidebar-card" id="session">
@@ -595,18 +841,41 @@ function App() {
             </div>
             <span class="status-badge">{sessions().length} 个</span>
           </div>
-          <label>
-            工作目录
+          <label class={`form-field ${directoryError() ? "field-invalid" : ""}`}>
+            <span>
+              工作目录 <span class="required-mark">必填</span>
+            </span>
             <input
+              id="session-directory"
               aria-label="工作目录"
+              aria-invalid={Boolean(directoryError())}
+              aria-describedby={directoryError() ? "session-directory-error" : "session-directory-help"}
               value={directory()}
-              onInput={(event) => setDirectory(event.currentTarget.value)}
+              onInput={(event) => {
+                setDirectory(event.currentTarget.value)
+                setDirectoryError("")
+                setSessionCreateState("idle")
+                setSessionCreateMessage("")
+              }}
               placeholder="/workspace/project"
             />
+            <span id="session-directory-help" class="field-help">
+              填写运行服务器上的绝对路径，目录必须已存在且可读写。
+            </span>
+            <Show when={directoryError()}>
+              <span id="session-directory-error" class="field-error" role="alert">
+                {directoryError()}
+              </span>
+            </Show>
           </label>
-          <button class="button button-secondary" disabled={busy() || !directory().trim()} onClick={createSession}>
-            创建新 Session <span>→</span>
+          <button class="button button-secondary" disabled={sessionBusy()} onClick={createSession}>
+            {sessionBusy() ? "创建中…" : "创建新 Session"} <span>→</span>
           </button>
+          <Show when={sessionCreateMessage()}>
+            <p class={`form-feedback form-feedback-${sessionCreateState()}`} role="status" aria-live="polite">
+              {sessionCreateMessage()}
+            </p>
+          </Show>
           <Show when={sessions().length > 0}>
             <div class="session-list" aria-label="可用 Session">
               <For each={sessions()}>
@@ -740,9 +1009,7 @@ function App() {
             <span class="capability-icon">≈</span>
             <div>
               <span>上下文压缩</span>
-              <strong class={`context-value ${capabilityStateClass(compactionStatus())}`}>
-                {compactionStatus()}
-              </strong>
+              <strong class={`context-value ${capabilityStateClass(compactionStatus())}`}>{compactionStatus()}</strong>
             </div>
           </article>
           <article class="capability-card">

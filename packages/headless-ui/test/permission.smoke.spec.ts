@@ -59,6 +59,72 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByText("上下文压缩", { exact: true })).toBeVisible()
   })
 
+  test.serial("validates model and workspace inputs before sending requests", async () => {
+    browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage()
+    let modelUpdateCalls = 0
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().endsWith("/api/experimental/headless/model"))
+        modelUpdateCalls += 1
+    })
+    apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+
+    await page.goto(uiOrigin)
+    await page.getByLabel("服务地址").fill("not-a-url")
+    await page.getByLabel("模型名称").fill("   ")
+    await page.getByRole("button", { name: "保存模型配置" }).click()
+
+    await expect(page.getByText("请输入有效的 HTTP 或 HTTPS 服务地址", { exact: true })).toBeVisible()
+    await expect(page.getByText("请输入模型名称", { exact: true })).toBeVisible()
+    expect(modelUpdateCalls).toBe(0)
+
+    await page.getByLabel("工作目录").fill("relative/project")
+    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await expect(page.locator("#session-directory-error")).toHaveText(
+      "请输入服务器上的绝对路径，例如 /workspace/project",
+    )
+  })
+
+  test.serial("keeps an invalid workspace input after server-side validation fails", async () => {
+    browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage()
+    apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+
+    const invalidDirectory = "/tmp/headless-ui-directory-does-not-exist"
+    await page.goto(uiOrigin)
+    await page.getByLabel("工作目录").fill(invalidDirectory)
+    await page.getByRole("button", { name: /创建新 Session/ }).click()
+
+    await expect(page.locator("#session-directory-error")).toHaveText("工作目录不存在或不可访问")
+    await expect(page.getByLabel("工作目录")).toHaveValue(invalidDirectory)
+    await expect(page.getByRole("button", { name: /创建新 Session/ })).toBeEnabled()
+  })
+
+  test.serial("prevents duplicate session creation while the directory check is pending", async () => {
+    browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage()
+    let validations = 0
+    const sessions = createHeadlessSessionService({
+      directoryValidator: {
+        async validate() {
+          validations += 1
+          await new Promise((resolve) => setTimeout(resolve, 120))
+        },
+      },
+    })
+    apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin], sessionService: sessions })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    directory = await mkdtemp(join(tmpdir(), "headless-ui-create-pending-"))
+
+    await page.goto(uiOrigin)
+    await page.getByLabel("工作目录").fill(directory)
+    await page.getByRole("button", { name: /创建新 Session/ }).dblclick()
+    await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+    expect(validations).toBe(1)
+  })
+
   test.serial("denying a tool request fails the task without writing to the session directory", async () => {
     browser = await chromium.launch({ headless: true })
     const page = await browser.newPage()
@@ -335,9 +401,7 @@ describe.serial("Headless UI smoke", () => {
     const model: ModelPort = {
       async *prompt(input) {
         expect(
-          input.messages?.some(
-            (message) => message.role === "system" && message.sourceID === "skill:example-skill",
-          ),
+          input.messages?.some((message) => message.role === "system" && message.sourceID === "skill:example-skill"),
         ).toBe(true)
         yield { type: "completed" }
       },
