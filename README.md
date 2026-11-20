@@ -150,17 +150,17 @@ bun run --cwd packages/headless-ui dev -- --host 127.0.0.1 --port 5173
 
 所有 Headless API 当前位于 `/api/experimental/headless` 下：
 
-| 能力 | 入口 |
-| --- | --- |
-| 健康检查 | `GET /health`、`GET /ready` |
-| 模型配置 | `GET/PUT /model` |
-| 模型探测 | `POST /model/probe` |
-| Session | `GET/POST /session` |
-| Prompt | `POST /session/:sessionID/prompt` |
-| SSE 事件 | `GET /session/:sessionID/events` |
-| Permission | `GET/POST /session/:sessionID/permission...` |
-| Question | `GET/POST /session/:sessionID/question...` |
-| Skill | `GET /skills`、`GET /skills/:id`、`POST /skills/refresh`、`POST /skills/validate`、`POST /skills/:id/activate` |
+| 能力       | 入口                                                                                                           |
+| ---------- | -------------------------------------------------------------------------------------------------------------- |
+| 健康检查   | `GET /health`、`GET /ready`                                                                                    |
+| 模型配置   | `GET/PUT /model`                                                                                               |
+| 模型探测   | `POST /model/probe`                                                                                            |
+| Session    | `GET/POST /session`                                                                                            |
+| Prompt     | `POST /session/:sessionID/prompt`                                                                              |
+| SSE 事件   | `GET /session/:sessionID/events`                                                                               |
+| Permission | `GET/POST /session/:sessionID/permission...`                                                                   |
+| Question   | `GET/POST /session/:sessionID/question...`                                                                     |
+| Skill      | `GET /skills`、`GET /skills/:id`、`POST /skills/refresh`、`POST /skills/validate`、`POST /skills/:id/activate` |
 
 协议 Schema、OpenAPI 文档和生成客户端位于 `packages/protocol` 与 `packages/client`。
 
@@ -206,15 +206,37 @@ done
 ## 目录结构
 
 ```text
+apis/                         外部 API 使用说明
+docs/                         设计、POC、计划与审查文档
+openspec/                     变更规格与归档记录
+packages/                     workspace packages（见 packages/README.md）
+patches/                      第三方依赖补丁
+skills/                       项目级 Skill 注册目录
+
 packages/headless-core/       UI 无关的 Core 端口与运行时
 packages/headless-server/     独立 HTTP/SSE 服务
 packages/headless-ui/         可替换的参考控制台
 packages/protocol/            API Schema 与 OpenAPI 契约
 packages/client/              生成的 Promise/Effect 客户端
-skills/metric-view-lifecycle/ 项目级 MetricView Skill
-docs/headless-core-poc.md     POC 使用与验收说明
-openspec/                     设计变更与能力规格
+packages/core/                原 OpenCode 运行时服务
+packages/server/              完整 OpenCode Server 装配
+packages/schema/              共享领域 Schema
+packages/util/                跨包基础工具
+packages/cli/                 命令行与分发入口
+packages/tui/                 终端控制面
+packages/ui/                  共享 Solid UI 组件
+packages/theme/               TUI 主题定义
+packages/latex/               LaTeX 内容渲染
+packages/merman/              Mermaid 内容渲染
+packages/simulation/          测试模拟与录制
+packages/script/              构建与打包脚本
+
+skills/metric-view-lifecycle/ MetricView 生命周期 Skill
+docs/headless-core-poc.md     Headless Core POC 使用与验收
+openspec/changes/              设计变更与能力规格
 ```
+
+各目录的职责、入口和验证方式见对应 `README.md`；包级完整清单见 [`packages/README.md`](packages/README.md)。
 
 ## 设计原则
 
