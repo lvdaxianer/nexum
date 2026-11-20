@@ -9,7 +9,14 @@ import type { EventSink, RuntimeEvent } from "@opencode/headless-core"
 
 /** 可发布并按 Session 订阅运行事件的事件 Hub。 */
 export interface HeadlessEventHub extends EventSink {
-  readonly subscribe: (sessionID: string) => AsyncIterable<RuntimeEvent>
+  readonly subscribe: (sessionID: string, options?: HeadlessEventSubscriptionOptions) => AsyncIterable<RuntimeEvent>
+  readonly lastSequence: (sessionID: string) => number
+}
+
+/** SSE 重连时使用的事件游标。 */
+export interface HeadlessEventSubscriptionOptions {
+  readonly afterEventID?: string
+  readonly afterSequence?: number
 }
 
 /**
@@ -21,13 +28,19 @@ export interface HeadlessEventHub extends EventSink {
  */
 export function createHeadlessEventHub(): HeadlessEventHub {
   const subscribers = new Map<string, Set<Subscriber>>()
+  const history = new Map<string, RuntimeEvent[]>()
+  const historyLimit = 256
 
   return {
     async publish(event) {
+      const events = history.get(event.sessionID) ?? []
+      events.push(event)
+      if (events.length > historyLimit) events.splice(0, events.length - historyLimit)
+      history.set(event.sessionID, events)
       for (const subscriber of subscribers.get(event.sessionID) ?? []) subscriber.push(event)
     },
-    subscribe(sessionID) {
-      const subscriber = createSubscriber()
+    subscribe(sessionID, options) {
+      const subscriber = createSubscriber(replayHistory(history.get(sessionID) ?? [], options))
       const current = subscribers.get(sessionID) ?? new Set<Subscriber>()
       current.add(subscriber)
       subscribers.set(sessionID, current)
@@ -41,7 +54,17 @@ export function createHeadlessEventHub(): HeadlessEventHub {
         }
       })()
     },
+    lastSequence(sessionID) {
+      return history.get(sessionID)?.at(-1)?.sequence ?? 0
+    },
   }
+}
+
+function replayHistory(events: readonly RuntimeEvent[], options?: HeadlessEventSubscriptionOptions): RuntimeEvent[] {
+  if (!options || (options.afterEventID === undefined && options.afterSequence === undefined)) return []
+  if (options.afterSequence !== undefined) return events.filter((event) => event.sequence > options.afterSequence!)
+  const index = events.findIndex((event) => event.eventID === options.afterEventID)
+  return index === -1 ? [...events] : events.slice(index + 1)
 }
 
 interface Subscriber {
@@ -49,8 +72,8 @@ interface Subscriber {
   readonly next: () => Promise<RuntimeEvent>
 }
 
-function createSubscriber(): Subscriber {
-  const queue: RuntimeEvent[] = []
+function createSubscriber(initial: readonly RuntimeEvent[] = []): Subscriber {
+  const queue: RuntimeEvent[] = [...initial]
   const waiters: Array<(event: RuntimeEvent) => void> = []
 
   return {

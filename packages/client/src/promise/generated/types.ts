@@ -4965,9 +4965,20 @@ export type ExperimentalConfigUpdateInput = { readonly shell: string | null }
 
 export type ExperimentalConfigUpdateOutput = void
 
+export type ExperimentalHeadlessCapabilitiesOutput = {
+  data: {
+    protocolVersion: "headless.v1"
+    transport: { http: "json"; events: "sse" }
+    features: Array<string>
+    eventTypes: Array<string>
+  }
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
+
 export type ExperimentalHeadlessModelGetOutput = {
   data: { baseUrl: string; model: string; credentialConfigured: boolean; credentialRef?: string | undefined } | null
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessModelUpdateInput = {
   readonly baseUrl: string
@@ -4978,23 +4989,55 @@ export type ExperimentalHeadlessModelUpdateInput = {
 
 export type ExperimentalHeadlessModelUpdateOutput = {
   data: { baseUrl: string; model: string; credentialConfigured: boolean; credentialRef?: string | undefined }
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessModelProbeInput = { readonly mode?: "text" | "function_calling" | "both" | undefined }
 
 export type ExperimentalHeadlessModelProbeOutput = {
   data: { text: "pass" | "skipped"; functionCalling: "pass" | "skipped" }
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string }
 
 export type ExperimentalHeadlessSessionCreateOutput = {
   data: { id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSessionListOutput = {
   data: Array<{ id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }>
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
+
+export type ExperimentalHeadlessSessionStateInput = { readonly sessionID: string }
+
+export type ExperimentalHeadlessSessionStateOutput = {
+  data: {
+    session: { id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }
+    pendingPermissions: Array<{
+      id: string
+      sessionID: string
+      action: string
+      resource: string
+      reason?: string | undefined
+    }>
+    pendingQuestions: Array<{
+      id: string
+      sessionID: string
+      toolCallID: string
+      questions: Array<{
+        header: string
+        question: string
+        options: Array<{ label: string; description: string }>
+        multiple?: boolean | undefined
+      }>
+    }>
+    lastSequence: number
+  }
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSkillListOutput = {
   data: Array<{
@@ -5008,7 +5051,8 @@ export type ExperimentalHeadlessSkillListOutput = {
     status: "ready" | "invalid" | "conflict"
     diagnostics: Array<string>
   }>
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSkillDetailInput = { readonly skillID: string }
 
@@ -5024,7 +5068,8 @@ export type ExperimentalHeadlessSkillDetailOutput = {
     status: "ready" | "invalid" | "conflict"
     diagnostics: Array<string>
   }
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSkillRegisterInput = { readonly id: string }
 
@@ -5040,7 +5085,8 @@ export type ExperimentalHeadlessSkillRegisterOutput = {
     status: "ready" | "invalid" | "conflict"
     diagnostics: Array<string>
   }
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSkillRefreshOutput = {
   data: Array<{
@@ -5054,7 +5100,8 @@ export type ExperimentalHeadlessSkillRefreshOutput = {
     status: "ready" | "invalid" | "conflict"
     diagnostics: Array<string>
   }>
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSkillValidateInput = { readonly id?: string | undefined }
 
@@ -5073,7 +5120,8 @@ export type ExperimentalHeadlessSkillValidateOutput = {
       diagnostics: Array<string>
     }>
   }
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSkillActivateInput = {
   readonly skillID: string
@@ -5086,11 +5134,15 @@ export type ExperimentalHeadlessSkillActivateOutput = {
     skills: Array<{ id: string; name: string; text: string; mention: { start: number; end: number; text: string } }>
     systemMessages: Array<{ role: "system"; content: string; sourceID: string }>
   }
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSessionPromptInput = { readonly sessionID: string; readonly text: string }
 
-export type ExperimentalHeadlessSessionPromptOutput = { data: { status: "accepted" } }["data"]
+export type ExperimentalHeadlessSessionPromptOutput = {
+  data: { status: "accepted" }
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSessionQuestionListInput = { readonly sessionID: string }
 
@@ -5106,7 +5158,8 @@ export type ExperimentalHeadlessSessionQuestionListOutput = {
       multiple?: boolean | undefined
     }>
   }>
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSessionQuestionReplyInput = {
   readonly sessionID: string
@@ -5114,23 +5167,35 @@ export type ExperimentalHeadlessSessionQuestionReplyInput = {
   readonly answers: ReadonlyArray<ReadonlyArray<string>>
 }
 
-export type ExperimentalHeadlessSessionQuestionReplyOutput = { data: { status: "answered" } }["data"]
+export type ExperimentalHeadlessSessionQuestionReplyOutput = {
+  data: { status: "answered" }
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSessionQuestionCancelInput = { readonly sessionID: string; readonly requestID: string }
 
-export type ExperimentalHeadlessSessionQuestionCancelOutput = { data: { status: "cancelled" } }["data"]
+export type ExperimentalHeadlessSessionQuestionCancelOutput = {
+  data: { status: "cancelled" }
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSessionCancelInput = { readonly sessionID: string }
 
-export type ExperimentalHeadlessSessionCancelOutput = { data: { status: "cancelled" } }["data"]
+export type ExperimentalHeadlessSessionCancelOutput = {
+  data: { status: "cancelled" }
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSessionEventsInput = { readonly sessionID: string }
 
 export type ExperimentalHeadlessSessionEventsOutput = {
+  eventID: string
+  runID: string
   type:
     | "assistant.text"
     | "tool.request"
     | "tool.result"
+    | "permission.requested"
     | "question.request"
     | "question.result"
     | "question.cancelled"
@@ -5145,6 +5210,7 @@ export type ExperimentalHeadlessSessionEventsOutput = {
     | "session.cancelled"
   sessionID: string
   sequence: number
+  occurredAt: string
   data?: { [x: string]: JsonValue } | undefined
 }
 
@@ -5152,7 +5218,8 @@ export type ExperimentalHeadlessSessionPermissionListInput = { readonly sessionI
 
 export type ExperimentalHeadlessSessionPermissionListOutput = {
   data: Array<{ id: string; sessionID: string; action: string; resource: string; reason?: string | undefined }>
-}["data"]
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 export type ExperimentalHeadlessSessionPermissionReplyInput = {
   readonly sessionID: string
@@ -5160,7 +5227,10 @@ export type ExperimentalHeadlessSessionPermissionReplyInput = {
   readonly decision: "allow_once" | "allow_always" | "deny"
 }
 
-export type ExperimentalHeadlessSessionPermissionReplyOutput = { data: { status: "approved" | "denied" } }["data"]
+export type ExperimentalHeadlessSessionPermissionReplyOutput = {
+  data: { status: "approved" | "denied" }
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
 
 /** @deprecated Use `ExperimentalSessionStatsInput`. Removed in the next minor. */
 export type SessionStatsInput = ExperimentalSessionStatsInput

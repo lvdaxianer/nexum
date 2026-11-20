@@ -1,940 +1,320 @@
-# Headless Service REST API
+# Headless Core Protocol v1
 
-## 1. 模块概览与覆盖范围
+Headless Core 是与 UI 解耦的 coding runtime。页面只需要对接本协议，就可以完成模型配置、创建会话、提交 Prompt、接收模型和工具事件、处理权限审批、回答 Question、观察上下文压缩/项目上下文，以及在刷新或断线后恢复状态。
 
-| 项目            | 内容                                                                                                            |
-| --------------- | --------------------------------------------------------------------------------------------------------------- |
-| 业务模块        | Headless Service 页面控制台与 Coding Task 运行控制（`headless`）                                                |
-| 文档路径        | `apis/headless.md`                                                                                              |
-| 模块职责        | 为任意 UI 或运行编排器提供独立 Headless Service 的健康状态、模型探测、Session 管理和任务运行控制                |
-| 基础 URL / 版本 | `http://127.0.0.1:4097`；当前为 POC，暂无版本前缀                                                               |
-| 通用认证与约定  | 健康检查不要求认证；响应为 JSON；所有响应带 `X-Trace-Id`；浏览器 POC 默认允许本地 UI origin；响应 Cookie 不适用 |
+本文是 Headless API 模块的唯一协议文档，当前以中文为主。协议实现位于 `packages/protocol`，HTTP 服务位于 `packages/headless-server`，Coding Loop 位于 `packages/headless-core`。
 
-### 1.1 对外 route 覆盖表
+## 1. 协议基础
 
-| Controller / 路由归属          | 对外端点                                                                         | 文档章节                          | 覆盖状态 |
-| ------------------------------ | -------------------------------------------------------------------------------- | --------------------------------- | -------- |
-| `headless-server/src/index.ts` | `GET /health/live`、`GET /health/ready`                                          | [健康检查](#21-健康检查)          | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session`                                        | [Session 创建](#31-session-创建)  | 已覆盖   |
-| `headless-server/src/index.ts` | `GET /api/experimental/headless/session`                                         | [Session 列表](#111-session-列表) | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/model/probe`                                    | [模型能力探测](#121-模型能力探测) | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/prompt`                      | [Prompt 提交](#41-prompt-提交)    | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/cancel`                      | [Session 取消](#51-session-取消)  | 已覆盖   |
-| `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/events`                       | [Session 事件](#81-session-事件)  | 已覆盖   |
-| `headless-server/src/index.ts` | `GET /api/experimental/headless/session/:sessionID/permission`                   | [权限列表](#61-权限列表)          | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/session/:sessionID/permission/:requestID/reply` | [权限审批](#71-权限审批)          | 已覆盖   |
-| `headless-server/src/index.ts` | `GET /api/experimental/headless/skills`                                          | [Skill 列表](#131-skill-列表)     | 已覆盖   |
-| `headless-server/src/index.ts` | `GET /api/experimental/headless/skills/:skillID`                                 | [Skill 详情](#132-skill-详情)     | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/skills/register`                                | [Skill 注册](#133-skill-注册)     | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/skills/refresh`                                 | [Skill 刷新](#134-skill-刷新)     | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/skills/validate`                                | [Skill 校验](#135-skill-校验)     | 已覆盖   |
-| `headless-server/src/index.ts` | `POST /api/experimental/headless/skills/:skillID/activate`                       | [Skill 激活](#136-skill-激活)     | 已覆盖   |
+| 项目     | 约定                                                 |
+| -------- | ---------------------------------------------------- |
+| 协议版本 | `headless.v1`                                        |
+| 默认地址 | `http://127.0.0.1:4097`                              |
+| 命令传输 | HTTP + JSON                                          |
+| 事件传输 | Server-Sent Events（SSE）                            |
+| URL 前缀 | `/api/experimental/headless`                         |
+| 默认认证 | POC 不实现认证；生产必须置于已鉴权网关或宿主进程之后 |
+| Cookie   | 不使用                                               |
+| 时间格式 | ISO 8601 UTC 字符串                                  |
 
-### 1.2 浏览器跨域约定
+### 1.1 接入顺序
 
-Headless UI 默认运行在 Vite 的 `http://127.0.0.1:5173` 或
-`http://localhost:5173`，Headless Server 默认运行在
-`http://127.0.0.1:4097`。服务对这两个本地 origin 返回
-`Access-Control-Allow-Origin`，并处理浏览器的 `OPTIONS` 预检请求。
+1. `GET /capabilities` 确认协议版本、能力和事件类型。
+2. `POST /session` 创建会话，保存 `data.id`。
+3. `GET /session/:sessionID/state` 获取权威状态和 `lastSequence`。
+4. 连接 `GET /session/:sessionID/events`，断线重连时携带 `Last-Event-ID`。
+5. `POST /session/:sessionID/prompt` 提交用户输入。
+6. 根据事件或状态快照处理权限、Question 和终态。
 
-| 项目          | 内容                                                                       |
-| ------------- | -------------------------------------------------------------------------- |
-| 允许 origin   | `http://127.0.0.1:5173`、`http://localhost:5173`                           |
-| 允许 method   | `GET`、`POST`、`PUT`、`OPTIONS`                                            |
-| 允许 header   | `Content-Type`、`X-Trace-Id`                                               |
-| 凭据 Cookie   | 不使用；不返回 `Access-Control-Allow-Credentials`                          |
-| 自定义配置    | 通过 `startHeadlessServer({ corsOrigins })` 传入明确 origin 列表           |
-| 非允许 origin | 预检返回 `403 HEADLESS_CORS_ORIGIN_NOT_ALLOWED`；普通响应不返回允许 origin |
+## 2. 通用消息格式
 
-SSE 连接默认关闭 Bun 的空闲超时（`idleTimeout: 0`），避免任务等待人工权限审批时被服务端在 10 秒后断开。部署方可以通过 `startHeadlessServer({ idleTimeout })` 设置非零超时，但必须确保大于最长审批等待时间。
+### 2.1 请求头
 
-## 2. 健康检查
+| Header                           | 必填                 | 说明                                                                  |
+| -------------------------------- | -------------------- | --------------------------------------------------------------------- |
+| `Content-Type: application/json` | 有 JSON 请求体时必填 | 请求体格式                                                            |
+| `Accept: application/json`       | 否                   | REST 请求推荐设置                                                     |
+| `X-Trace-Id`                     | 否                   | `1`-`128` 个字母、数字、`.`、`_`、`:`、`-`；非法或缺失时服务生成 UUID |
+| `Last-Event-ID`                  | SSE 重连时推荐       | 最近一次收到的 `eventID`，用于有限历史重放                            |
 
-### 2.1 接口概览
+所有响应都会返回 `X-Trace-Id`。浏览器 POC 默认允许 `http://127.0.0.1:5173` 和 `http://localhost:5173`，可通过 `startHeadlessServer({ corsOrigins })` 覆盖。
 
-| 项目     | 内容                                                                              |
-| -------- | --------------------------------------------------------------------------------- |
-| 接口名称 | Headless Service 健康检查                                                         |
-| 接口用途 | 检查服务进程是否存活，以及是否可以接收后续 Headless 请求                          |
-| 业务场景 | UI、进程编排器或容器探针在启动后调用；不创建 Session，不执行模型或工具            |
-| 权限要求 | 当前 POC 不要求认证；服务默认只绑定 `127.0.0.1`，对外暴露前需由部署层补充访问控制 |
-| 幂等性   | GET 幂等；重复调用只读取进程状态，不改变服务数据                                  |
-| 版本     | 当前 POC 无 URL 版本前缀；响应字段变更需同步调用方                                |
+### 2.2 REST 成功响应
 
-### 2.2 请求定义
-
-#### 2.2.1 Method and URL
-
-```http
-GET http://127.0.0.1:4097/health/live
-GET http://127.0.0.1:4097/health/ready
-```
-
-| 项目         | 内容                                              |
-| ------------ | ------------------------------------------------- |
-| Method       | `GET`                                             |
-| URL          | `/health/live` 检查存活；`/health/ready` 检查就绪 |
-| Content-Type | 不适用，无请求体                                  |
-| Accept       | 推荐 `application/json`；服务返回 JSON            |
-
-#### 2.2.2 param
-
-##### Path parameters
-
-不适用。
-
-##### Query parameters
-
-不适用。
-
-##### Form or other parameters
-
-不适用。
-
-#### 2.2.3 Request headers
-
-| Header       | 必填 | 类型/格式                                                   | 示例                | 用途             | 缺失或非法时                    |
-| ------------ | ---- | ----------------------------------------------------------- | ------------------- | ---------------- | ------------------------------- |
-| `X-Trace-Id` | 否   | `1`-`128` 个 ASCII 字符，允许字母、数字、`.`、`_`、`:`、`-` | `trace_example_001` | 透传排障链路标识 | 缺失或非法时由服务生成新的 UUID |
-| `Accept`     | 否   | MIME type                                                   | `application/json`  | 声明期望响应类型 | 服务仍返回 JSON                 |
-
-#### 2.2.4 Request cookies
-
-请求 Cookie：不适用。
-
-#### 2.2.5 requestBody
-
-请求体：不适用。
-
-### 2.3 响应定义
-
-#### 2.3.1 Response overview
-
-| HTTP 状态码              | 业务含义   | 触发条件                        | 调用方处理                                        |
-| ------------------------ | ---------- | ------------------------------- | ------------------------------------------------- |
-| `200 OK`                 | 检查成功   | 路径正确且方法为 `GET`          | `/health/live` 视为存活；`/health/ready` 视为就绪 |
-| `404 Not Found`          | 路径不存在 | 请求其他路径                    | 修正路径；不要按服务就绪处理                      |
-| `405 Method Not Allowed` | 方法不支持 | 对健康检查路径使用非 `GET` 方法 | 改用 `GET`                                        |
-
-未实现认证、限流、分页、排序、过滤和幂等键校验；如后续将健康接口暴露到不可信网络，需在服务边界补充认证和限流。
-
-#### 2.3.2 Response headers
-
-| Header          | 出现条件               | 示例                | 用途                 |
-| --------------- | ---------------------- | ------------------- | -------------------- |
-| `Content-Type`  | 所有有响应体的响应     | `application/json`  | 响应媒体类型         |
-| `Cache-Control` | 所有健康检查和错误响应 | `no-store`          | 防止探针读取过期状态 |
-| `X-Trace-Id`    | 所有响应               | `trace_example_001` | 关联调用方排障链路   |
-
-#### 2.3.3 Response cookies
-
-响应 Cookie：不适用。
-
-#### 2.3.4 Success response
-
-`GET /health/live`：
+所有 `/api/experimental/headless` REST 成功响应均为：
 
 ```json
 {
-  "service": "headless-server",
-  "status": "ok"
+  "data": {},
+  "meta": { "protocolVersion": "headless.v1", "traceId": "trace_001" }
 }
 ```
 
-`GET /health/ready`：
+`data` 按接口不同返回对象、数组或 `null`；`meta.traceId` 与响应头 `X-Trace-Id` 一致。页面应只依赖 `data` 和 `meta`，不要读取服务内部对象。
+
+### 2.3 REST 错误响应
 
 ```json
 {
-  "service": "headless-server",
-  "status": "ready"
+  "errorCode": "HEADLESS_SESSION_NOT_FOUND",
+  "message": "Session 不存在",
+  "traceId": "trace_002",
+  "meta": { "protocolVersion": "headless.v1", "traceId": "trace_002" }
 }
 ```
 
-| 字段路径  | 类型   | 必有/可选 | nullable | 示例              | 说明                     |
-| --------- | ------ | --------- | -------- | ----------------- | ------------------------ |
-| `service` | string | 必有      | 否       | `headless-server` | 服务标识                 |
-| `status`  | string | 必有      | 否       | `ok` / `ready`    | 与检查路径对应的健康状态 |
+错误响应不得包含堆栈、绝对路径、凭据、环境变量或完整上游响应。页面应优先按 HTTP 状态码和 `errorCode` 分支处理，未知错误码保持通用错误展示。
 
-#### 2.3.5 Error response
+## 3. 接口总览
 
-```json
-{
-  "errorCode": "HEADLESS_ROUTE_NOT_FOUND",
-  "message": "请求路径不存在",
-  "traceId": "trace_example_002"
-}
-```
+| Method         | Path                                                          | 用途                             |
+| -------------- | ------------------------------------------------------------- | -------------------------------- |
+| `GET`          | `/health/live`、`/health/ready`                               | 存活和就绪探针                   |
+| `GET`          | `/api/experimental/headless/capabilities`                     | 能力发现                         |
+| `GET` / `PUT`  | `/api/experimental/headless/model`                            | 读取/保存安全模型配置            |
+| `POST`         | `/api/experimental/headless/model/probe`                      | 文本和 Function Calling 能力探测 |
+| `POST` / `GET` | `/api/experimental/headless/session`                          | 创建/列出会话                    |
+| `GET`          | `/api/experimental/headless/session/:sessionID/state`         | 会话恢复快照                     |
+| `POST`         | `/api/experimental/headless/session/:sessionID/prompt`        | 提交 Prompt                      |
+| `POST`         | `/api/experimental/headless/session/:sessionID/cancel`        | 取消当前运行                     |
+| `GET`          | `/api/experimental/headless/session/:sessionID/events`        | SSE 运行事件流                   |
+| `GET` / `POST` | `/api/experimental/headless/session/:sessionID/permission...` | 权限查询和审批                   |
+| `GET` / `POST` | `/api/experimental/headless/session/:sessionID/question...`   | Question 查询、回答和取消        |
+| `GET` / `POST` | `/api/experimental/headless/skills...`                        | Skill 列表、注册、校验、激活     |
 
-| 字段路径    | 类型   | 必有/可选 | 示例                       | 说明                              |
-| ----------- | ------ | --------- | -------------------------- | --------------------------------- |
-| `errorCode` | string | 必有      | `HEADLESS_ROUTE_NOT_FOUND` | 稳定机器可读错误码                |
-| `message`   | string | 必有      | `请求路径不存在`           | 安全的中文错误消息                |
-| `traceId`   | string | 必有      | `trace_example_002`        | 与 `X-Trace-Id` 相同的排障关联 ID |
+## 4. 能力发现
 
-错误码：`HEADLESS_ROUTE_NOT_FOUND` 对应 `404`；`HEADLESS_METHOD_NOT_ALLOWED` 对应 `405`。
+### `GET /api/experimental/headless/capabilities`
 
-### 2.4 Complete example
-
-#### 2.4.1 curl request
-
-```bash
-curl --request GET 'http://127.0.0.1:4097/health/ready' \
-  --header 'Accept: application/json' \
-  --header 'X-Trace-Id: trace_example_001'
-```
-
-#### 2.4.2 Raw HTTP request
-
-```http
-GET /health/ready HTTP/1.1
-Host: 127.0.0.1:4097
-Accept: application/json
-X-Trace-Id: trace_example_001
-```
-
-#### 2.4.3 Success response
-
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-Cache-Control: no-store
-X-Trace-Id: trace_example_001
-
-{"service":"headless-server","status":"ready"}
-```
-
-响应 Cookie：不适用。
-
-#### 2.4.4 Typical failure response
-
-```http
-HTTP/1.1 404 Not Found
-Content-Type: application/json
-Cache-Control: no-store
-X-Trace-Id: trace_example_002
-
-{"errorCode":"HEADLESS_ROUTE_NOT_FOUND","message":"请求路径不存在","traceId":"trace_example_002"}
-```
-
-### 2.5 Common conventions checklist
-
-- 认证：当前 POC 健康接口不认证，服务默认绑定本机；公网部署前必须增加网络访问控制或认证。
-- 幂等：GET 只读且幂等，不需要 `Idempotency-Key`。
-- 分页/排序/过滤：不适用。
-- 时间：不返回时间字段，不适用。
-- 错误：错误体只返回稳定错误码、中文消息和 trace ID，不返回堆栈或内部路径。
-- 安全：`X-Trace-Id` 会校验长度和字符集；非法值不会原样进入响应。
-
-## 3. Session 创建
-
-### 3.1 接口概览
-
-| 项目     | 内容                                                                  |
-| -------- | --------------------------------------------------------------------- |
-| 接口名称 | Headless Session 创建                                                 |
-| 接口用途 | 校验工作目录并创建一个初始状态为 `idle` 的独立 Session                |
-| 业务场景 | UI 或编排器在发送 Prompt 前申请 Session；本接口不启动模型、不执行工具 |
-| 权限要求 | 当前 POC 不要求认证；服务默认只绑定 `127.0.0.1`                       |
-| 幂等性   | 非幂等；每次成功调用生成新的 Session ID                               |
-| 版本     | 当前为实验性 `/api/experimental` 路由                                 |
-
-### 3.2 请求定义
-
-#### 3.2.1 Method and URL
-
-```http
-POST http://127.0.0.1:4097/api/experimental/headless/session
-```
-
-| 项目         | 内容                                   |
-| ------------ | -------------------------------------- |
-| Method       | `POST`                                 |
-| URL          | `/api/experimental/headless/session`   |
-| Content-Type | `application/json`                     |
-| Accept       | 推荐 `application/json`；服务返回 JSON |
-
-#### 3.2.2 Request headers
-
-沿用健康检查的 `X-Trace-Id` 约定；请求体必须是 JSON。
-
-#### 3.2.3 requestBody
-
-```json
-{
-  "directory": "/Users/example/project"
-}
-```
-
-| 字段路径    | 类型   | 必有/可选 | 约束                         | 说明               |
-| ----------- | ------ | --------- | ---------------------------- | ------------------ |
-| `directory` | string | 必有      | 非空绝对路径，须为可读写目录 | Session 的工作目录 |
-
-### 3.3 响应定义
-
-#### 3.3.1 Response overview
-
-| HTTP 状态码              | 业务含义       | 触发条件                                    | 调用方处理                    |
-| ------------------------ | -------------- | ------------------------------------------- | ----------------------------- |
-| `200 OK`                 | 创建成功       | 工作目录校验通过                            | 保存 `data.id` 并订阅后续事件 |
-| `400 Bad Request`        | 请求或目录无效 | JSON 字段无效、目录不存在、非目录或不可访问 | 修正目录或请求体后重试        |
-| `404 Not Found`          | 路径不存在     | 请求其他路径                                | 修正路径                      |
-| `405 Method Not Allowed` | 方法不支持     | 对创建路径使用非 `POST` 方法                | 改用 `POST`                   |
-
-#### 3.3.2 Success response
+无请求体。响应示例：
 
 ```json
 {
   "data": {
-    "id": "2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7",
-    "directory": "/Users/example/project",
-    "status": "idle"
-  }
+    "protocolVersion": "headless.v1",
+    "transport": { "http": "json", "events": "sse" },
+    "features": [
+      "model",
+      "session",
+      "prompt",
+      "permission",
+      "question",
+      "context_compaction",
+      "project_context",
+      "skill"
+    ],
+    "eventTypes": [
+      "assistant.text",
+      "tool.request",
+      "tool.result",
+      "permission.requested",
+      "question.request",
+      "session.completed"
+    ]
+  },
+  "meta": { "protocolVersion": "headless.v1", "traceId": "trace_001" }
 }
 ```
 
-`status` 当前固定为 `idle`；Session 状态迁移由 Headless Core 管理。
+`eventTypes` 是服务可能发送的事件清单；页面遇到清单之外的事件必须忽略或以通用时间线展示。
 
-#### 3.3.3 Error response
+## 5. 模型配置与探测
 
-错误体沿用健康检查的 `errorCode`、`message`、`traceId` 字段。错误码包括：
+### `GET /model`
 
-- `HEADLESS_INVALID_REQUEST`：请求体缺少非空 `directory` 字段。
-- `HEADLESS_INVALID_DIRECTORY`：目录不是绝对路径、不存在、不是目录或不可读写。
-- `HEADLESS_ROUTE_NOT_FOUND`、`HEADLESS_METHOD_NOT_ALLOWED`：路径或方法错误。
-
-### 3.4 Complete example
-
-#### 3.4.1 curl request
-
-```bash
-curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/session' \
-  --header 'Content-Type: application/json' \
-  --header 'X-Trace-Id: session_create_trace' \
-  --data '{"directory":"/Users/example/project"}'
-```
-
-#### 3.4.2 Success response
-
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-Cache-Control: no-store
-X-Trace-Id: session_create_trace
-
-{"data":{"id":"2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7","directory":"/Users/example/project","status":"idle"}}
-```
-
-## 4. Prompt 提交
-
-### 4.1 接口概览
-
-| 项目     | 内容                                                                               |
-| -------- | ---------------------------------------------------------------------------------- |
-| 接口名称 | Headless Prompt 提交                                                               |
-| 接口用途 | 将文本 Prompt 投递到指定 Session 的 Coding Loop                                    |
-| 业务场景 | UI 在 Session 创建成功后提交用户任务；模型输出、工具事件和完成状态通过事件端口发布 |
-| 权限要求 | 当前 POC 不要求认证；工具执行仍必须经过 Headless Core 的 PermissionPort            |
-| 幂等性   | 当前 POC 不承诺幂等；重复提交可能启动多个运行请求                                  |
-| 版本     | 当前为实验性 `/api/experimental` 路由                                              |
-
-### 4.2 请求定义
-
-#### 4.2.1 Method and URL
-
-```http
-POST http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/prompt
-```
-
-| 项目         | 内容                                                   |
-| ------------ | ------------------------------------------------------ |
-| Method       | `POST`                                                 |
-| URL          | `/api/experimental/headless/session/:sessionID/prompt` |
-| Content-Type | `application/json`                                     |
-
-#### 4.2.2 Path parameters
-
-| 参数        | 类型   | 必有/可选 | 说明                |
-| ----------- | ------ | --------- | ------------------- |
-| `sessionID` | string | 必有      | 已创建的 Session ID |
-
-#### 4.2.3 requestBody
-
-```json
-{
-  "text": "请读取 README.md 并总结主要内容"
-}
-```
-
-| 字段路径 | 类型   | 必有/可选 | 约束       | 说明             |
-| -------- | ------ | --------- | ---------- | ---------------- |
-| `text`   | string | 必有      | 非空字符串 | 用户 Prompt 文本 |
-
-### 4.3 响应定义
-
-#### 4.3.1 Response overview
-
-| HTTP 状态码               | 业务含义       | 触发条件                         | 调用方处理             |
-| ------------------------- | -------------- | -------------------------------- | ---------------------- |
-| `200 OK`                  | 已接受         | Prompt 校验通过且 Runtime 已配置 | 订阅事件并等待终态事件 |
-| `400 Bad Request`         | 请求无效       | `text` 缺失或为空                | 修正请求后重试         |
-| `404 Not Found`           | Session 不存在 | 目标 Session ID 未找到           | 先创建或刷新 Session   |
-| `503 Service Unavailable` | Runtime 未配置 | 尚未注入 Model/Tool/Permission   | 完成运行时配置后重试   |
-
-#### 4.3.2 Success response
-
-```json
-{
-  "data": {
-    "status": "accepted"
-  }
-}
-```
-
-接口只确认 Prompt 已进入异步 Coding Loop；模型文本、工具请求、工具结果和完成/失败事件不在本响应中返回。
-
-### 4.4 Complete example
-
-#### 4.4.1 curl request
-
-```bash
-curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/session/2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7/prompt' \
-  --header 'Content-Type: application/json' \
-  --header 'X-Trace-Id: prompt_trace_001' \
-  --data '{"text":"请读取 README.md 并总结主要内容"}'
-```
-
-#### 4.4.2 Success response
-
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-Cache-Control: no-store
-X-Trace-Id: prompt_trace_001
-
-{"data":{"status":"accepted"}}
-```
-
-## 5. Session 取消
-
-### 5.1 接口概览
-
-| 项目     | 内容                                                        |
-| -------- | ----------------------------------------------------------- |
-| 接口名称 | Headless Session 取消                                       |
-| 接口用途 | 请求停止指定 Session 的当前 Coding Loop，并阻止后续工具执行 |
-| 业务场景 | UI 在运行中主动停止任务，或对空闲 Session 做幂等取消        |
-| 权限要求 | 当前 POC 不要求认证；服务默认只绑定 `127.0.0.1`             |
-| 幂等性   | 对空闲或终态 Session 重复调用不会启动新运行                 |
-| 版本     | 当前为实验性 `/api/experimental` 路由                       |
-
-### 5.2 请求定义
-
-#### 5.2.1 Method and URL
-
-```http
-POST http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/cancel
-```
-
-| 项目   | 内容                                                   |
-| ------ | ------------------------------------------------------ |
-| Method | `POST`                                                 |
-| URL    | `/api/experimental/headless/session/:sessionID/cancel` |
-
-### 5.3 响应定义
-
-#### 5.3.1 Response overview
-
-| HTTP 状态码     | 业务含义       | 触发条件               | 调用方处理                    |
-| --------------- | -------------- | ---------------------- | ----------------------------- |
-| `200 OK`        | 取消已接受     | Session 存在           | 监听 `session.cancelled` 事件 |
-| `404 Not Found` | Session 不存在 | 目标 Session ID 未找到 | 刷新 Session 列表             |
-| `409 Conflict`  | 取消冲突       | 状态迁移不允许         | 读取当前状态后决定下一步      |
-
-#### 5.3.2 Success response
-
-```json
-{
-  "data": {
-    "status": "cancelled"
-  }
-}
-```
-
-运行中的取消会通过事件端口发布 `session.cancelled`；模型或工具已经开始的单步操作不会被强行杀死，但下一次工具边界不会继续执行。
-
-### 5.4 Complete example
-
-#### 5.4.1 curl request
-
-```bash
-curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/session/2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7/cancel' \
-  --header 'X-Trace-Id: cancel_trace_001'
-```
-
-#### 5.4.2 Success response
-
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-Cache-Control: no-store
-X-Trace-Id: cancel_trace_001
-
-{"data":{"status":"cancelled"}}
-```
-
-## 6. 权限列表
-
-### 6.1 接口概览
-
-| 项目     | 内容                                                          |
-| -------- | ------------------------------------------------------------- |
-| 接口名称 | Headless Pending Permission 列表                              |
-| 接口用途 | 查询指定 Session 当前阻塞 Coding Loop 的工具权限请求          |
-| 业务场景 | UI 订阅或轮询列表后展示 action、resource 和审批按钮           |
-| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制 |
-| 幂等性   | GET 幂等；只读取内存中的 pending request                      |
-
-### 6.2 请求定义
-
-```http
-GET http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/permission
-```
-
-请求体和 Query 参数：不适用。
-
-### 6.3 响应定义
-
-```json
-{
-  "data": [
-    {
-      "id": "permission-request-id",
-      "sessionID": "2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7",
-      "action": "shell",
-      "resource": "pnpm test",
-      "reason": "工具 shell 需要权限审批"
-    }
-  ]
-}
-```
-
-未有待审批请求时返回 `{"data":[]}`。请求项只包含审批所需的 action/resource 摘要，不包含凭据。
-
-## 7. 权限审批
-
-### 7.1 接口概览
-
-| 项目     | 内容                                                          |
-| -------- | ------------------------------------------------------------- |
-| 接口名称 | Headless Permission Reply                                     |
-| 接口用途 | 对 pending tool request 提交一次性允许、永久允许或拒绝决策    |
-| 业务场景 | UI 用户点击审批按钮后唤醒阻塞的 Coding Loop                   |
-| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制 |
-| 幂等性   | 同一 request 的重复 reply 返回第一次已生效的决策              |
-
-### 7.2 请求定义
-
-```http
-POST http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/permission/{requestID}/reply
-```
-
-```json
-{
-  "decision": "allow_once"
-}
-```
-
-`decision` 可选值：`allow_once`、`allow_always`、`deny`。`allow_always` 按 action/resource 组合记录内存策略；POC 重启后策略丢失。
-
-### 7.3 响应定义
-
-允许响应：
-
-```json
-{
-  "data": {
-    "status": "approved"
-  }
-}
-```
-
-拒绝响应的 `status` 为 `denied`。未知 request 返回 `404 HEADLESS_PERMISSION_NOT_FOUND`；非法决策返回 `400 HEADLESS_INVALID_REQUEST`。
-
-### 7.4 Complete example
-
-```bash
-curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/session/2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7/permission/permission-request-id/reply' \
-  --header 'Content-Type: application/json' \
-  --data '{"decision":"allow_once"}'
-```
-
-## 8. 模型配置
-
-### 8.1 接口概览
-
-| 项目     | 内容                                                                           |
-| -------- | ------------------------------------------------------------------------------ |
-| 接口名称 | Headless 单模型配置                                                            |
-| 接口用途 | 保存和读取一个 OpenAI-compatible Base URL、模型名称和凭据引用                  |
-| 业务场景 | 外部 UI 在启动 Coding Loop 前配置活动模型                                      |
-| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制                  |
-| 幂等性   | PUT 幂等；有效配置覆盖当前配置，非法配置不会覆盖旧值                           |
-| 安全     | 响应只返回 `credentialConfigured` 和可选 `credentialRef`，不返回 credential 值 |
-
-### 8.2 读取配置
-
-```http
-GET http://127.0.0.1:4097/api/experimental/headless/model
-```
-
-未配置时返回 `{"data":null}`；已配置时示例：
+返回 `data: null` 或安全模型配置：
 
 ```json
 {
   "data": {
     "baseUrl": "https://model.example.com/v1",
     "model": "coding-model",
-    "credentialConfigured": true
-  }
+    "credentialConfigured": true,
+    "credentialRef": "env:HEADLESS_MODEL_KEY"
+  },
+  "meta": { "protocolVersion": "headless.v1", "traceId": "trace_001" }
 }
 ```
 
-### 8.3 更新配置
+### `PUT /model`
 
-```http
-PUT http://127.0.0.1:4097/api/experimental/headless/model
+请求体：`baseUrl`、`model` 必填；`credential` 和 `credentialRef` 可选。凭据只写入服务端配置，不会出现在响应、事件或日志中。
+
+```bash
+curl -X PUT 'http://127.0.0.1:4097/api/experimental/headless/model' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Trace-Id: model_update_001' \
+  -d '{"baseUrl":"https://model.example.com/v1","model":"coding-model","credential":"<secret>"}'
 ```
+
+### `POST /model/probe`
+
+请求体 `{"mode":"text"|"function_calling"|"both"}`，省略时为 `both`。响应只返回：
 
 ```json
 {
-  "baseUrl": "https://model.example.com/v1",
-  "model": "coding-model",
-  "credentialRef": "MODEL_API_KEY"
+  "data": { "text": "pass", "functionCalling": "pass" },
+  "meta": { "protocolVersion": "headless.v1", "traceId": "trace_002" }
 }
 ```
 
-`credential` 可直接提交凭据值，但服务响应、事件和普通错误不会返回该值；生产建议只提交环境变量名 `credentialRef`。
+## 6. Session 与 Prompt
 
-非法 URL、空模型名或同时提交 `credential` 与 `credentialRef` 返回 `400 HEADLESS_INVALID_MODEL_CONFIG`，且保留上一份有效配置。
+### 创建与列表
 
-Headless Core 的 `createHeadlessConfiguredCodingLoop` 会在每次新运行时读取这份活动配置，并只请求该 Base URL；端点不可达返回安全的“模型服务不可达”，`401/403` 返回“模型认证失败”，不会静默切换其他 Provider。
+`POST /session` 请求体：
 
-## 9. Session 事件
-
-### 9.1 接口概览
-
-| 项目     | 内容                                                                 |
-| -------- | -------------------------------------------------------------------- |
-| 接口名称 | Headless Session SSE 事件流                                          |
-| 接口用途 | 将指定 Session 的有序运行事件持续推送给任意 UI                       |
-| 业务场景 | UI 创建 Session 后订阅；Prompt、工具请求、权限和终态事件从此出口读取 |
-| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制        |
-| 幂等性   | GET 只建立订阅，不修改 Session 状态                                  |
-
-### 9.2 请求定义
-
-```http
-GET http://127.0.0.1:4097/api/experimental/headless/session/{sessionID}/events
+```json
+{ "directory": "/workspace/project" }
 ```
 
-响应类型为 `text/event-stream; charset=utf-8`。连接应在 UI 销毁或切换 Session 时关闭；未知 Session 返回 `404 HEADLESS_SESSION_NOT_FOUND`。
+成功返回 `data: {"id","directory","status"}`；状态为 `idle`、`running`、`completed`、`failed` 或 `cancelled`。`GET /session` 返回同一安全视图的数组。
 
-### 9.3 事件格式
+### `POST /session/:sessionID/prompt`
+
+请求体：`{"text":"请读取 README.md"}`。成功只表示已接受异步运行：
+
+```json
+{ "data": { "status": "accepted" }, "meta": { "protocolVersion": "headless.v1", "traceId": "prompt_001" } }
+```
+
+模型文本、工具调用、权限、Question 和终态通过 SSE 事件返回，不在此响应中同步返回。
+
+### `POST /session/:sessionID/cancel`
+
+无请求体。成功返回 `data.status = "cancelled"`；页面仍应等待 `session.cancelled` 事件或重新读取状态快照。
+
+## 7. 状态快照与恢复
+
+### `GET /session/:sessionID/state`
+
+响应 `data`：
+
+```json
+{
+  "session": { "id": "session_001", "directory": "/workspace/project", "status": "running" },
+  "pendingPermissions": [],
+  "pendingQuestions": [],
+  "lastSequence": 4
+}
+```
+
+`pendingPermissions` 和 `pendingQuestions` 都是安全视图；`lastSequence` 是该会话事件历史中最后一个序号。会话不存在返回 `404 HEADLESS_SESSION_NOT_FOUND`，不得视为空快照。
+
+恢复流程：先读取快照，再用最近保存的 `eventID` 建立 SSE；如果没有保存的 ID，可使用快照的 `lastSequence` 作为本地时间线起点。
+
+## 8. SSE 事件协议
+
+### `GET /session/:sessionID/events`
+
+响应头：`Content-Type: text/event-stream; charset=utf-8`、`Cache-Control: no-store`、`Connection: keep-alive`。服务先发送连接注释，随后发送：
 
 ```text
-id: 3
-data: {"type":"tool.requested","sessionID":"2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7","sequence":3,"data":{"toolName":"read"}}
+event: assistant.text
+id: event_004
+data: {"eventID":"event_004","runID":"run_001","sessionID":"session_001","type":"assistant.text","sequence":4,"occurredAt":"2026-11-20T03:00:00.000Z","data":{"content":"完成"}}
 
 ```
 
-`id` 使用 Session 内递增的 `sequence`；`data` 是 JSON 编码的 RuntimeEvent。当前 POC 事件 Hub 为进程内内存实现，不提供断线补发和跨进程持久化；生产版本应在部署拓扑确定后替换为可恢复的事件总线或事件存储。
+事件身份字段：`eventID`（单个事件）、`runID`（一次 Prompt）、`sessionID`（会话）、`sequence`（会话内单调递增）、`occurredAt`（ISO 时间）；`data` 是可选安全业务对象。SSE `event` 等于 `type`，SSE `id` 等于 `eventID`。
 
-## 10. 完整 POC 联调
+常见事件：
 
-### 10.1 启动服务和 UI
+| 事件                                          | 主要数据                                    | 页面动作           |
+| --------------------------------------------- | ------------------------------------------- | ------------------ |
+| `assistant.text`                              | `content`                                   | 追加模型文本       |
+| `tool.request`                                | `toolCallID`、`action`、`resource`、`input` | 展示工具调用       |
+| `permission.requested`                        | 脱敏后的 `action`、`resource`、`reason`     | 刷新权限列表       |
+| `tool.result`                                 | `toolCallID`、`ok`、脱敏 `output`           | 展示工具结果       |
+| `question.request`                            | `requestID`、`toolCallID`、`questions`      | 刷新 Question 列表 |
+| `question.result` / `question.cancelled`      | 请求 ID                                     | 更新 Question 状态 |
+| `context.compaction.started/completed/failed` | 压缩状态和统计                              | 更新上下文状态     |
+| `context.project.loaded`                      | 脱敏来源摘要                                | 展示项目上下文来源 |
+| `skill.activated` / `skill.failed`            | Skill 摘要或错误码                          | 更新 Skill 状态    |
+| `session.completed/failed/cancelled`          | 终态信息                                    | 结束或刷新运行     |
+
+### 8.1 断线重连
+
+自定义客户端必须保存最近的 `id`，重连时发送：
 
 ```bash
-bun --cwd packages/headless-server run dev
-bun --cwd packages/headless-ui run dev
+curl -N 'http://127.0.0.1:4097/api/experimental/headless/session/session_001/events' \
+  -H 'Last-Event-ID: event_004'
 ```
 
-默认服务地址为 `http://127.0.0.1:4097`，UI 地址为
-`http://127.0.0.1:5173`。服务默认组装 OpenAI-compatible ModelPort、内置
-`read`/`write`/`edit`/`shell` 工具、Permission Broker、Coding Loop 和 SSE
-EventHub；UI 不直接导入这些运行时实现。
+服务端为每个会话保留有限数量的最近事件。可找到游标时只重放其后的事件，再推送新事件；游标过旧或未知时会尽可能发送当前保留历史。历史不完整时，以状态快照为权威来源，不应依赖事件流单独恢复权限或 Question。
 
-页面级拒绝权限冒烟测试使用真实 Headless Service、fixture Model 和 Playwright
-驱动的构建产物；首次运行需要准备 Chromium：
+## 9. 权限与 Question
 
-```bash
-bunx playwright install chromium
-bun --cwd packages/headless-ui run test:smoke
+### 权限
+
+- `GET /session/:sessionID/permission`：返回 pending 权限数组。
+- `POST /session/:sessionID/permission/:requestID/reply`：请求体 `{"decision":"allow_once"|"allow_always"|"deny"}`。
+- 重复回复已完成请求必须得到幂等结果或稳定 `HEADLESS_PERMISSION_NOT_FOUND`，不得重复执行工具。
+
+### Question
+
+- `GET /session/:sessionID/question`：返回 pending Question。
+- `POST /session/:sessionID/question/:requestID/reply`：请求体 `{"answers":[["选项 A"]]}`。
+- `POST /session/:sessionID/question/:requestID/cancel`：取消，不伪造答案。
+- 答案必须符合 Question 的数量、选项和单选/多选约束。
+
+## 10. Skill 接口
+
+`GET /skills`、`GET /skills/:skillID`、`POST /skills/register`、`POST /skills/refresh`、`POST /skills/validate` 和 `POST /skills/:skillID/activate` 用于发现、注册、校验和显式激活 Skill。Skill 响应只返回稳定 ID、名称、描述、摘要、文件清单、状态和诊断，不返回宿主绝对路径或凭据。
+
+## 11. 健康检查
+
+- `GET /health/live` 返回 `{"service":"headless-server","status":"ok"}`。
+- `GET /health/ready` 返回 `{"service":"headless-server","status":"ready"}`。
+
+健康检查不使用 Headless REST Envelope，但仍返回 `X-Trace-Id`；它们不创建会话、不执行模型或工具。
+
+## 12. 安全与可观测性
+
+- 模型凭据只存在于服务端配置，禁止进入 `data`、事件、错误消息和日志。
+- 工具资源、输入、输出和 Skill 诊断必须经过脱敏；页面只能看到安全视图。
+- `directory` 必须经过 Core 的目录校验；工具不能越出会话目录。
+- POC 默认绑定 `127.0.0.1`，未实现身份认证、租户隔离和生产级限流；生产接入必须由网关/宿主提供 TLS、认证、授权、CORS 白名单和审计。
+- `X-Trace-Id` 用于跨页面、Server 和 Core 日志关联；日志只记录错误码、会话 ID、事件 ID、run ID 和 trace ID 等安全标识。
+
+## 13. 常见错误码
+
+| 错误码                             | HTTP | 说明                    |
+| ---------------------------------- | ---: | ----------------------- |
+| `HEADLESS_INVALID_REQUEST`         |  400 | 请求体或字段无效        |
+| `HEADLESS_INVALID_DIRECTORY`       |  400 | 工作目录不存在或不可用  |
+| `HEADLESS_SESSION_NOT_FOUND`       |  404 | 会话不存在              |
+| `HEADLESS_PERMISSION_NOT_FOUND`    |  404 | 权限请求不存在或已完成  |
+| `HEADLESS_QUESTION_NOT_FOUND`      |  404 | Question 不存在或已完成 |
+| `HEADLESS_METHOD_NOT_ALLOWED`      |  405 | HTTP 方法不支持         |
+| `HEADLESS_SESSION_CANCEL_CONFLICT` |  409 | 会话当前状态不允许取消  |
+| `HEADLESS_MODEL_AUTH_FAILED`       |  401 | 模型端点认证失败        |
+| `HEADLESS_MODEL_PROBE_FAILED`      |  503 | 模型能力探测失败        |
+| `HEADLESS_ROUTE_NOT_FOUND`         |  404 | 路径不存在              |
+
+## 14. 最小页面接入示例
+
+```ts
+const capabilities = await fetch(`${baseUrl}/api/experimental/headless/capabilities`).then((r) => r.json())
+const session = await fetch(`${baseUrl}/api/experimental/headless/session`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ directory: "/workspace/project" }),
+}).then((r) => r.json())
+
+const sessionID = session.data.id
+const events = new EventSource(`${baseUrl}/api/experimental/headless/session/${sessionID}/events`)
+events.addEventListener("assistant.text", (message) => {
+  const event = JSON.parse(message.data)
+  renderAssistantText(event.data.content)
+})
+
+await fetch(`${baseUrl}/api/experimental/headless/session/${sessionID}/prompt`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ text: "请读取 README.md" }),
+})
 ```
 
-测试会验证点击 `Deny` 后 Session 进入 `failed`，且工作目录内不会出现被拒绝写入的文件。
-
-### 10.2 配置模型
-
-```bash
-curl --request PUT 'http://127.0.0.1:4097/api/experimental/headless/model' \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "baseUrl": "https://model.example.com/v1",
-    "model": "coding-model",
-    "credentialRef": "HEADLESS_MODEL_API_KEY"
-  }'
-```
-
-`HEADLESS_MODEL_API_KEY` 只应由服务进程环境注入；不要把真实 API Key 写入
-请求脚本、仓库、浏览器 localStorage 或事件数据。模型请求会携带工具定义，
-模型返回 `tool_calls` 后，Core 会生成权限请求并暂停工具执行。
-
-### 10.3 一次允许工具执行的链路
-
-1. UI 创建一个绝对路径工作目录绑定的 Session，并订阅
-   `/events` SSE。
-2. UI 提交 Prompt；ModelPort 请求 `/chat/completions`，请求体包含
-   `tools` 和 `tool_choice: "auto"`。
-3. 模型返回 `tool_calls`；事件流发布 `tool.request`，Permission Broker
-   暂停 Coding Loop，UI 展示 action/resource 审批卡片。
-4. UI 调用权限 reply 接口提交 `allow_once`；Core 在权限边界之后调用内置
-   工具，并发布 `tool.result`。
-5. Core 将原始 user message、assistant `tool_calls` 和 tool result 组成下一次
-   模型消息历史；模型返回最终文本后，事件流依次发布 `assistant.text` 和
-   `session.completed`。
-
-拒绝权限时，工具不会执行，Session 进入 `failed`，UI 保留失败事件和可排障
-的 trace ID。该链路验证的是 POC 权限边界，不等同于生产级沙箱；生产部署仍需
-增加执行 Worker、目录隔离、网络出口控制和身份认证。
-
-## 11. Session 列表
-
-### 11.1 接口概览
-
-| 项目     | 内容                                                            |
-| -------- | --------------------------------------------------------------- |
-| 接口名称 | Headless Session 列表                                           |
-| 接口用途 | 为页面刷新、Session 切换和运行恢复提供当前进程内的 Session 摘要 |
-| 业务场景 | 页面启动或用户点击刷新时调用；只读，不启动模型、不执行工具      |
-| 权限要求 | 当前 POC 不要求认证；生产部署必须在服务边界补充身份与访问控制   |
-| 幂等性   | GET 幂等；不修改 Session 状态                                   |
-| 版本     | 当前为实验性 `/api/experimental` 路由                           |
-
-### 11.2 请求定义
-
-```http
-GET http://127.0.0.1:4097/api/experimental/headless/session
-```
-
-| 项目         | 内容                                 |
-| ------------ | ------------------------------------ |
-| Method       | `GET`                                |
-| URL          | `/api/experimental/headless/session` |
-| Content-Type | 不适用，无请求体                     |
-| Accept       | 推荐 `application/json`              |
-
-路径参数、查询参数、表单参数和请求 Cookie：不适用。可选请求头
-`X-Trace-Id` 沿用模块通用约定。
-
-### 11.3 响应定义
-
-成功返回 `200 OK`，响应 Cookie 不适用，响应头包含 `Content-Type: application/json`、
-`Cache-Control: no-store` 和 `X-Trace-Id`。
-
-```json
-{
-  "data": [
-    {
-      "id": "2b4d1c52-8e71-4fb8-9b2a-39f3a55ec6f7",
-      "directory": "/Users/example/project",
-      "status": "idle"
-    }
-  ]
-}
-```
-
-| 字段路径           | 类型   | 必有/可选 | 枚举                                              | 说明             |
-| ------------------ | ------ | --------- | ------------------------------------------------- | ---------------- |
-| `data`             | array  | 必有      | -                                                 | Session 摘要列表 |
-| `data[].id`        | string | 必有      | UUID                                              | Session ID       |
-| `data[].directory` | string | 必有      | 规范化绝对路径                                    | 工作目录         |
-| `data[].status`    | string | 必有      | `idle`/`running`/`completed`/`failed`/`cancelled` | 生命周期状态     |
-
-错误响应：`405 HEADLESS_METHOD_NOT_ALLOWED`；其他错误遵循模块通用错误体。分页、排序、过滤、幂等键和时间字段：不适用；列表仅覆盖当前进程内存状态。
-
-### 11.4 Complete example
-
-```bash
-curl --request GET 'http://127.0.0.1:4097/api/experimental/headless/session' \
-  --header 'Accept: application/json' \
-  --header 'X-Trace-Id: session_list_trace_001'
-```
-
-## 12. 模型能力探测
-
-### 12.1 接口概览
-
-| 项目     | 内容                                                                   |
-| -------- | ---------------------------------------------------------------------- |
-| 接口名称 | Headless 模型能力探测                                                  |
-| 接口用途 | 验证当前已保存模型的文本响应和 OpenAI-compatible Function Calling 能力 |
-| 业务场景 | 页面保存模型配置后由用户显式点击调用；会产生模型请求但不执行工具       |
-| 权限要求 | 当前 POC 不要求认证；凭据只在服务端配置存储和模型适配器内使用          |
-| 幂等性   | 逻辑上只读，但每次调用可能产生上游模型费用；不支持幂等键               |
-| 版本     | 当前为实验性 `/api/experimental` 路由                                  |
-
-### 12.2 请求定义
-
-```http
-POST http://127.0.0.1:4097/api/experimental/headless/model/probe
-```
-
-| 项目         | 内容                                     |
-| ------------ | ---------------------------------------- |
-| Method       | `POST`                                   |
-| URL          | `/api/experimental/headless/model/probe` |
-| Content-Type | `application/json`                       |
-| Accept       | 推荐 `application/json`                  |
-
-请求 Cookie：不适用。请求头可选 `X-Trace-Id`。请求体：
-
-```json
-{
-  "mode": "both"
-}
-```
-
-| 字段路径 | 类型   | 必填/默认 | 枚举                               | 说明             |
-| -------- | ------ | --------- | ---------------------------------- | ---------------- |
-| `mode`   | string | 否/`both` | `text`、`function_calling`、`both` | 选择要探测的能力 |
-
-### 12.3 响应定义
-
-成功返回 `200 OK`，响应 Cookie 不适用，响应体只包含安全能力状态，不包含模型文本、请求头或凭据：
-
-```json
-{
-  "data": {
-    "text": "pass",
-    "functionCalling": "pass"
-  }
-}
-```
-
-| 字段路径               | 类型   | 必有/可选 | 枚举             | 说明             |
-| ---------------------- | ------ | --------- | ---------------- | ---------------- |
-| `data.text`            | string | 必有      | `pass`/`skipped` | 文本能力结果     |
-| `data.functionCalling` | string | 必有      | `pass`/`skipped` | 工具调用能力结果 |
-
-| HTTP 状态码 | 错误码                         | 触发条件                     | 调用方处理               |
-| ----------- | ------------------------------ | ---------------------------- | ------------------------ |
-| `400`       | `HEADLESS_INVALID_MODEL_PROBE` | mode 格式不合法              | 修正 mode 后重试         |
-| `401`       | `HEADLESS_MODEL_AUTH_FAILED`   | 上游模型认证失败             | 更新模型凭据后重试       |
-| `503`       | `HEADLESS_MODEL_PROBE_FAILED`  | 未配置、不可达或响应格式无效 | 检查配置、网络后显式重试 |
-
-错误响应统一包含 `errorCode`、`message`、`traceId`，不包含上游原始响应、Token 或堆栈；响应头包含 `X-Trace-Id` 和 `Cache-Control: no-store`。
-
-### 12.4 Complete example
-
-```bash
-curl --request POST 'http://127.0.0.1:4097/api/experimental/headless/model/probe' \
-  --header 'Accept: application/json' \
-  --header 'Content-Type: application/json' \
-  --header 'X-Trace-Id: model_probe_trace_001' \
-  --data '{"mode":"both"}'
-```
-
-真实凭据不通过此接口传入；先使用 `PUT /api/experimental/headless/model` 保存配置，或通过服务端环境变量引用凭据。
-
-## 13. Skill 管理与激活
-
-Headless Server 默认扫描启动工作目录下的 `skills/`；生产环境可通过
-`startHeadlessServer({ skillRoots })` 指定受控 Skill root。Skill API 只返回安全摘要、相对文件清单和脱敏诊断，不返回宿主绝对路径或凭据。
-
-### 13.1 Skill 列表
-
-```http
-GET /api/experimental/headless/skills
-```
-
-成功响应 `200 OK`：
-
-```json
-{
-  "data": [
-    {
-      "id": "metric-view-lifecycle",
-      "name": "metric-view-lifecycle",
-      "description": "Metric view lifecycle skill",
-      "version": "0.1.0",
-      "digest": "sha256...",
-      "fileCount": 71,
-      "files": ["SKILL.md", "README.md"],
-      "status": "ready",
-      "diagnostics": []
-    }
-  ]
-}
-```
-
-### 13.2 Skill 详情
-
-```http
-GET /api/experimental/headless/skills/{skillID}
-```
-
-返回与列表相同的安全摘要。Skill 不存在返回 `404 HEADLESS_SKILL_NOT_FOUND`。
-
-### 13.3 Skill 注册
-
-```http
-POST /api/experimental/headless/skills/register
-Content-Type: application/json
-
-{"id":"metric-view-lifecycle"}
-```
-
-注册只接受已经位于受控 `skillRoots` 的 Skill ID，不接受任意本地路径或文件上传；服务端会刷新 Registry 并返回当前摘要。对同一 ID 重复调用是幂等的。未知 ID 返回 `404 HEADLESS_SKILL_NOT_FOUND`。
-
-### 13.4 Skill 刷新
-
-```http
-POST /api/experimental/headless/skills/refresh
-```
-
-服务端重新扫描配置的 Skill roots，并返回最新摘要数组。目录缺失、`SKILL.md` 无效、符号链接或超出文件大小限制的 Skill 会显示为 `invalid`；重复 ID 会显示为 `conflict`，两者均不可激活。
-
-### 13.5 Skill 校验
-
-```http
-POST /api/experimental/headless/skills/validate
-Content-Type: application/json
-
-{"id":"metric-view-lifecycle"}
-```
-
-`id` 可选；省略时校验全部 Skill。响应：
-
-```json
-{
-  "data": {
-    "valid": true,
-    "data": [{ "id": "metric-view-lifecycle", "status": "ready" }]
-  }
-}
-```
-
-`valid=true` 仅表示返回集合中的 Skill 全部处于 `ready`，不表示已经执行 Skill 脚本或外部业务校验。
-
-### 13.6 Skill 激活
-
-```http
-POST /api/experimental/headless/skills/{skillID}/activate
-Content-Type: application/json
-
-{"sessionID":"session-id","text":"执行 @metric-view-lifecycle"}
-```
-
-激活会复用 Core 的 `skill.use` PermissionPort；权限未决时请求会等待页面审批，拒绝返回 `409 HEADLESS_SKILL_PERMISSION_DENIED`，取消会沿用 Session 的终态取消语义。成功返回 Skill attachment 和带 `skill:{id}` `sourceID` 的 system message。Skill 指令本身不会执行脚本，也不会绕过普通文件、Shell、HTTP 或工具权限。
-
-错误响应统一包含 `errorCode`、`message`、`traceId`，不包含 Skill root 绝对路径、原始凭据或堆栈。
+完整字段以 `packages/protocol/src/groups/headless.ts` 和生成的 OpenAPI 文档为准；本文件中的示例只使用公开安全字段。

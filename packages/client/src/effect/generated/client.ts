@@ -322,6 +322,7 @@ import type {
   ConfigShellsOutput,
   ExperimentalConfigUpdateInput,
   ExperimentalConfigUpdateOutput,
+  ExperimentalHeadlessCapabilitiesOutput,
   ExperimentalHeadlessModelGetOutput,
   ExperimentalHeadlessModelUpdateInput,
   ExperimentalHeadlessModelUpdateOutput,
@@ -330,6 +331,8 @@ import type {
   ExperimentalHeadlessSessionCreateInput,
   ExperimentalHeadlessSessionCreateOutput,
   ExperimentalHeadlessSessionListOutput,
+  ExperimentalHeadlessSessionStateInput,
+  ExperimentalHeadlessSessionStateOutput,
   ExperimentalHeadlessSkillListOutput,
   ExperimentalHeadlessSkillDetailInput,
   ExperimentalHeadlessSkillDetailOutput,
@@ -2031,12 +2034,14 @@ const adaptGroupExperimentalConfig = (raw: RawClient["server.config"]) => ({
   update: EndpointExperimentalConfigUpdate(raw),
 })
 
+const EndpointExperimentalHeadlessCapabilities = (raw: RawClient["server.headless"]) => () =>
+  preserveEffect<ExperimentalHeadlessCapabilitiesOutput>()(
+    raw["experimental.headless.capabilities"]({}).pipe(Effect.mapError(mapClientError)),
+  )
+
 const EndpointExperimentalHeadlessModelGet = (raw: RawClient["server.headless"]) => () =>
   preserveEffect<ExperimentalHeadlessModelGetOutput>()(
-    raw["experimental.headless.model.get"]({}).pipe(
-      Effect.mapError(mapClientError),
-      Effect.map((value) => value.data),
-    ),
+    raw["experimental.headless.model.get"]({}).pipe(Effect.mapError(mapClientError)),
   )
 
 const EndpointExperimentalHeadlessModelUpdate =
@@ -2049,10 +2054,7 @@ const EndpointExperimentalHeadlessModelUpdate =
           credential: input["credential"],
           credentialRef: input["credentialRef"],
         },
-      }).pipe(
-        Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
-      ),
+      }).pipe(Effect.mapError(mapClientError)),
     )
 
 const EndpointExperimentalHeadlessModelProbe =
@@ -2060,7 +2062,6 @@ const EndpointExperimentalHeadlessModelProbe =
     preserveEffect<ExperimentalHeadlessModelProbeOutput>()(
       raw["experimental.headless.model.probe"]({ payload: { mode: input?.["mode"] } }).pipe(
         Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
       ),
     )
 
@@ -2069,24 +2070,25 @@ const EndpointExperimentalHeadlessSessionCreate =
     preserveEffect<ExperimentalHeadlessSessionCreateOutput>()(
       raw["experimental.headless.session.create"]({ payload: { directory: input["directory"] } }).pipe(
         Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
       ),
     )
 
 const EndpointExperimentalHeadlessSessionList = (raw: RawClient["server.headless"]) => () =>
   preserveEffect<ExperimentalHeadlessSessionListOutput>()(
-    raw["experimental.headless.session.list"]({}).pipe(
-      Effect.mapError(mapClientError),
-      Effect.map((value) => value.data),
-    ),
+    raw["experimental.headless.session.list"]({}).pipe(Effect.mapError(mapClientError)),
   )
+
+const EndpointExperimentalHeadlessSessionState =
+  (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionStateInput) =>
+    preserveEffect<ExperimentalHeadlessSessionStateOutput>()(
+      raw["experimental.headless.session.state"]({ params: { sessionID: input["sessionID"] } }).pipe(
+        Effect.mapError(mapClientError),
+      ),
+    )
 
 const EndpointExperimentalHeadlessSkillList = (raw: RawClient["server.headless"]) => () =>
   preserveEffect<ExperimentalHeadlessSkillListOutput>()(
-    raw["experimental.headless.skill.list"]({}).pipe(
-      Effect.mapError(mapClientError),
-      Effect.map((value) => value.data),
-    ),
+    raw["experimental.headless.skill.list"]({}).pipe(Effect.mapError(mapClientError)),
   )
 
 const EndpointExperimentalHeadlessSkillDetail =
@@ -2094,7 +2096,6 @@ const EndpointExperimentalHeadlessSkillDetail =
     preserveEffect<ExperimentalHeadlessSkillDetailOutput>()(
       raw["experimental.headless.skill.detail"]({ params: { skillID: input["skillID"] } }).pipe(
         Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
       ),
     )
 
@@ -2103,16 +2104,12 @@ const EndpointExperimentalHeadlessSkillRegister =
     preserveEffect<ExperimentalHeadlessSkillRegisterOutput>()(
       raw["experimental.headless.skill.register"]({ payload: { id: input["id"] } }).pipe(
         Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
       ),
     )
 
 const EndpointExperimentalHeadlessSkillRefresh = (raw: RawClient["server.headless"]) => () =>
   preserveEffect<ExperimentalHeadlessSkillRefreshOutput>()(
-    raw["experimental.headless.skill.refresh"]({}).pipe(
-      Effect.mapError(mapClientError),
-      Effect.map((value) => value.data),
-    ),
+    raw["experimental.headless.skill.refresh"]({}).pipe(Effect.mapError(mapClientError)),
   )
 
 const EndpointExperimentalHeadlessSkillValidate =
@@ -2120,7 +2117,6 @@ const EndpointExperimentalHeadlessSkillValidate =
     preserveEffect<ExperimentalHeadlessSkillValidateOutput>()(
       raw["experimental.headless.skill.validate"]({ payload: { id: input?.["id"] } }).pipe(
         Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
       ),
     )
 
@@ -2130,10 +2126,7 @@ const EndpointExperimentalHeadlessSkillActivate =
       raw["experimental.headless.skill.activate"]({
         params: { skillID: input["skillID"] },
         payload: { sessionID: input["sessionID"], text: input["text"] },
-      }).pipe(
-        Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
-      ),
+      }).pipe(Effect.mapError(mapClientError)),
     )
 
 const EndpointExperimentalHeadlessSessionPrompt =
@@ -2142,10 +2135,7 @@ const EndpointExperimentalHeadlessSessionPrompt =
       raw["experimental.headless.session.prompt"]({
         params: { sessionID: input["sessionID"] },
         payload: { text: input["text"] },
-      }).pipe(
-        Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
-      ),
+      }).pipe(Effect.mapError(mapClientError)),
     )
 
 const EndpointExperimentalHeadlessSessionQuestionList =
@@ -2153,7 +2143,6 @@ const EndpointExperimentalHeadlessSessionQuestionList =
     preserveEffect<ExperimentalHeadlessSessionQuestionListOutput>()(
       raw["experimental.headless.session.question.list"]({ params: { sessionID: input["sessionID"] } }).pipe(
         Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
       ),
     )
 
@@ -2163,10 +2152,7 @@ const EndpointExperimentalHeadlessSessionQuestionReply =
       raw["experimental.headless.session.question.reply"]({
         params: { sessionID: input["sessionID"], requestID: input["requestID"] },
         payload: { answers: input["answers"] },
-      }).pipe(
-        Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
-      ),
+      }).pipe(Effect.mapError(mapClientError)),
     )
 
 const EndpointExperimentalHeadlessSessionQuestionCancel =
@@ -2174,10 +2160,7 @@ const EndpointExperimentalHeadlessSessionQuestionCancel =
     preserveEffect<ExperimentalHeadlessSessionQuestionCancelOutput>()(
       raw["experimental.headless.session.question.cancel"]({
         params: { sessionID: input["sessionID"], requestID: input["requestID"] },
-      }).pipe(
-        Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
-      ),
+      }).pipe(Effect.mapError(mapClientError)),
     )
 
 const EndpointExperimentalHeadlessSessionCancel =
@@ -2185,7 +2168,6 @@ const EndpointExperimentalHeadlessSessionCancel =
     preserveEffect<ExperimentalHeadlessSessionCancelOutput>()(
       raw["experimental.headless.session.cancel"]({ params: { sessionID: input["sessionID"] } }).pipe(
         Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
       ),
     )
 
@@ -2205,7 +2187,6 @@ const EndpointExperimentalHeadlessSessionPermissionList =
     preserveEffect<ExperimentalHeadlessSessionPermissionListOutput>()(
       raw["experimental.headless.session.permission.list"]({ params: { sessionID: input["sessionID"] } }).pipe(
         Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
       ),
     )
 
@@ -2215,13 +2196,11 @@ const EndpointExperimentalHeadlessSessionPermissionReply =
       raw["experimental.headless.session.permission.reply"]({
         params: { sessionID: input["sessionID"], requestID: input["requestID"] },
         payload: { decision: input["decision"] },
-      }).pipe(
-        Effect.mapError(mapClientError),
-        Effect.map((value) => value.data),
-      ),
+      }).pipe(Effect.mapError(mapClientError)),
     )
 
 const adaptGroupExperimentalHeadless = (raw: RawClient["server.headless"]) => ({
+  capabilities: EndpointExperimentalHeadlessCapabilities(raw),
   model: {
     get: EndpointExperimentalHeadlessModelGet(raw),
     update: EndpointExperimentalHeadlessModelUpdate(raw),
@@ -2230,6 +2209,7 @@ const adaptGroupExperimentalHeadless = (raw: RawClient["server.headless"]) => ({
   session: {
     create: EndpointExperimentalHeadlessSessionCreate(raw),
     list: EndpointExperimentalHeadlessSessionList(raw),
+    state: EndpointExperimentalHeadlessSessionState(raw),
     prompt: EndpointExperimentalHeadlessSessionPrompt(raw),
     question: {
       list: EndpointExperimentalHeadlessSessionQuestionList(raw),

@@ -6,9 +6,11 @@ import { HeadlessContextCompactionEventData, HeadlessQuestionRequest } from "../
 
 const expectedRoutes = [
   "/api/experimental/headless/session",
+  "/api/experimental/headless/capabilities",
   "/api/experimental/headless/session/{sessionID}/prompt",
   "/api/experimental/headless/session/{sessionID}/cancel",
   "/api/experimental/headless/session/{sessionID}/events",
+  "/api/experimental/headless/session/{sessionID}/state",
   "/api/experimental/headless/session/{sessionID}/permission",
   "/api/experimental/headless/session/{sessionID}/permission/{requestID}/reply",
   "/api/experimental/headless/session/{sessionID}/question",
@@ -44,9 +46,11 @@ test("headless protocol operations remain experimental", () => {
   expect(headlessOperationIds).toEqual(
     expect.arrayContaining([
       "experimental.headless.session.create",
+      "experimental.headless.capabilities",
       "experimental.headless.session.prompt",
       "experimental.headless.session.cancel",
       "experimental.headless.session.events",
+      "experimental.headless.session.state",
       "experimental.headless.session.permission.list",
       "experimental.headless.session.permission.reply",
       "experimental.headless.session.question.list",

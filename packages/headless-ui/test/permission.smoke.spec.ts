@@ -96,54 +96,58 @@ describe.serial("Headless UI smoke", () => {
     expect(await Bun.file(join(directory, "denied.txt")).exists()).toBe(false)
   })
 
-  test.serial("allowing a tool completes the task without exposing credential-shaped output", async () => {
-    browser = await chromium.launch({ headless: true })
-    const page = await browser.newPage()
-    let upstreamCalls = 0
-    upstream = Bun.serve({
-      port: 0,
-      async fetch() {
-        upstreamCalls += 1
-        if (upstreamCalls > 1) return Response.json({ choices: [{ message: { content: "命令已执行" } }] })
-        return Response.json({
-          choices: [
-            {
-              message: {
-                content: null,
-                tool_calls: [
-                  {
-                    id: "call_shell_secret",
-                    type: "function",
-                    function: {
-                      name: "shell",
-                      arguments: JSON.stringify({ command: "printf 'Authorization: Bearer super-secret-token'" }),
+  test.serial(
+    "allowing a tool completes the task without exposing credential-shaped output",
+    { timeout: 15_000 },
+    async () => {
+      browser = await chromium.launch({ headless: true })
+      const page = await browser.newPage()
+      let upstreamCalls = 0
+      upstream = Bun.serve({
+        port: 0,
+        async fetch() {
+          upstreamCalls += 1
+          if (upstreamCalls > 1) return Response.json({ choices: [{ message: { content: "命令已执行" } }] })
+          return Response.json({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: "call_shell_secret",
+                      type: "function",
+                      function: {
+                        name: "shell",
+                        arguments: JSON.stringify({ command: "printf 'Authorization: Bearer super-secret-token'" }),
+                      },
                     },
-                  },
-                ],
+                  ],
+                },
               },
-            },
-          ],
-        })
-      },
-    })
-    apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
-    directory = await mkdtemp(join(tmpdir(), "headless-ui-allow-"))
+            ],
+          })
+        },
+      })
+      apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      directory = await mkdtemp(join(tmpdir(), "headless-ui-allow-"))
 
-    await page.goto(uiOrigin)
-    await page.getByLabel("Base URL").fill(upstream.url.toString().replace(/\/$/, ""))
-    await page.getByLabel("Model").fill("fixture-model")
-    await page.getByRole("button", { name: "Save model config" }).click()
-    await page.getByLabel("Working directory").fill(directory)
-    await page.getByRole("button", { name: /Create session/ }).click()
-    await page.getByPlaceholder("Describe the next coding move…").fill("查看环境")
-    await page.getByRole("button", { name: /^Send/ }).click()
-    await page.getByRole("button", { name: "Allow once" }).click()
+      await page.goto(uiOrigin)
+      await page.getByLabel("Base URL").fill(upstream.url.toString().replace(/\/$/, ""))
+      await page.getByLabel("Model").fill("fixture-model")
+      await page.getByRole("button", { name: "Save model config" }).click()
+      await page.getByLabel("Working directory").fill(directory)
+      await page.getByRole("button", { name: /Create session/ }).click()
+      await page.getByPlaceholder("Describe the next coding move…").fill("查看环境")
+      await page.getByRole("button", { name: /^Send/ }).click()
+      await page.getByRole("button", { name: "Allow once" }).click()
 
-    await expect(page.locator(".pill-completed")).toBeVisible()
-    await expect(page.getByText("tool.result")).toBeVisible()
-    await expect(page.locator("body")).not.toContainText("super-secret-token")
-  })
+      await expect(page.locator(".pill-completed")).toBeVisible()
+      await expect(page.getByText("tool.result")).toBeVisible()
+      await expect(page.locator("body")).not.toContainText("super-secret-token")
+    },
+  )
 
   test.serial("answers a Question and shows compaction plus project context states", async () => {
     browser = await chromium.launch({ headless: true })

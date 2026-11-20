@@ -16091,6 +16091,84 @@
         }
       }
     },
+    "/api/experimental/headless/capabilities": {
+      "get": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.capabilities",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "transport": {
+                          "type": "object",
+                          "properties": {
+                            "http": {
+                              "type": "string",
+                              "enum": ["json"]
+                            },
+                            "events": {
+                              "type": "string",
+                              "enum": ["sse"]
+                            }
+                          },
+                          "required": ["http", "events"],
+                          "additionalProperties": false
+                        },
+                        "features": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "eventTypes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["protocolVersion", "transport", "features", "eventTypes"],
+                      "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "description": "Return the protocol version, transport, supported features, and event types.",
+        "summary": "Discover headless protocol capabilities"
+      }
+    },
     "/api/experimental/headless/model": {
       "get": {
         "tags": ["headless"],
@@ -16137,9 +16215,23 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -16187,9 +16279,23 @@
                       },
                       "required": ["baseUrl", "model", "credentialConfigured"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -16278,9 +16384,23 @@
                       },
                       "required": ["text", "functionCalling"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -16375,9 +16495,23 @@
                       },
                       "required": ["id", "directory", "status"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -16446,9 +16580,23 @@
                         "required": ["id", "directory", "status"],
                         "additionalProperties": false
                       }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -16457,6 +16605,193 @@
         },
         "description": "List Session IDs, working directories, and lifecycle status for page recovery.",
         "summary": "List headless sessions"
+      }
+    },
+    "/api/experimental/headless/session/{sessionID}/state": {
+      "get": {
+        "tags": ["headless"],
+        "operationId": "experimental.headless.session.state",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "session": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "directory": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": ["idle", "running", "completed", "failed", "cancelled"]
+                            }
+                          },
+                          "required": ["id", "directory", "status"],
+                          "additionalProperties": false
+                        },
+                        "pendingPermissions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "sessionID": {
+                                "type": "string"
+                              },
+                              "action": {
+                                "type": "string"
+                              },
+                              "resource": {
+                                "type": "string"
+                              },
+                              "reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": ["id", "sessionID", "action", "resource"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "pendingQuestions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "sessionID": {
+                                "type": "string"
+                              },
+                              "toolCallID": {
+                                "type": "string"
+                              },
+                              "questions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "header": {
+                                      "type": "string"
+                                    },
+                                    "question": {
+                                      "type": "string"
+                                    },
+                                    "options": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "description": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["label", "description"],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "multiple": {
+                                      "anyOf": [
+                                        {
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": ["header", "question", "options"],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": ["id", "sessionID", "toolCallID", "questions"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "lastSequence": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["session", "pendingPermissions", "pendingQuestions", "lastSequence"],
+                      "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Return the safe session snapshot, pending decisions, and the latest event sequence.",
+        "summary": "Get a recoverable headless session state"
       }
     },
     "/api/experimental/headless/skills": {
@@ -16540,9 +16875,23 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -16640,9 +16989,23 @@
                         "diagnostics"
                       ],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -16741,9 +17104,23 @@
                         "diagnostics"
                       ],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -16872,9 +17249,23 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -16976,9 +17367,23 @@
                       },
                       "required": ["valid", "data"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -17112,9 +17517,23 @@
                       },
                       "required": ["skills", "systemMessages"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -17205,9 +17624,23 @@
                       },
                       "required": ["status"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -17338,9 +17771,23 @@
                         "required": ["id", "sessionID", "toolCallID", "questions"],
                         "additionalProperties": false
                       }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -17402,9 +17849,23 @@
                       },
                       "required": ["status"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -17506,9 +17967,23 @@
                       },
                       "required": ["status"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -17569,9 +18044,23 @@
                       },
                       "required": ["status"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -17634,12 +18123,19 @@
                       "contentSchema": {
                         "type": "object",
                         "properties": {
+                          "eventID": {
+                            "type": "string"
+                          },
+                          "runID": {
+                            "type": "string"
+                          },
                           "type": {
                             "type": "string",
                             "enum": [
                               "assistant.text",
                               "tool.request",
                               "tool.result",
+                              "permission.requested",
                               "question.request",
                               "question.result",
                               "question.cancelled",
@@ -17668,6 +18164,9 @@
                               }
                             ]
                           },
+                          "occurredAt": {
+                            "type": "string"
+                          },
                           "data": {
                             "anyOf": [
                               {
@@ -17679,7 +18178,7 @@
                             ]
                           }
                         },
-                        "required": ["type", "sessionID", "sequence"],
+                        "required": ["eventID", "runID", "type", "sessionID", "sequence", "occurredAt"],
                         "additionalProperties": false
                       }
                     }
@@ -17820,9 +18319,23 @@
                         "required": ["id", "sessionID", "action", "resource"],
                         "additionalProperties": false
                       }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -17884,9 +18397,23 @@
                       },
                       "required": ["status"],
                       "additionalProperties": false
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "type": "string",
+                          "enum": ["headless.v1"]
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["protocolVersion", "traceId"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
