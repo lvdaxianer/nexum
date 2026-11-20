@@ -2,7 +2,9 @@ import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { render } from "solid-js/web"
 import { OpenCode } from "@opencode/client"
 import type {
+  ExperimentalHeadlessModelProbeOutput,
   ExperimentalHeadlessSessionEventsOutput,
+  ExperimentalHeadlessSessionListOutput,
   ExperimentalHeadlessSessionPermissionListOutput,
   ExperimentalHeadlessSessionQuestionListOutput,
 } from "@opencode/client"
@@ -11,6 +13,8 @@ import "./styles.css"
 type TimelineEvent = ExperimentalHeadlessSessionEventsOutput & { localTime: string }
 type PermissionRequest = ExperimentalHeadlessSessionPermissionListOutput[number]
 type QuestionRequest = ExperimentalHeadlessSessionQuestionListOutput[number]
+type SessionSummary = ExperimentalHeadlessSessionListOutput[number]
+type ModelProbeResult = ExperimentalHeadlessModelProbeOutput
 type ContextSource = { sourceID: string; kind: string; path: string }
 
 const apiBaseUrl = import.meta.env.VITE_HEADLESS_API_URL ?? "http://127.0.0.1:4097"
@@ -25,6 +29,7 @@ function App() {
   const [prompt, setPrompt] = createSignal("")
   const [sessionID, setSessionID] = createSignal("")
   const [sessionStatus, setSessionStatus] = createSignal("no session")
+  const [sessions, setSessions] = createSignal<SessionSummary[]>([])
   const [events, setEvents] = createSignal<TimelineEvent[]>([])
   const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
   const [questions, setQuestions] = createSignal<QuestionRequest[]>([])
@@ -32,10 +37,14 @@ function App() {
   const [compactionStatus, setCompactionStatus] = createSignal("idle")
   const [contextSources, setContextSources] = createSignal<ContextSource[]>([])
   const [busy, setBusy] = createSignal(false)
+  const [probeBusy, setProbeBusy] = createSignal(false)
+  const [probeResult, setProbeResult] = createSignal<ModelProbeResult | undefined>()
+  const [refreshBusy, setRefreshBusy] = createSignal(false)
   const [notice, setNotice] = createSignal("Ready for a headless run.")
   const [connected, setConnected] = createSignal(false)
   const [pendingDecisionID, setPendingDecisionID] = createSignal("")
   let streamController: AbortController | undefined
+  const seenEventKeys = new Set<string>()
 
   onMount(async () => {
     try {
@@ -46,6 +55,7 @@ function App() {
         setCredentialRef(active.credentialRef ?? "")
         setNotice(active.credentialConfigured ? "Model configuration loaded." : "Model endpoint loaded.")
       }
+      await restoreSession()
     } catch {
       setNotice("Headless API is not reachable yet.")
     }
@@ -71,18 +81,87 @@ function App() {
     }
   }
 
+  async function probeModel() {
+    if (probeBusy()) return
+    setProbeBusy(true)
+    try {
+      const result = await client.experimental.headless.model.probe({ mode: "both" })
+      setProbeResult(result)
+      setNotice("Model probe completed.")
+    } catch (error) {
+      setProbeResult(undefined)
+      setNotice(messageFrom(error, "Model probe failed."))
+    } finally {
+      setProbeBusy(false)
+    }
+  }
+
+  async function restoreSession() {
+    const savedID = sessionStorage.getItem("headless.sessionID")
+    const available = await client.experimental.headless.session.list()
+    setSessions(available)
+    const saved = savedID ? available.find((item) => item.id === savedID) : undefined
+    if (!saved) {
+      if (savedID) sessionStorage.removeItem("headless.sessionID")
+      return
+    }
+    await selectSession(saved, false)
+    setNotice(`Session ${saved.id.slice(0, 8)} restored from the page.`)
+  }
+
+  async function refreshRuntime() {
+    if (refreshBusy()) return
+    setRefreshBusy(true)
+    try {
+      const available = await client.experimental.headless.session.list()
+      setSessions(available)
+      const current = available.find((item) => item.id === sessionID())
+      if (current) {
+        setSessionStatus(current.status)
+        await Promise.all([refreshPermissions(current.id), refreshQuestions(current.id)])
+      }
+      setNotice("Runtime state refreshed.")
+    } catch (error) {
+      setNotice(messageFrom(error, "Runtime refresh failed."))
+    } finally {
+      setRefreshBusy(false)
+    }
+  }
+
+  async function selectSession(session: SessionSummary, announce = true) {
+    streamController?.abort()
+    setSessionID(session.id)
+    setSessionStatus(session.status)
+    setDirectory(session.directory)
+    setEvents([])
+    setPermissions([])
+    setQuestions([])
+    setQuestionAnswers({})
+    setCompactionStatus("idle")
+    setContextSources([])
+    seenEventKeys.clear()
+    sessionStorage.setItem("headless.sessionID", session.id)
+    connectEvents(session.id)
+    await Promise.all([refreshPermissions(session.id), refreshQuestions(session.id)])
+    if (announce) setNotice(`Session ${session.id.slice(0, 8)} selected.`)
+  }
+
   async function createSession() {
     setBusy(true)
     try {
       const created = await client.experimental.headless.session.create({ directory: directory().trim() })
       setSessionID(created.id)
       setSessionStatus(created.status)
+      setDirectory(created.directory)
+      sessionStorage.setItem("headless.sessionID", created.id)
+      setSessions((current) => [...current.filter((item) => item.id !== created.id), created])
       setEvents([])
       setPermissions([])
       setQuestions([])
       setQuestionAnswers({})
       setCompactionStatus("idle")
       setContextSources([])
+      seenEventKeys.clear()
       connectEvents(created.id)
       setNotice(`Session ${created.id.slice(0, 8)} is waiting for a prompt.`)
     } catch (error) {
@@ -102,9 +181,14 @@ function App() {
         { sessionID: id },
         { signal: controller.signal },
       )) {
+        const eventKey = `${event.sessionID}:${event.sequence}`
+        if (seenEventKeys.has(eventKey)) continue
+        seenEventKeys.add(eventKey)
         setEvents((current) => [
-          ...current,
-          { ...event, localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
+          ...[
+            ...current,
+            { ...event, localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
+          ].slice(-200),
         ])
         if (event.type === "session.completed") setSessionStatus("completed")
         if (event.type === "session.failed") setSessionStatus("failed")
@@ -199,6 +283,7 @@ function App() {
   async function sendPrompt() {
     if (!sessionID() || !prompt().trim()) return
     setBusy(true)
+    seenEventKeys.clear()
     try {
       await client.experimental.headless.session.prompt({ sessionID: sessionID(), text: prompt().trim() })
       setPrompt("")
@@ -220,6 +305,12 @@ function App() {
     } catch (error) {
       setNotice(messageFrom(error, "Cancellation failed."))
     }
+  }
+
+  async function reconnectEvents() {
+    if (!sessionID()) return
+    connectEvents(sessionID())
+    setNotice("Event stream reconnecting.")
   }
 
   async function decide(requestID: string, decision: "allow_once" | "allow_always" | "deny") {
@@ -274,9 +365,17 @@ function App() {
           <div class="session-id">{sessionID() || "No session admitted"}</div>
           <div class="run-card-footer">
             <span>directory-bound runtime</span>
-            <button class="ghost-button" disabled={!sessionID()} onClick={cancelSession}>
-              Cancel run ↗
-            </button>
+            <div class="run-controls">
+              <button class="ghost-button" disabled={!sessionID()} onClick={reconnectEvents}>
+                Reconnect events
+              </button>
+              <button class="ghost-button" disabled={!sessionID() || refreshBusy()} onClick={refreshRuntime}>
+                {refreshBusy() ? "Refreshing…" : "Refresh runtime"}
+              </button>
+              <button class="ghost-button danger-text" disabled={!sessionID()} onClick={cancelSession}>
+                Cancel run ↗
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -325,6 +424,18 @@ function App() {
             <button class="primary-button" disabled={busy()} onClick={saveModel}>
               {busy() ? "Saving…" : "Save model config"}
             </button>
+            <button class="outline-button probe-button" disabled={probeBusy()} onClick={probeModel}>
+              {probeBusy() ? "Probing…" : "Probe model"}
+              <span>↗</span>
+            </button>
+            <Show when={probeResult()}>
+              {(result) => (
+                <div class="probe-result" aria-live="polite">
+                  <span>Text response: {result().text}</span>
+                  <span>Function Calling: {result().functionCalling}</span>
+                </div>
+              )}
+            </Show>
           </section>
 
           <section class="panel panel-session">
@@ -344,9 +455,29 @@ function App() {
             <button class="outline-button" disabled={busy() || !directory().trim()} onClick={createSession}>
               Create session <span>→</span>
             </button>
+            <Show when={sessions().length > 0}>
+              <div class="session-picker">
+                <div class="session-picker-head">
+                  <span class="eyebrow">AVAILABLE SESSIONS</span>
+                  <span>{sessions().length}</span>
+                </div>
+                <For each={sessions()}>
+                  {(session) => (
+                    <button
+                      class={`session-option ${session.id === sessionID() ? "is-active" : ""}`}
+                      aria-pressed={session.id === sessionID()}
+                      onClick={() => void selectSession(session)}
+                    >
+                      <span>{session.id.slice(0, 8)}</span>
+                      <small>{session.status}</small>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
           </section>
 
-          <div class="notice">
+          <div class="notice" aria-live="polite">
             <span class="notice-light" />
             {notice()}
           </div>

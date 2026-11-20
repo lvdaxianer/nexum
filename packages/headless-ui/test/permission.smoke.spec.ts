@@ -223,6 +223,39 @@ test("answers a Question and shows compaction plus project context states", asyn
   ).toBeVisible()
 })
 
+test("controls model probe and restores the selected session from the page", async () => {
+  browser = await chromium.launch({ headless: true })
+  const page = await browser.newPage()
+  apiServer = await startHeadlessServer({
+    port: 4097,
+    modelProbe: {
+      async probe(input) {
+        expect(input).toEqual({ mode: "both" })
+        return { text: "pass", functionCalling: "pass" }
+      },
+    },
+  })
+  uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+  directory = await mkdtemp(join(tmpdir(), "headless-ui-control-plane-"))
+
+  await page.goto(uiOrigin)
+  await page.getByRole("button", { name: "Probe model" }).click()
+  await expect(page.getByText("Text response: pass", { exact: true })).toBeVisible()
+  await expect(page.getByText("Function Calling: pass", { exact: true })).toBeVisible()
+
+  await page.getByLabel("Working directory").fill(directory)
+  await page.getByRole("button", { name: /Create session/ }).click()
+  await expect(page.getByText(/is waiting for a prompt/)).toBeVisible()
+  const activeSession = await page.locator(".session-id").innerText()
+
+  await page.reload()
+  await expect(page.locator(".session-id")).toHaveText(activeSession)
+  await page.getByRole("button", { name: "Reconnect events" }).click()
+  await expect(page.getByText("event stream live", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Refresh runtime" }).click()
+  await expect(page.getByText("Runtime state refreshed.", { exact: true })).toBeVisible()
+})
+
 async function serveBuiltUi(request: Request): Promise<Response> {
   const pathname = decodeURIComponent(new URL(request.url).pathname)
   const relativePath = pathname === "/" ? "index.html" : pathname.slice(1)
