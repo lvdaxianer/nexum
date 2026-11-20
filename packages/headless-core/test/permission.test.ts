@@ -69,6 +69,42 @@ test("blocks a tool until allow_once approval and then resumes", async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
+test("publishes a redacted permission.requested event while approval is pending", async () => {
+  const { directory, sessions, session } = await makeSession()
+  const permission = createHeadlessPermissionBroker()
+  const published: Array<{ type: string; data?: Record<string, unknown> }> = []
+  const loop = createHeadlessCodingLoop({
+    model: {
+      async *prompt() {
+        yield { type: "tool-call", toolName: "shell", toolInput: { command: "echo api_key=secret-value" } }
+      },
+    },
+    tool: {
+      async execute() {
+        return { ok: true, output: "never" }
+      },
+    },
+    permission,
+    sessions,
+    events: {
+      async publish(event) {
+        published.push({ type: event.type, data: event.data })
+      },
+    },
+  })
+
+  const run = loop.run({ sessionID: session.sessionID, text: "执行命令" })
+  await Bun.sleep(0)
+  const pending = (await permission.list(session.sessionID))[0]!
+  const requested = published.find((event) => event.type === "permission.requested")
+
+  expect(requested?.data).toMatchObject({ requestID: pending.id, action: "shell" })
+  expect(JSON.stringify(requested?.data)).not.toContain("secret-value")
+  await permission.reply({ sessionID: session.sessionID, requestID: pending.id, decision: "deny" })
+  await expect(run).rejects.toThrow("工具请求被拒绝")
+  await rm(directory, { recursive: true, force: true })
+})
+
 test("denying a pending request fails the run without executing the tool", async () => {
   const { directory, sessions, session } = await makeSession()
   const permission = createHeadlessPermissionBroker()

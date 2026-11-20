@@ -12,11 +12,11 @@ import type {
 import "./styles.css"
 
 type TimelineEvent = ExperimentalHeadlessSessionEventsOutput & { localTime: string }
-type PermissionRequest = ExperimentalHeadlessSessionPermissionListOutput[number]
-type QuestionRequest = ExperimentalHeadlessSessionQuestionListOutput[number]
-type SessionSummary = ExperimentalHeadlessSessionListOutput[number]
-type ModelProbeResult = ExperimentalHeadlessModelProbeOutput
-type SkillSummary = ExperimentalHeadlessSkillListOutput[number]
+type PermissionRequest = ExperimentalHeadlessSessionPermissionListOutput["data"][number]
+type QuestionRequest = ExperimentalHeadlessSessionQuestionListOutput["data"][number]
+type SessionSummary = ExperimentalHeadlessSessionListOutput["data"][number]
+type ModelProbeResult = ExperimentalHeadlessModelProbeOutput["data"]
+type SkillSummary = ExperimentalHeadlessSkillListOutput["data"][number]
 type ContextSource = { sourceID: string; kind: string; path: string }
 
 const apiBaseUrl = import.meta.env.VITE_HEADLESS_API_URL ?? "http://127.0.0.1:4097"
@@ -55,11 +55,11 @@ function App() {
   onMount(async () => {
     try {
       const active = await client.experimental.headless.model.get()
-      if (active) {
-        setBaseUrl(active.baseUrl)
-        setModel(active.model)
-        setCredentialRef(active.credentialRef ?? "")
-        setNotice(active.credentialConfigured ? "Model configuration loaded." : "Model endpoint loaded.")
+      if (active.data) {
+        setBaseUrl(active.data.baseUrl)
+        setModel(active.data.model)
+        setCredentialRef(active.data.credentialRef ?? "")
+        setNotice(active.data.credentialConfigured ? "Model configuration loaded." : "Model endpoint loaded.")
       }
       await Promise.all([restoreSession(), loadSkills()])
     } catch {
@@ -79,7 +79,7 @@ function App() {
         credentialRef: credentialRef().trim() || undefined,
       })
       setCredential("")
-      setNotice(`Model ${saved.model} is armed at ${saved.baseUrl}.`)
+      setNotice(`Model ${saved.data.model} is armed at ${saved.data.baseUrl}.`)
     } catch (error) {
       setNotice(messageFrom(error, "Model configuration was rejected."))
     } finally {
@@ -92,7 +92,7 @@ function App() {
     setProbeBusy(true)
     try {
       const result = await client.experimental.headless.model.probe({ mode: "both" })
-      setProbeResult(result)
+      setProbeResult(result.data)
       setNotice("Model probe completed.")
     } catch (error) {
       setProbeResult(undefined)
@@ -104,7 +104,7 @@ function App() {
 
   async function restoreSession() {
     const savedID = sessionStorage.getItem("headless.sessionID")
-    const available = await client.experimental.headless.session.list()
+    const available = (await client.experimental.headless.session.list()).data
     setSessions(available)
     const saved = savedID ? available.find((item) => item.id === savedID) : undefined
     if (!saved) {
@@ -119,12 +119,14 @@ function App() {
     if (refreshBusy()) return
     setRefreshBusy(true)
     try {
-      const available = await client.experimental.headless.session.list()
+      const available = (await client.experimental.headless.session.list()).data
       setSessions(available)
       const current = available.find((item) => item.id === sessionID())
       if (current) {
-        setSessionStatus(current.status)
-        await Promise.all([refreshPermissions(current.id), refreshQuestions(current.id)])
+        const snapshot = await client.experimental.headless.session.state({ sessionID: current.id })
+        setSessionStatus(snapshot.data.session.status)
+        setPermissions(snapshot.data.pendingPermissions)
+        setQuestions(snapshot.data.pendingQuestions)
       }
       await loadSkills()
       setNotice("Runtime state refreshed.")
@@ -142,7 +144,7 @@ function App() {
    */
   async function loadSkills() {
     try {
-      setSkills(await client.experimental.headless.skill.list())
+      setSkills((await client.experimental.headless.skill.list()).data)
     } catch (error) {
       setNotice(messageFrom(error, "Skill registry is not reachable."))
     }
@@ -157,7 +159,7 @@ function App() {
     if (skillBusy()) return
     setSkillBusy(true)
     try {
-      setSkills(await client.experimental.headless.skill.refresh())
+      setSkills((await client.experimental.headless.skill.refresh()).data)
       setSkillValidation({})
       setNotice("Skill registry refreshed.")
     } catch (error) {
@@ -178,7 +180,7 @@ function App() {
     setSkillBusy(true)
     try {
       const result = await client.experimental.headless.skill.validate({ id: skillID })
-      const skill = result.data.find((item) => item.id === skillID)
+      const skill = result.data.data.find((item) => item.id === skillID)
       setSkillValidation({
         ...skillValidation(),
         [skillID]: skill?.status === "ready" ? "validated / ready" : "needs attention",
@@ -192,19 +194,19 @@ function App() {
 
   async function selectSession(session: SessionSummary, announce = true) {
     streamController?.abort()
+    const snapshot = await client.experimental.headless.session.state({ sessionID: session.id })
     setSessionID(session.id)
-    setSessionStatus(session.status)
-    setDirectory(session.directory)
+    setSessionStatus(snapshot.data.session.status)
+    setDirectory(snapshot.data.session.directory)
     setEvents([])
-    setPermissions([])
-    setQuestions([])
+    setPermissions(snapshot.data.pendingPermissions)
+    setQuestions(snapshot.data.pendingQuestions)
     setQuestionAnswers({})
     setCompactionStatus("idle")
     setContextSources([])
     seenEventKeys.clear()
     sessionStorage.setItem("headless.sessionID", session.id)
     connectEvents(session.id)
-    await Promise.all([refreshPermissions(session.id), refreshQuestions(session.id)])
     if (announce) setNotice(`Session ${session.id.slice(0, 8)} selected.`)
   }
 
@@ -212,11 +214,11 @@ function App() {
     setBusy(true)
     try {
       const created = await client.experimental.headless.session.create({ directory: directory().trim() })
-      setSessionID(created.id)
-      setSessionStatus(created.status)
-      setDirectory(created.directory)
-      sessionStorage.setItem("headless.sessionID", created.id)
-      setSessions((current) => [...current.filter((item) => item.id !== created.id), created])
+      setSessionID(created.data.id)
+      setSessionStatus(created.data.status)
+      setDirectory(created.data.directory)
+      sessionStorage.setItem("headless.sessionID", created.data.id)
+      setSessions((current) => [...current.filter((item) => item.id !== created.data.id), created.data])
       setEvents([])
       setPermissions([])
       setQuestions([])
@@ -224,8 +226,8 @@ function App() {
       setCompactionStatus("idle")
       setContextSources([])
       seenEventKeys.clear()
-      connectEvents(created.id)
-      setNotice(`Session ${created.id.slice(0, 8)} is waiting for a prompt.`)
+      connectEvents(created.data.id)
+      setNotice(`Session ${created.data.id.slice(0, 8)} is waiting for a prompt.`)
     } catch (error) {
       setNotice(messageFrom(error, "Session could not be created."))
     } finally {
@@ -239,13 +241,18 @@ function App() {
     streamController = controller
     setConnected(true)
     try {
+      const lastEventID = sessionStorage.getItem(`headless.eventID.${id}`) ?? undefined
       for await (const event of client.experimental.headless.session.events(
         { sessionID: id },
-        { signal: controller.signal },
+        {
+          signal: controller.signal,
+          headers: lastEventID ? { "Last-Event-ID": lastEventID } : undefined,
+        },
       )) {
-        const eventKey = `${event.sessionID}:${event.sequence}`
+        const eventKey = event.eventID
         if (seenEventKeys.has(eventKey)) continue
         seenEventKeys.add(eventKey)
+        sessionStorage.setItem(`headless.eventID.${id}`, event.eventID)
         setEvents((current) => [
           ...[
             ...current,
@@ -255,7 +262,8 @@ function App() {
         if (event.type === "session.completed") setSessionStatus("completed")
         if (event.type === "session.failed") setSessionStatus("failed")
         if (event.type === "session.cancelled") setSessionStatus("cancelled")
-        if (event.type === "tool.request") setSessionStatus("awaiting permission")
+        if (event.type === "tool.request" || event.type === "permission.requested")
+          setSessionStatus("awaiting permission")
         if (event.type === "question.request") {
           setSessionStatus("awaiting question")
           void refreshQuestions(id)
@@ -283,7 +291,7 @@ function App() {
   async function refreshPermissions(id = sessionID()) {
     if (!id) return
     try {
-      setPermissions(await client.experimental.headless.session.permission.list({ sessionID: id }))
+      setPermissions((await client.experimental.headless.session.permission.list({ sessionID: id })).data)
     } catch {
       // A missing permission endpoint should not break the event timeline.
     }
@@ -292,7 +300,7 @@ function App() {
   async function refreshQuestions(id = sessionID()) {
     if (!id) return
     try {
-      setQuestions(await client.experimental.headless.session.question.list({ sessionID: id }))
+      setQuestions((await client.experimental.headless.session.question.list({ sessionID: id })).data)
     } catch {
       // A missing Question endpoint should not break the event timeline.
     }

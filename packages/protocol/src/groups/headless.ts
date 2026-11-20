@@ -27,6 +27,50 @@ export const HeadlessSession = Schema.Struct({
   status: HeadlessSessionStatus,
 })
 
+/** Headless Protocol v1 的公共响应元数据。 */
+export const HeadlessResponseMeta = Schema.Struct({
+  protocolVersion: Schema.Literal("headless.v1"),
+  traceId: Schema.String,
+})
+
+/** Headless Protocol v1 的能力发现结果。 */
+export const HeadlessCapabilities = Schema.Struct({
+  protocolVersion: Schema.Literal("headless.v1"),
+  transport: Schema.Struct({ http: Schema.Literal("json"), events: Schema.Literal("sse") }),
+  features: Schema.Array(Schema.String),
+  eventTypes: Schema.Array(Schema.String),
+})
+
+/** 页面刷新和断线恢复所需的安全状态快照。 */
+export const HeadlessSessionState = Schema.Struct({
+  session: HeadlessSession,
+  pendingPermissions: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      sessionID: Schema.String,
+      action: Schema.String,
+      resource: Schema.String,
+      reason: Schema.optional(Schema.String),
+    }),
+  ),
+  pendingQuestions: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      sessionID: Schema.String,
+      toolCallID: Schema.String,
+      questions: Schema.Array(
+        Schema.Struct({
+          header: Schema.String,
+          question: Schema.String,
+          options: Schema.Array(Schema.Struct({ label: Schema.String, description: Schema.String })),
+          multiple: Schema.optional(Schema.Boolean),
+        }),
+      ),
+    }),
+  ),
+  lastSequence: Schema.Number,
+})
+
 /** Headless Session 创建请求。 */
 export const HeadlessSessionCreatePayload = Schema.Struct({
   directory: Schema.String,
@@ -189,6 +233,7 @@ export const HeadlessEventType = Schema.Literals([
   "assistant.text",
   "tool.request",
   "tool.result",
+  "permission.requested",
   "question.request",
   "question.result",
   "question.cancelled",
@@ -205,9 +250,12 @@ export const HeadlessEventType = Schema.Literals([
 
 /** Headless Runtime 向 UI 推送的事件。 */
 export const HeadlessEvent = Schema.Struct({
+  eventID: Schema.String,
+  runID: Schema.String,
   type: HeadlessEventType,
   sessionID: Schema.String,
   sequence: Schema.Number,
+  occurredAt: Schema.String,
   data: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
 })
 
@@ -243,29 +291,45 @@ export const HeadlessModelProbeResult = Schema.Struct({
 
 const acceptedResponse = Schema.Struct({
   data: Schema.Struct({ status: Schema.Literal("accepted") }),
+  meta: HeadlessResponseMeta,
 })
 
 const cancelledResponse = Schema.Struct({
   data: Schema.Struct({ status: Schema.Literal("cancelled") }),
+  meta: HeadlessResponseMeta,
 })
 
 const permissionReplyResponse = Schema.Struct({
   data: Schema.Struct({ status: Schema.Literals(["approved", "denied"]) }),
+  meta: HeadlessResponseMeta,
 })
 
 const questionReplyResponse = Schema.Struct({
   data: Schema.Struct({ status: Schema.Literal("answered") }),
+  meta: HeadlessResponseMeta,
 })
 
 const questionCancelResponse = Schema.Struct({
   data: Schema.Struct({ status: Schema.Literal("cancelled") }),
+  meta: HeadlessResponseMeta,
 })
 
 /** Headless Service 的实验性 API group。 */
 export const HeadlessGroup = HttpApiGroup.make("server.headless")
   .add(
+    HttpApiEndpoint.get("experimental.headless.capabilities", "/api/experimental/headless/capabilities", {
+      success: Schema.Struct({ data: HeadlessCapabilities, meta: HeadlessResponseMeta }),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.capabilities",
+        summary: "Discover headless protocol capabilities",
+        description: "Return the protocol version, transport, supported features, and event types.",
+      }),
+    ),
+  )
+  .add(
     HttpApiEndpoint.get("experimental.headless.model.get", "/api/experimental/headless/model", {
-      success: Schema.Struct({ data: Schema.NullOr(HeadlessModelConfig) }),
+      success: Schema.Struct({ data: Schema.NullOr(HeadlessModelConfig), meta: HeadlessResponseMeta }),
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "experimental.headless.model.get",
@@ -277,7 +341,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
   .add(
     HttpApiEndpoint.put("experimental.headless.model.update", "/api/experimental/headless/model", {
       payload: HeadlessModelConfigPayload,
-      success: Schema.Struct({ data: HeadlessModelConfig }),
+      success: Schema.Struct({ data: HeadlessModelConfig, meta: HeadlessResponseMeta }),
       error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
@@ -290,7 +354,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
   .add(
     HttpApiEndpoint.post("experimental.headless.model.probe", "/api/experimental/headless/model/probe", {
       payload: HeadlessModelProbePayload,
-      success: Schema.Struct({ data: HeadlessModelProbeResult }),
+      success: Schema.Struct({ data: HeadlessModelProbeResult, meta: HeadlessResponseMeta }),
       error: [InvalidRequestError, ServiceUnavailableError, UnauthorizedError],
     }).annotateMerge(
       OpenApi.annotations({
@@ -303,7 +367,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
   .add(
     HttpApiEndpoint.post("experimental.headless.session.create", "/api/experimental/headless/session", {
       payload: HeadlessSessionCreatePayload,
-      success: Schema.Struct({ data: HeadlessSession }),
+      success: Schema.Struct({ data: HeadlessSession, meta: HeadlessResponseMeta }),
       error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
@@ -315,7 +379,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
   )
   .add(
     HttpApiEndpoint.get("experimental.headless.session.list", "/api/experimental/headless/session", {
-      success: Schema.Struct({ data: Schema.Array(HeadlessSession) }),
+      success: Schema.Struct({ data: Schema.Array(HeadlessSession), meta: HeadlessResponseMeta }),
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "experimental.headless.session.list",
@@ -325,8 +389,21 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
     ),
   )
   .add(
+    HttpApiEndpoint.get("experimental.headless.session.state", "/api/experimental/headless/session/:sessionID/state", {
+      params: { sessionID: Schema.String },
+      success: Schema.Struct({ data: HeadlessSessionState, meta: HeadlessResponseMeta }),
+      error: SessionNotFoundError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.session.state",
+        summary: "Get a recoverable headless session state",
+        description: "Return the safe session snapshot, pending decisions, and the latest event sequence.",
+      }),
+    ),
+  )
+  .add(
     HttpApiEndpoint.get("experimental.headless.skill.list", "/api/experimental/headless/skills", {
-      success: Schema.Struct({ data: Schema.Array(HeadlessSkill) }),
+      success: Schema.Struct({ data: Schema.Array(HeadlessSkill), meta: HeadlessResponseMeta }),
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "experimental.headless.skill.list",
@@ -338,7 +415,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
   .add(
     HttpApiEndpoint.get("experimental.headless.skill.detail", "/api/experimental/headless/skills/:skillID", {
       params: { skillID: Schema.String },
-      success: Schema.Struct({ data: HeadlessSkill }),
+      success: Schema.Struct({ data: HeadlessSkill, meta: HeadlessResponseMeta }),
       error: SkillNotFoundError,
     }).annotateMerge(
       OpenApi.annotations({
@@ -351,7 +428,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
   .add(
     HttpApiEndpoint.post("experimental.headless.skill.register", "/api/experimental/headless/skills/register", {
       payload: HeadlessSkillRegisterPayload,
-      success: Schema.Struct({ data: HeadlessSkill }),
+      success: Schema.Struct({ data: HeadlessSkill, meta: HeadlessResponseMeta }),
       error: [InvalidRequestError, SkillNotFoundError],
     }).annotateMerge(
       OpenApi.annotations({
@@ -363,7 +440,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
   )
   .add(
     HttpApiEndpoint.post("experimental.headless.skill.refresh", "/api/experimental/headless/skills/refresh", {
-      success: Schema.Struct({ data: Schema.Array(HeadlessSkill) }),
+      success: Schema.Struct({ data: Schema.Array(HeadlessSkill), meta: HeadlessResponseMeta }),
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "experimental.headless.skill.refresh",
@@ -375,7 +452,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
   .add(
     HttpApiEndpoint.post("experimental.headless.skill.validate", "/api/experimental/headless/skills/validate", {
       payload: HeadlessSkillValidatePayload,
-      success: Schema.Struct({ data: HeadlessSkillValidation }),
+      success: Schema.Struct({ data: HeadlessSkillValidation, meta: HeadlessResponseMeta }),
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "experimental.headless.skill.validate",
@@ -391,7 +468,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
       {
         params: { skillID: Schema.String },
         payload: HeadlessSkillActivatePayload,
-        success: Schema.Struct({ data: HeadlessSkillPrompt }),
+        success: Schema.Struct({ data: HeadlessSkillPrompt, meta: HeadlessResponseMeta }),
         error: [InvalidRequestError, SessionNotFoundError, SkillNotFoundError],
       },
     ).annotateMerge(
@@ -426,7 +503,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
       "/api/experimental/headless/session/:sessionID/question",
       {
         params: { sessionID: Schema.String },
-        success: Schema.Struct({ data: Schema.Array(HeadlessQuestionRequest) }),
+        success: Schema.Struct({ data: Schema.Array(HeadlessQuestionRequest), meta: HeadlessResponseMeta }),
         error: SessionNotFoundError,
       },
     ).annotateMerge(
@@ -512,7 +589,7 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
       "/api/experimental/headless/session/:sessionID/permission",
       {
         params: { sessionID: Schema.String },
-        success: Schema.Struct({ data: Schema.Array(HeadlessPermissionRequest) }),
+        success: Schema.Struct({ data: Schema.Array(HeadlessPermissionRequest), meta: HeadlessResponseMeta }),
         error: SessionNotFoundError,
       },
     ).annotateMerge(
@@ -549,6 +626,9 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
   )
 
 export type HeadlessSession = typeof HeadlessSession.Type
+export type HeadlessResponseMeta = typeof HeadlessResponseMeta.Type
+export type HeadlessCapabilities = typeof HeadlessCapabilities.Type
+export type HeadlessSessionState = typeof HeadlessSessionState.Type
 export type HeadlessEvent = typeof HeadlessEvent.Type
 export type HeadlessPermissionRequest = typeof HeadlessPermissionRequest.Type
 export type HeadlessPermissionDecision = typeof HeadlessPermissionDecision.Type

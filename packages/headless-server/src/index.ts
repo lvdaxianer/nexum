@@ -41,6 +41,35 @@ const DEFAULT_PORT = 4097
 const DEFAULT_CORS_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"] as const
 const TRACE_ID_HEADER = "x-trace-id"
 const TRACE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
+const HEADLESS_PROTOCOL_VERSION = "headless.v1"
+const HEADLESS_FEATURES = [
+  "model",
+  "session",
+  "prompt",
+  "permission",
+  "question",
+  "context_compaction",
+  "project_context",
+  "skill",
+] as const
+const HEADLESS_EVENT_TYPES = [
+  "assistant.text",
+  "tool.request",
+  "tool.result",
+  "permission.requested",
+  "question.request",
+  "question.result",
+  "question.cancelled",
+  "context.compaction.started",
+  "context.compaction.completed",
+  "context.compaction.failed",
+  "context.project.loaded",
+  "skill.activated",
+  "skill.failed",
+  "session.completed",
+  "session.failed",
+  "session.cancelled",
+] as const
 
 /** Headless Service 的监听配置。 */
 export interface HeadlessServerOptions {
@@ -158,7 +187,7 @@ function withCorsHeaders(response: Response, request: Request, origins: readonly
   if (origin && isAllowedOrigin(origin, origins)) {
     headers.set("access-control-allow-origin", origin)
     headers.set("access-control-allow-methods", "GET, POST, PUT, OPTIONS")
-    headers.set("access-control-allow-headers", "content-type, x-trace-id")
+    headers.set("access-control-allow-headers", "content-type, x-trace-id, last-event-id")
     headers.set("access-control-max-age", "300")
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
@@ -197,7 +226,24 @@ async function handleRequest(
     }
 
     const status = url.pathname === "/health/live" ? "ok" : "ready"
-    return jsonResponse({ service: "headless-server", status }, traceId)
+    return jsonResponse({ service: "headless-server", status }, traceId, false)
+  }
+
+  if (url.pathname === "/api/experimental/headless/capabilities") {
+    if (request.method !== "GET") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return jsonResponse(
+      {
+        data: {
+          protocolVersion: HEADLESS_PROTOCOL_VERSION,
+          transport: { http: "json", events: "sse" },
+          features: [...HEADLESS_FEATURES],
+          eventTypes: [...HEADLESS_EVENT_TYPES],
+        },
+      },
+      traceId,
+    )
   }
 
   if (url.pathname === "/api/experimental/headless/session") {
@@ -273,6 +319,21 @@ async function handleRequest(
     return createPrompt(request, decodeURIComponent(promptMatch[1]!), sessionService, codingLoop, traceId)
   }
 
+  const stateMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/state$/)
+  if (stateMatch) {
+    if (request.method !== "GET") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return getSessionState(
+      decodeURIComponent(stateMatch[1]!),
+      sessionService,
+      permissionBroker,
+      questionPort,
+      eventHub,
+      traceId,
+    )
+  }
+
   const cancelMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/cancel$/)
   if (cancelMatch) {
     if (request.method !== "POST") {
@@ -286,7 +347,13 @@ async function handleRequest(
     if (request.method !== "GET") {
       return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
     }
-    return streamEvents(decodeURIComponent(eventsMatch[1]!), sessionService, eventHub, traceId)
+    return streamEvents(
+      decodeURIComponent(eventsMatch[1]!),
+      sessionService,
+      eventHub,
+      request.headers.get("last-event-id") ?? url.searchParams.get("after"),
+      traceId,
+    )
   }
 
   const permissionListMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/permission$/)
@@ -659,6 +726,7 @@ async function streamEvents(
   sessionID: string,
   sessionService: HeadlessSessionService,
   eventHub: HeadlessEventHub,
+  afterEventID: string | null,
   traceId: string,
 ): Promise<Response> {
   if (!(await sessionService.get(sessionID))) {
@@ -666,7 +734,7 @@ async function streamEvents(
   }
 
   const encoder = new TextEncoder()
-  const iterator = eventHub.subscribe(sessionID)[Symbol.asyncIterator]()
+  const iterator = eventHub.subscribe(sessionID, afterEventID ? { afterEventID } : undefined)[Symbol.asyncIterator]()
   let closed = false
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -676,7 +744,17 @@ async function streamEvents(
           while (true) {
             const next = await iterator.next()
             if (next.done || closed) return
-            controller.enqueue(encoder.encode(`id: ${next.value.sequence}\ndata: ${JSON.stringify(next.value)}\n\n`))
+            const eventID = next.value.eventID ?? `${next.value.sessionID}:${next.value.sequence}`
+            controller.enqueue(
+              encoder.encode(
+                `event: ${next.value.type}\nid: ${eventID}\ndata: ${JSON.stringify({
+                  ...next.value,
+                  eventID,
+                  runID: next.value.runID ?? "unknown",
+                  occurredAt: next.value.occurredAt ?? new Date().toISOString(),
+                })}\n\n`,
+              ),
+            )
           }
         } catch {
           if (!closed) {
@@ -699,6 +777,34 @@ async function streamEvents(
       [TRACE_ID_HEADER]: traceId,
     },
   })
+}
+
+/** 返回页面刷新和断线恢复所需的安全 Session 快照。 */
+async function getSessionState(
+  sessionID: string,
+  sessionService: HeadlessSessionService,
+  permissionBroker: HeadlessPermissionBroker | undefined,
+  questionPort: HeadlessQuestionPort | undefined,
+  eventHub: HeadlessEventHub,
+  traceId: string,
+): Promise<Response> {
+  const session = await sessionService.get(sessionID)
+  if (!session) return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  const [pendingPermissions, pendingQuestions] = await Promise.all([
+    permissionBroker?.list(sessionID) ?? [],
+    questionPort?.list(sessionID) ?? [],
+  ])
+  return jsonResponse(
+    {
+      data: {
+        session: { id: session.sessionID, directory: session.directory, status: session.status },
+        pendingPermissions,
+        pendingQuestions,
+        lastSequence: eventHub.lastSequence(sessionID),
+      },
+    },
+    traceId,
+  )
 }
 
 /** 返回指定 Session 的待审批权限请求。 */
@@ -955,13 +1061,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * @author lvdaxianer@yeah.net
  * @date 2026-11-19
  */
-function jsonResponse(body: object, traceId: string): Response {
-  return Response.json(body, {
-    headers: {
-      "cache-control": "no-store",
-      [TRACE_ID_HEADER]: traceId,
+function jsonResponse(body: object, traceId: string, includeMeta = true): Response {
+  return Response.json(
+    {
+      ...body,
+      ...(includeMeta
+        ? {
+            meta: {
+              protocolVersion: HEADLESS_PROTOCOL_VERSION,
+              traceId,
+            },
+          }
+        : {}),
     },
-  })
+    {
+      headers: {
+        "cache-control": "no-store",
+        [TRACE_ID_HEADER]: traceId,
+      },
+    },
+  )
 }
 
 /**
@@ -977,7 +1096,15 @@ function jsonResponse(body: object, traceId: string): Response {
  */
 function errorResponse(status: number, errorCode: string, message: string, traceId: string): Response {
   return Response.json(
-    { errorCode, message, traceId },
+    {
+      errorCode,
+      message,
+      traceId,
+      meta: {
+        protocolVersion: HEADLESS_PROTOCOL_VERSION,
+        traceId,
+      },
+    },
     {
       status,
       headers: {

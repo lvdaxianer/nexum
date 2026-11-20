@@ -156,7 +156,7 @@ test("probes the configured model without returning model content or credentials
   const body = (await response.json()) as { data: { text: string; functionCalling: string } }
 
   expect(response.status).toBe(200)
-  expect(body).toEqual({ data: { text: "pass", functionCalling: "pass" } })
+  expect(body).toMatchObject({ data: { text: "pass", functionCalling: "pass" }, meta: { protocolVersion: "headless.v1" } })
   expect(JSON.stringify(body)).not.toContain("credential")
 })
 
@@ -232,7 +232,7 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
     },
   )
   expect(cancelResponse.status).toBe(200)
-  expect(await cancelResponse.json()).toEqual({ data: { status: "cancelled" } })
+  expect(await cancelResponse.json()).toMatchObject({ data: { status: "cancelled" }, meta: { protocolVersion: "headless.v1" } })
 })
 
 test("composes the default coding loop when no runtime is injected", async () => {
@@ -448,7 +448,8 @@ test("streams ordered session events over SSE", async () => {
   ])
   const text = new TextDecoder().decode(chunk.value)
 
-  expect(text).toContain("id: 1")
+  expect(text).toMatch(/id: [^\n]+/)
+  expect(text).toContain("event: session.started")
   expect(text).toContain('"type":"session.started"')
   expect(text).toContain('"status":"running"')
   await reader.cancel()
@@ -588,7 +589,7 @@ test("serves Question replies and streams tool plus context compaction completio
     },
   )
   expect(replyResponse.status).toBe(200)
-  expect(await replyResponse.json()).toEqual({ data: { status: "answered" } })
+  expect(await replyResponse.json()).toMatchObject({ data: { status: "answered" }, meta: { protocolVersion: "headless.v1" } })
 
   const completionText = await readSseUntil(reader, '"type":"session.completed"')
   expect(completionText).toContain('"type":"question.result"')
@@ -622,7 +623,7 @@ test("cancels a pending Question through the HTTP boundary", async () => {
     { method: "POST" },
   )
   expect(response.status).toBe(200)
-  expect(await response.json()).toEqual({ data: { status: "cancelled" } })
+  expect(await response.json()).toMatchObject({ data: { status: "cancelled" }, meta: { protocolVersion: "headless.v1" } })
   await expect(pending).resolves.toEqual({ ok: false, output: "问题已取消" })
 })
 
@@ -639,7 +640,7 @@ test("lists pending permissions and returns stable approval errors", async () =>
     new URL(`/api/experimental/headless/session/${session.sessionID}/permission`, server.url),
   )
   expect(listResponse.status).toBe(200)
-  expect(await listResponse.json()).toEqual({ data: [] })
+  expect(await listResponse.json()).toMatchObject({ data: [], meta: { protocolVersion: "headless.v1" } })
 
   const replyResponse = await fetch(
     new URL(`/api/experimental/headless/session/${session.sessionID}/permission/unknown/reply`, server.url),
@@ -687,7 +688,7 @@ test("stores model configuration without returning its credential", async () => 
 
   const getResponse = await fetch(new URL("/api/experimental/headless/model", server.url))
   expect(getResponse.status).toBe(200)
-  expect(await getResponse.json()).toEqual({ data: updateBody.data })
+  expect(await getResponse.json()).toMatchObject({ data: updateBody.data, meta: { protocolVersion: "headless.v1" } })
 })
 
 test("headless-server package stays independent from UI packages", async () => {

@@ -326,6 +326,7 @@ import type {
   ConfigShellsOutput,
   ExperimentalConfigUpdateInput,
   ExperimentalConfigUpdateOutput,
+  ExperimentalHeadlessCapabilitiesOutput,
   ExperimentalHeadlessModelGetOutput,
   ExperimentalHeadlessModelUpdateInput,
   ExperimentalHeadlessModelUpdateOutput,
@@ -334,6 +335,8 @@ import type {
   ExperimentalHeadlessSessionCreateInput,
   ExperimentalHeadlessSessionCreateOutput,
   ExperimentalHeadlessSessionListOutput,
+  ExperimentalHeadlessSessionStateInput,
+  ExperimentalHeadlessSessionStateOutput,
   ExperimentalHeadlessSkillListOutput,
   ExperimentalHeadlessSkillDetailInput,
   ExperimentalHeadlessSkillDetailOutput,
@@ -1834,9 +1837,20 @@ export function make(options: ClientOptions) {
           ),
       },
       headless: {
+        capabilities: (requestOptions?: RequestOptions) =>
+          request<ExperimentalHeadlessCapabilitiesOutput>(
+            {
+              method: "GET",
+              path: `/api/experimental/headless/capabilities`,
+              successStatus: 200,
+              declaredStatuses: [],
+              empty: false,
+            },
+            requestOptions,
+          ),
         model: {
           get: (requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessModelGetOutput }>(
+            request<ExperimentalHeadlessModelGetOutput>(
               {
                 method: "GET",
                 path: `/api/experimental/headless/model`,
@@ -1845,9 +1859,9 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           update: (input: ExperimentalHeadlessModelUpdateInput, requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessModelUpdateOutput }>(
+            request<ExperimentalHeadlessModelUpdateOutput>(
               {
                 method: "PUT",
                 path: `/api/experimental/headless/model`,
@@ -1862,9 +1876,9 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           probe: (input?: ExperimentalHeadlessModelProbeInput, requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessModelProbeOutput }>(
+            request<ExperimentalHeadlessModelProbeOutput>(
               {
                 method: "POST",
                 path: `/api/experimental/headless/model/probe`,
@@ -1874,11 +1888,11 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
         },
         session: {
           create: (input: ExperimentalHeadlessSessionCreateInput, requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSessionCreateOutput }>(
+            request<ExperimentalHeadlessSessionCreateOutput>(
               {
                 method: "POST",
                 path: `/api/experimental/headless/session`,
@@ -1888,9 +1902,9 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           list: (requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSessionListOutput }>(
+            request<ExperimentalHeadlessSessionListOutput>(
               {
                 method: "GET",
                 path: `/api/experimental/headless/session`,
@@ -1899,9 +1913,20 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
+          state: (input: ExperimentalHeadlessSessionStateInput, requestOptions?: RequestOptions) =>
+            request<ExperimentalHeadlessSessionStateOutput>(
+              {
+                method: "GET",
+                path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/state`,
+                successStatus: 200,
+                declaredStatuses: [404],
+                empty: false,
+              },
+              requestOptions,
+            ),
           prompt: (input: ExperimentalHeadlessSessionPromptInput, requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSessionPromptOutput }>(
+            request<ExperimentalHeadlessSessionPromptOutput>(
               {
                 method: "POST",
                 path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/prompt`,
@@ -1911,10 +1936,10 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           question: {
             list: (input: ExperimentalHeadlessSessionQuestionListInput, requestOptions?: RequestOptions) =>
-              request<{ readonly data: ExperimentalHeadlessSessionQuestionListOutput }>(
+              request<ExperimentalHeadlessSessionQuestionListOutput>(
                 {
                   method: "GET",
                   path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/question`,
@@ -1923,9 +1948,9 @@ export function make(options: ClientOptions) {
                   empty: false,
                 },
                 requestOptions,
-              ).then((value) => value.data),
+              ),
             reply: (input: ExperimentalHeadlessSessionQuestionReplyInput, requestOptions?: RequestOptions) =>
-              request<{ readonly data: ExperimentalHeadlessSessionQuestionReplyOutput }>(
+              request<ExperimentalHeadlessSessionQuestionReplyOutput>(
                 {
                   method: "POST",
                   path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/question/${encodeURIComponent(input.requestID)}/reply`,
@@ -1935,9 +1960,9 @@ export function make(options: ClientOptions) {
                   empty: false,
                 },
                 requestOptions,
-              ).then((value) => value.data),
+              ),
             cancel: (input: ExperimentalHeadlessSessionQuestionCancelInput, requestOptions?: RequestOptions) =>
-              request<{ readonly data: ExperimentalHeadlessSessionQuestionCancelOutput }>(
+              request<ExperimentalHeadlessSessionQuestionCancelOutput>(
                 {
                   method: "POST",
                   path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/question/${encodeURIComponent(input.requestID)}/cancel`,
@@ -1946,10 +1971,10 @@ export function make(options: ClientOptions) {
                   empty: false,
                 },
                 requestOptions,
-              ).then((value) => value.data),
+              ),
           },
           cancel: (input: ExperimentalHeadlessSessionCancelInput, requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSessionCancelOutput }>(
+            request<ExperimentalHeadlessSessionCancelOutput>(
               {
                 method: "POST",
                 path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/cancel`,
@@ -1958,7 +1983,7 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           events: (
             input: ExperimentalHeadlessSessionEventsInput,
             requestOptions?: RequestOptions,
@@ -1975,7 +2000,7 @@ export function make(options: ClientOptions) {
             ),
           permission: {
             list: (input: ExperimentalHeadlessSessionPermissionListInput, requestOptions?: RequestOptions) =>
-              request<{ readonly data: ExperimentalHeadlessSessionPermissionListOutput }>(
+              request<ExperimentalHeadlessSessionPermissionListOutput>(
                 {
                   method: "GET",
                   path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/permission`,
@@ -1984,9 +2009,9 @@ export function make(options: ClientOptions) {
                   empty: false,
                 },
                 requestOptions,
-              ).then((value) => value.data),
+              ),
             reply: (input: ExperimentalHeadlessSessionPermissionReplyInput, requestOptions?: RequestOptions) =>
-              request<{ readonly data: ExperimentalHeadlessSessionPermissionReplyOutput }>(
+              request<ExperimentalHeadlessSessionPermissionReplyOutput>(
                 {
                   method: "POST",
                   path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}/permission/${encodeURIComponent(input.requestID)}/reply`,
@@ -1996,12 +2021,12 @@ export function make(options: ClientOptions) {
                   empty: false,
                 },
                 requestOptions,
-              ).then((value) => value.data),
+              ),
           },
         },
         skill: {
           list: (requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSkillListOutput }>(
+            request<ExperimentalHeadlessSkillListOutput>(
               {
                 method: "GET",
                 path: `/api/experimental/headless/skills`,
@@ -2010,9 +2035,9 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           detail: (input: ExperimentalHeadlessSkillDetailInput, requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSkillDetailOutput }>(
+            request<ExperimentalHeadlessSkillDetailOutput>(
               {
                 method: "GET",
                 path: `/api/experimental/headless/skills/${encodeURIComponent(input.skillID)}`,
@@ -2021,9 +2046,9 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           register: (input: ExperimentalHeadlessSkillRegisterInput, requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSkillRegisterOutput }>(
+            request<ExperimentalHeadlessSkillRegisterOutput>(
               {
                 method: "POST",
                 path: `/api/experimental/headless/skills/register`,
@@ -2033,9 +2058,9 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           refresh: (requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSkillRefreshOutput }>(
+            request<ExperimentalHeadlessSkillRefreshOutput>(
               {
                 method: "POST",
                 path: `/api/experimental/headless/skills/refresh`,
@@ -2044,9 +2069,9 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           validate: (input?: ExperimentalHeadlessSkillValidateInput, requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSkillValidateOutput }>(
+            request<ExperimentalHeadlessSkillValidateOutput>(
               {
                 method: "POST",
                 path: `/api/experimental/headless/skills/validate`,
@@ -2056,9 +2081,9 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
           activate: (input: ExperimentalHeadlessSkillActivateInput, requestOptions?: RequestOptions) =>
-            request<{ readonly data: ExperimentalHeadlessSkillActivateOutput }>(
+            request<ExperimentalHeadlessSkillActivateOutput>(
               {
                 method: "POST",
                 path: `/api/experimental/headless/skills/${encodeURIComponent(input.skillID)}/activate`,
@@ -2068,7 +2093,7 @@ export function make(options: ClientOptions) {
                 empty: false,
               },
               requestOptions,
-            ).then((value) => value.data),
+            ),
         },
       },
     },

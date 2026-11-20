@@ -323,6 +323,7 @@ export interface HeadlessCodingLoop {
 export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): HeadlessCodingLoop {
   const maxSteps = options.maxSteps ?? 16
   const activeRuns = new Map<string, ActiveRun>()
+  const sessionSequences = new Map<string, number>()
 
   return {
     async run(input) {
@@ -334,9 +335,19 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
       await options.sessions.setStatus(input.sessionID, "running")
       const runState: ActiveRun = { controller: new AbortController(), cancelled: false }
       activeRuns.set(input.sessionID, runState)
-      let sequence = 0
+      const runID = crypto.randomUUID()
       const publish = async (type: string, data?: Record<string, unknown>) => {
-        await options.events.publish({ sessionID: input.sessionID, type, sequence: ++sequence, data })
+        const sequence = (sessionSequences.get(input.sessionID) ?? 0) + 1
+        sessionSequences.set(input.sessionID, sequence)
+        await options.events.publish({
+          eventID: crypto.randomUUID(),
+          runID,
+          sessionID: input.sessionID,
+          type,
+          sequence,
+          occurredAt: new Date().toISOString(),
+          data,
+        })
       }
       let messages: ModelMessage[] = [{ role: "user", content: input.text }]
       let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text, messages }
@@ -424,7 +435,22 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
                 toolName: request.toolName,
                 input: redactHeadlessSensitiveValue(request.input) as Record<string, unknown>,
               })
-              const effect = await options.permission.evaluate(request)
+              const permissionEvaluation = options.permission.evaluate(request)
+              if ("list" in options.permission && typeof options.permission.list === "function") {
+                const pending = (await options.permission.list(input.sessionID)).find(
+                  (item: { action: string; resource: string; id: string; reason?: string }) =>
+                    item.action === request.action,
+                )
+                if (pending) {
+                  await publish("permission.requested", {
+                    requestID: pending.id,
+                    action: pending.action,
+                    resource: pending.resource,
+                    reason: pending.reason,
+                  })
+                }
+              }
+              const effect = await permissionEvaluation
               if (effect !== "allow") {
                 throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
               }
@@ -687,9 +713,15 @@ function isAllowedTransition(from: HeadlessSessionStatus, to: HeadlessSessionSta
 
 /** Headless Runtime 对外发布的最小事件。 */
 export interface RuntimeEvent {
+  /** Optional for compatibility with injected test/adaptor publishers; Core always sets it. */
+  readonly eventID?: string
+  /** Optional for compatibility with injected test/adaptor publishers; Core always sets it. */
+  readonly runID?: string
   readonly type: string
   readonly sessionID: string
   readonly sequence: number
+  /** Optional for compatibility with injected test/adaptor publishers; Core always sets it. */
+  readonly occurredAt?: string
   readonly data?: Record<string, unknown>
 }
 
