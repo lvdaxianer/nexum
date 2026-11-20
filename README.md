@@ -215,7 +215,7 @@ skills/                       项目级 Skill 注册目录
 
 packages/headless-core/       UI 无关的 Core 端口与运行时
 packages/headless-server/     独立 HTTP/SSE 服务
-packages/headless-ui/         可替换的参考控制台
+packages/headless-ui/         内部演示 Agent 工作台（可替换 UI）
 packages/protocol/            API Schema 与 OpenAPI 契约
 packages/client/              生成的 Promise/Effect 客户端
 packages/core/                原 OpenCode 运行时服务

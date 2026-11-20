@@ -46,9 +46,11 @@ function App() {
   const [skillBusy, setSkillBusy] = createSignal(false)
   const [skillValidation, setSkillValidation] = createSignal<Record<string, string>>({})
   const [activeSkillIDs, setActiveSkillIDs] = createSignal<string[]>([])
-  const [notice, setNotice] = createSignal("Ready for a headless run.")
+  const [notice, setNotice] = createSignal("准备开始一次 Headless 运行")
   const [connected, setConnected] = createSignal(false)
   const [pendingDecisionID, setPendingDecisionID] = createSignal("")
+  const [pendingQuestionID, setPendingQuestionID] = createSignal("")
+  const [cancelBusy, setCancelBusy] = createSignal(false)
   let streamController: AbortController | undefined
   const seenEventKeys = new Set<string>()
 
@@ -59,11 +61,11 @@ function App() {
         setBaseUrl(active.data.baseUrl)
         setModel(active.data.model)
         setCredentialRef(active.data.credentialRef ?? "")
-        setNotice(active.data.credentialConfigured ? "Model configuration loaded." : "Model endpoint loaded.")
+        setNotice(active.data.credentialConfigured ? "模型配置已加载" : "模型服务地址已加载")
       }
       await Promise.all([restoreSession(), loadSkills()])
     } catch {
-      setNotice("Headless API is not reachable yet.")
+      setNotice("Headless API 尚未连接")
     }
   })
 
@@ -79,9 +81,9 @@ function App() {
         credentialRef: credentialRef().trim() || undefined,
       })
       setCredential("")
-      setNotice(`Model ${saved.data.model} is armed at ${saved.data.baseUrl}.`)
+      setNotice(`模型 ${saved.data.model} 已就绪：${saved.data.baseUrl}`)
     } catch (error) {
-      setNotice(messageFrom(error, "Model configuration was rejected."))
+      setNotice(messageFrom(error, "模型配置未通过，请检查地址和凭据"))
     } finally {
       setBusy(false)
     }
@@ -93,10 +95,10 @@ function App() {
     try {
       const result = await client.experimental.headless.model.probe({ mode: "both" })
       setProbeResult(result.data)
-      setNotice("Model probe completed.")
+      setNotice("模型能力探测完成")
     } catch (error) {
       setProbeResult(undefined)
-      setNotice(messageFrom(error, "Model probe failed."))
+      setNotice(messageFrom(error, "模型能力探测失败，请稍后重试"))
     } finally {
       setProbeBusy(false)
     }
@@ -112,7 +114,7 @@ function App() {
       return
     }
     await selectSession(saved, false)
-    setNotice(`Session ${saved.id.slice(0, 8)} restored from the page.`)
+    setNotice(`已恢复页面中的 Session：${saved.id.slice(0, 8)}`)
   }
 
   async function refreshRuntime() {
@@ -129,9 +131,9 @@ function App() {
         setQuestions(snapshot.data.pendingQuestions)
       }
       await loadSkills()
-      setNotice("Runtime state refreshed.")
+      setNotice("运行状态已刷新")
     } catch (error) {
-      setNotice(messageFrom(error, "Runtime refresh failed."))
+      setNotice(messageFrom(error, "运行状态刷新失败，请稍后重试"))
     } finally {
       setRefreshBusy(false)
     }
@@ -146,7 +148,7 @@ function App() {
     try {
       setSkills((await client.experimental.headless.skill.list()).data)
     } catch (error) {
-      setNotice(messageFrom(error, "Skill registry is not reachable."))
+      setNotice(messageFrom(error, "Skill 目录暂时不可用"))
     }
   }
 
@@ -161,9 +163,9 @@ function App() {
     try {
       setSkills((await client.experimental.headless.skill.refresh()).data)
       setSkillValidation({})
-      setNotice("Skill registry refreshed.")
+      setNotice("Skill 目录已刷新")
     } catch (error) {
-      setNotice(messageFrom(error, "Skill refresh failed."))
+      setNotice(messageFrom(error, "Skill 刷新失败，请稍后重试"))
     } finally {
       setSkillBusy(false)
     }
@@ -207,7 +209,7 @@ function App() {
     seenEventKeys.clear()
     sessionStorage.setItem("headless.sessionID", session.id)
     connectEvents(session.id)
-    if (announce) setNotice(`Session ${session.id.slice(0, 8)} selected.`)
+    if (announce) setNotice(`已选择 Session：${session.id.slice(0, 8)}`)
   }
 
   async function createSession() {
@@ -227,9 +229,9 @@ function App() {
       setContextSources([])
       seenEventKeys.clear()
       connectEvents(created.data.id)
-      setNotice(`Session ${created.data.id.slice(0, 8)} is waiting for a prompt.`)
+      setNotice(`Session ${created.data.id.slice(0, 8)} 已创建，等待 Prompt`)
     } catch (error) {
-      setNotice(messageFrom(error, "Session could not be created."))
+      setNotice(messageFrom(error, "Session 创建失败，请检查工作目录"))
     } finally {
       setBusy(false)
     }
@@ -278,11 +280,11 @@ function App() {
           const id = skillIDFromEvent(event.data)
           if (id) setActiveSkillIDs((current) => (current.includes(id) ? current : [...current, id]))
         }
-        if (event.type === "skill.failed") setNotice("Skill activation failed. Check status and permissions.")
+        if (event.type === "skill.failed") setNotice("Skill 激活失败，请检查状态和权限")
         void refreshPermissions(id)
       }
     } catch (error) {
-      if (!controller.signal.aborted) setNotice(messageFrom(error, "Event stream disconnected."))
+      if (!controller.signal.aborted) setNotice(messageFrom(error, "事件流已断开，请重新连接"))
     } finally {
       if (!controller.signal.aborted) setConnected(false)
     }
@@ -366,22 +368,25 @@ function App() {
         answers,
       })
       await refreshQuestions()
-      setNotice("Question answered. Runtime is continuing.")
+      setNotice("补充信息已提交，运行继续")
     } catch (error) {
-      setNotice(messageFrom(error, "Question reply failed."))
+      setNotice(messageFrom(error, "补充信息提交失败，请重试"))
     } finally {
       setBusy(false)
     }
   }
 
   async function cancelQuestion(requestID: string) {
-    if (!sessionID()) return
+    if (!sessionID() || pendingQuestionID()) return
+    setPendingQuestionID(requestID)
     try {
       await client.experimental.headless.session.question.cancel({ sessionID: sessionID(), requestID })
       await refreshQuestions()
-      setNotice("Question cancelled. No answer was fabricated.")
+      setNotice("已取消补充信息，Core 不会伪造答案")
     } catch (error) {
-      setNotice(messageFrom(error, "Question cancellation failed."))
+      setNotice(messageFrom(error, "取消补充信息失败，请重试"))
+    } finally {
+      setPendingQuestionID("")
     }
   }
 
@@ -395,29 +400,32 @@ function App() {
       await refreshPermissions()
       setPrompt("")
       setSessionStatus("running")
-      setNotice("Prompt accepted. Waiting for the next runtime event.")
+      setNotice("Prompt 已提交，等待下一条运行事件")
     } catch (error) {
-      setNotice(messageFrom(error, "Prompt was not accepted."))
+      setNotice(messageFrom(error, "Prompt 未提交成功，请重试"))
     } finally {
       setBusy(false)
     }
   }
 
   async function cancelSession() {
-    if (!sessionID()) return
+    if (!sessionID() || cancelBusy()) return
+    setCancelBusy(true)
     try {
       await client.experimental.headless.session.cancel({ sessionID: sessionID() })
       setSessionStatus("cancelled")
-      setNotice("Cancellation requested.")
+      setNotice("已请求取消运行")
     } catch (error) {
-      setNotice(messageFrom(error, "Cancellation failed."))
+      setNotice(messageFrom(error, "取消运行失败，请重试"))
+    } finally {
+      setCancelBusy(false)
     }
   }
 
   async function reconnectEvents() {
     if (!sessionID()) return
     connectEvents(sessionID())
-    setNotice("Event stream reconnecting.")
+    setNotice("事件流正在重新连接")
   }
 
   async function decide(requestID: string, decision: "allow_once" | "allow_always" | "deny") {
@@ -426,419 +434,503 @@ function App() {
     try {
       await client.experimental.headless.session.permission.reply({ sessionID: sessionID(), requestID, decision })
       await refreshPermissions()
-      setNotice(decision === "deny" ? "Permission denied." : "Permission approved.")
+      setNotice(decision === "deny" ? "权限已拒绝" : "权限已通过")
     } catch (error) {
-      setNotice(messageFrom(error, "Permission reply failed."))
+      setNotice(messageFrom(error, "权限处理失败，请重试"))
     } finally {
       setPendingDecisionID("")
     }
   }
 
   return (
-    <main class="shell">
-      <header class="topbar">
-        <div class="brand-lockup">
+    <main class="app-shell">
+      <aside class="app-sidebar">
+        <div class="sidebar-brand">
           <span class="brand-mark">H</span>
           <div>
             <p class="eyebrow">OPENCODE / HEADLESS</p>
-            <h1>Control Room</h1>
+            <strong>内部演示工作台</strong>
           </div>
         </div>
-        <div class="top-meta">
-          <span class={`status-dot ${connected() ? "is-live" : ""}`} />
-          <span>{connected() ? "event stream live" : "standby"}</span>
-          <code>{apiBaseUrl}</code>
-        </div>
-      </header>
 
-      <section class="hero-grid">
-        <div class="hero-copy">
-          <p class="eyebrow amber">HEADLESS POC / 01</p>
-          <h2>
-            Bring your own
-            <br />
-            <em>control surface.</em>
-          </h2>
-          <p class="lede">
-            A small UI for the parts that matter: model runtime, session admission, ordered events, and human
-            permission.
-          </p>
-        </div>
-        <div class="run-card">
-          <div class="run-card-head">
-            <span class="eyebrow">ACTIVE SESSION</span>
-            <span class={`pill pill-${sessionStatus()}`}>{sessionStatus()}</span>
-          </div>
-          <div class="session-id">{sessionID() || "No session admitted"}</div>
-          <div class="run-card-footer">
-            <span>directory-bound runtime</span>
-            <div class="run-controls">
-              <button class="ghost-button" disabled={!sessionID()} onClick={reconnectEvents}>
-                Reconnect events
-              </button>
-              <button class="ghost-button" disabled={!sessionID() || refreshBusy()} onClick={refreshRuntime}>
-                {refreshBusy() ? "Refreshing…" : "Refresh runtime"}
-              </button>
-              <button class="ghost-button danger-text" disabled={!sessionID()} onClick={cancelSession}>
-                Cancel run ↗
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
+        <nav class="side-nav" aria-label="主导航">
+          <a class="nav-item is-active" href="#workspace">
+            <span>⌂</span>工作台
+          </a>
+          <a class="nav-item" href="#session">
+            <span>◌</span>Session
+          </a>
+          <a class="nav-item" href="#skills">
+            <span>✦</span>Skills
+          </a>
+          <a class="nav-item" href="#model">
+            <span>◈</span>模型配置
+          </a>
+        </nav>
 
-      <section class="workspace-grid">
-        <aside class="side-stack">
-          <section class="panel panel-config">
-            <div class="panel-heading">
-              <span class="panel-index">01</span>
-              <h3>Model runtime</h3>
+        <section class="sidebar-card" id="model">
+          <div class="card-heading">
+            <div>
+              <span class="section-kicker">运行配置</span>
+              <h2>模型服务</h2>
             </div>
-            <p class="panel-note">One endpoint. No hidden provider fallback.</p>
-            <label>
-              Base URL
-              <input
-                value={baseUrl()}
-                onInput={(event) => setBaseUrl(event.currentTarget.value)}
-                placeholder="https://…/v1"
-              />
-            </label>
-            <label>
-              Model
-              <input
-                value={model()}
-                onInput={(event) => setModel(event.currentTarget.value)}
-                placeholder="coding-model"
-              />
-            </label>
-            <label>
-              Credential ref
-              <input
-                value={credentialRef()}
-                onInput={(event) => setCredentialRef(event.currentTarget.value)}
-                placeholder="MODEL_API_KEY"
-              />
-            </label>
-            <label>
-              Credential value
-              <input
-                type="password"
-                value={credential()}
-                onInput={(event) => setCredential(event.currentTarget.value)}
-                placeholder="optional, write-only"
-              />
-            </label>
-            <button class="primary-button" disabled={busy()} onClick={saveModel}>
-              {busy() ? "Saving…" : "Save model config"}
+            <span class="status-badge">{probeResult() ? "已探测" : "待配置"}</span>
+          </div>
+          <label>
+            服务地址
+            <input
+              aria-label="服务地址"
+              value={baseUrl()}
+              onInput={(event) => setBaseUrl(event.currentTarget.value)}
+              placeholder="https://…/v1"
+            />
+          </label>
+          <label>
+            模型名称
+            <input
+              aria-label="模型名称"
+              value={model()}
+              onInput={(event) => setModel(event.currentTarget.value)}
+              placeholder="coding-model"
+            />
+          </label>
+          <label>
+            凭据引用
+            <input
+              aria-label="凭据引用"
+              value={credentialRef()}
+              onInput={(event) => setCredentialRef(event.currentTarget.value)}
+              placeholder="MODEL_API_KEY"
+            />
+          </label>
+          <label>
+            凭据值 <span class="label-note">仅写入运行时</span>
+            <input
+              aria-label="凭据值"
+              type="password"
+              value={credential()}
+              onInput={(event) => setCredential(event.currentTarget.value)}
+              placeholder="输入后不会回显"
+            />
+          </label>
+          <div class="button-stack">
+            <button class="button button-primary" disabled={busy()} onClick={saveModel}>
+              {busy() ? "保存中…" : "保存模型配置"}
             </button>
-            <button class="outline-button probe-button" disabled={probeBusy()} onClick={probeModel}>
-              {probeBusy() ? "Probing…" : "Probe model"}
+            <button class="button button-secondary" disabled={probeBusy()} onClick={probeModel}>
+              {probeBusy() ? "探测中…" : "探测模型能力"}
               <span>↗</span>
             </button>
-            <Show when={probeResult()}>
-              {(result) => (
-                <div class="probe-result" aria-live="polite">
-                  <span>Text response: {result().text}</span>
-                  <span>Function Calling: {result().functionCalling}</span>
-                </div>
-              )}
-            </Show>
-          </section>
-
-          <section class="panel panel-session">
-            <div class="panel-heading">
-              <span class="panel-index">02</span>
-              <h3>Session admission</h3>
-            </div>
-            <p class="panel-note">The core validates this path before it can run.</p>
-            <label>
-              Working directory
-              <input
-                value={directory()}
-                onInput={(event) => setDirectory(event.currentTarget.value)}
-                placeholder="/workspace/project"
-              />
-            </label>
-            <button class="outline-button" disabled={busy() || !directory().trim()} onClick={createSession}>
-              Create session <span>→</span>
-            </button>
-            <Show when={sessions().length > 0}>
-              <div class="session-picker">
-                <div class="session-picker-head">
-                  <span class="eyebrow">AVAILABLE SESSIONS</span>
-                  <span>{sessions().length}</span>
-                </div>
-                <For each={sessions()}>
-                  {(session) => (
-                    <button
-                      class={`session-option ${session.id === sessionID() ? "is-active" : ""}`}
-                      aria-pressed={session.id === sessionID()}
-                      onClick={() => void selectSession(session)}
-                    >
-                      <span>{session.id.slice(0, 8)}</span>
-                      <small>{session.status}</small>
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
-          </section>
-
-          <section class="panel panel-skills">
-            <div class="panel-heading skill-panel-head">
-              <div class="skill-panel-title">
-                <span class="panel-index">03</span>
-                <h3>Skill registry</h3>
-              </div>
-              <button class="text-button skill-refresh" disabled={skillBusy()} onClick={refreshSkills}>
-                {skillBusy() ? "Refreshing…" : "Refresh"}
-              </button>
-            </div>
-            <p class="panel-note">Skills are admitted by the Core, then gated by permission.</p>
-            <div class="skill-list" aria-live="polite">
-              <Show when={skills().length > 0} fallback={<p class="queue-empty">No project Skills discovered</p>}>
-                <For each={skills()}>
-                  {(skill) => (
-                    <article class={`skill-row skill-row-${skill.status}`}>
-                      <div class="skill-row-copy">
-                        <div class="skill-row-title">
-                          <strong>{skill.id}</strong>
-                          <span class="skill-status">{skill.status}</span>
-                        </div>
-                        <p>{skill.description || "No description provided."}</p>
-                        <small>
-                          {skill.fileCount} files · {skill.digest.slice(0, 10)}
-                        </small>
-                      </div>
-                      <button class="skill-validate" onClick={() => validateSkill(skill.id)} disabled={skillBusy()}>
-                        Validate
-                      </button>
-                      <Show when={skillValidation()[skill.id]}>
-                        <span class="skill-validation">{skillValidation()[skill.id]}</span>
-                      </Show>
-                    </article>
-                  )}
-                </For>
-              </Show>
-            </div>
-          </section>
-
-          <div class="notice" aria-live="polite">
-            <span class="notice-light" />
-            {notice()}
           </div>
-        </aside>
+          <Show when={probeResult()}>
+            {(result) => (
+              <div class="probe-result" aria-live="polite">
+                <span>文本响应：{result().text}</span>
+                <span>Function Calling：{result().functionCalling}</span>
+              </div>
+            )}
+          </Show>
+        </section>
 
-        <section class="panel panel-timeline">
-          <div class="panel-heading timeline-heading">
+        <section class="sidebar-card" id="session">
+          <div class="card-heading">
             <div>
-              <span class="panel-index">04</span>
-              <h3>Runtime timeline</h3>
+              <span class="section-kicker">项目上下文</span>
+              <h2>Session</h2>
             </div>
-            <span class="event-count">{events().length.toString().padStart(2, "0")} events</span>
+            <span class="status-badge">{sessions().length} 个</span>
           </div>
-          <div class="timeline">
-            <Show
-              when={events().length > 0}
-              fallback={
-                <div class="empty-state">
-                  <span>∅</span>
-                  <p>
-                    Events will appear here
-                    <br />
-                    after a prompt is accepted.
-                  </p>
-                </div>
-              }
-            >
-              <For each={events()}>
-                {(event) => (
-                  <article class="event-row">
-                    <span class="event-seq">{String(event.sequence).padStart(2, "0")}</span>
-                    <div class="event-body">
-                      <strong>{event.type}</strong>
+          <label>
+            工作目录
+            <input
+              aria-label="工作目录"
+              value={directory()}
+              onInput={(event) => setDirectory(event.currentTarget.value)}
+              placeholder="/workspace/project"
+            />
+          </label>
+          <button class="button button-secondary" disabled={busy() || !directory().trim()} onClick={createSession}>
+            创建新 Session <span>→</span>
+          </button>
+          <Show when={sessions().length > 0}>
+            <div class="session-list" aria-label="可用 Session">
+              <For each={sessions()}>
+                {(session) => (
+                  <button
+                    class={`session-item ${session.id === sessionID() ? "is-active" : ""}`}
+                    aria-pressed={session.id === sessionID()}
+                    onClick={() => void selectSession(session)}
+                  >
+                    <span>{session.id.slice(0, 8)}</span>
+                    <small>{session.status}</small>
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </section>
+
+        <section class="sidebar-card skill-card" id="skills">
+          <div class="card-heading">
+            <div>
+              <span class="section-kicker">能力目录</span>
+              <h2>Skills</h2>
+            </div>
+            <button class="text-button" disabled={skillBusy()} onClick={refreshSkills}>
+              {skillBusy() ? "刷新中…" : "刷新"}
+            </button>
+          </div>
+          <p class="helper-text">Skill 先注册、校验，再进入模型上下文。</p>
+          <div class="skill-list" aria-live="polite">
+            <Show when={skills().length > 0} fallback={<p class="empty-copy">暂无已发现的项目 Skill</p>}>
+              <For each={skills()}>
+                {(skill) => (
+                  <article class={`skill-row skill-row-${skill.status}`}>
+                    <div class="skill-row-copy">
+                      <div class="skill-row-title">
+                        <strong>{skill.id}</strong>
+                        <span class="skill-status">{skill.status}</span>
+                      </div>
+                      <p>{skill.description || "暂无描述"}</p>
                       <small>
-                        {event.localTime} · {event.sessionID.slice(0, 8)}
+                        {skill.fileCount} 个文件 · {skill.digest.slice(0, 10)}
                       </small>
-                      <Show when={event.data}>
-                        <pre>{JSON.stringify(event.data, null, 2)}</pre>
-                      </Show>
                     </div>
+                    <button class="skill-validate" onClick={() => validateSkill(skill.id)} disabled={skillBusy()}>
+                      校验
+                    </button>
+                    <Show when={skillValidation()[skill.id]}>
+                      <span class="skill-validation">{skillValidation()[skill.id]}</span>
+                    </Show>
                   </article>
                 )}
               </For>
             </Show>
           </div>
-          <div class="prompt-box">
-            <div class="prompt-composer">
-              <textarea
-                value={prompt()}
-                onInput={(event) => setPrompt(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendPrompt()
-                }}
-                placeholder="Describe the next coding move…"
-                disabled={!sessionID()}
-              />
-              <Show when={skillSuggestions().length > 0}>
-                <div class="skill-suggestions" role="listbox" aria-label="Skill suggestions">
-                  <For each={skillSuggestions()}>
-                    {(skill) => (
-                      <button
-                        class="skill-suggestion"
-                        role="option"
-                        aria-label={`@${skill.id}`}
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => selectSkill(skill)}
-                      >
-                        <span>@{skill.id}</span>
-                        <small>{skill.description}</small>
-                      </button>
-                    )}
-                  </For>
-                </div>
-              </Show>
-              <Show when={activeSkillIDs().length > 0}>
-                <div class="active-skill-row" aria-label="Active Skills">
-                  <span class="eyebrow">ATTACHED</span>
-                  <For each={activeSkillIDs()}>{(id) => <span class="skill-chip">@{id}</span>}</For>
-                </div>
-              </Show>
-            </div>
-            <button class="send-button" disabled={!sessionID() || !prompt().trim() || busy()} onClick={sendPrompt}>
-              Send
-              <br />
-              <span>⌘ ↵</span>
+        </section>
+
+        <div class="notice" aria-live="polite">
+          <span class={`notice-light ${connected() ? "is-live" : ""}`} />
+          {notice()}
+        </div>
+      </aside>
+
+      <section class="app-main" id="workspace">
+        <header class="topbar">
+          <div>
+            <p class="breadcrumb">内部演示 / Headless Core</p>
+            <h1>Agent 工作台</h1>
+          </div>
+          <div class="topbar-meta">
+            <span class={`connection-chip ${connected() ? "is-live" : ""}`}>
+              <span class="status-dot" />
+              {connected() ? "事件流已连接" : "等待连接"}
+            </span>
+            <span class="model-chip">{model() || "未配置模型"}</span>
+          </div>
+        </header>
+
+        <div class="session-toolbar">
+          <div class="session-summary">
+            <span class="section-kicker">当前 Session</span>
+            <strong class="session-id">{sessionID() || "尚未创建 Session"}</strong>
+            <span class={`pill pill-${sessionStatus()}`}>{sessionStatus()}</span>
+          </div>
+          <div class="toolbar-actions">
+            <button class="toolbar-button" disabled={!sessionID()} onClick={reconnectEvents}>
+              重新连接
+            </button>
+            <button class="toolbar-button" disabled={!sessionID() || refreshBusy()} onClick={refreshRuntime}>
+              {refreshBusy() ? "刷新中…" : "刷新状态"}
+            </button>
+            <button
+              class="toolbar-button toolbar-danger"
+              disabled={!sessionID() || cancelBusy()}
+              onClick={cancelSession}
+            >
+              {cancelBusy() ? "取消中…" : "取消运行"}
             </button>
           </div>
-        </section>
-      </section>
-
-      <section class="question-strip">
-        <div class="permission-title">
-          <span class="panel-index">05</span>
-          <div>
-            <h3>User input queue</h3>
-            <p>Questions pause the runtime until every answer is explicit.</p>
-          </div>
         </div>
-        <Show when={questions().length > 0} fallback={<span class="queue-empty">No pending questions</span>}>
-          <div class="question-list">
-            <For each={questions()}>
-              {(request) => (
-                <article class="question-card">
-                  <div class="question-card-head">
-                    <span class="permission-action">{request.id}</span>
-                    <button class="text-button" onClick={() => cancelQuestion(request.id)}>
-                      Cancel question
-                    </button>
+
+        <section class="capability-grid" aria-label="核心能力">
+          <article class="capability-card">
+            <span class="capability-icon">↯</span>
+            <div>
+              <span>Function Calling</span>
+              <strong>{probeResult()?.functionCalling ?? "待探测"}</strong>
+            </div>
+          </article>
+          <article class="capability-card">
+            <span class="capability-icon">✓</span>
+            <div>
+              <span>权限门禁</span>
+              <strong>{permissions().length > 0 ? `${permissions().length} 个待处理` : "安全"}</strong>
+            </div>
+          </article>
+          <article class="capability-card">
+            <span class="capability-icon">?</span>
+            <div>
+              <span>补充信息</span>
+              <strong>{questions().length > 0 ? `${questions().length} 个问题` : "空闲"}</strong>
+            </div>
+          </article>
+          <article class="capability-card">
+            <span class="capability-icon">≈</span>
+            <div>
+              <span>上下文压缩</span>
+              <strong class="context-value">{compactionStatus()}</strong>
+            </div>
+          </article>
+          <article class="capability-card">
+            <span class="capability-icon">✦</span>
+            <div>
+              <span>Skill</span>
+              <strong>{activeSkillIDs().length > 0 ? `${activeSkillIDs().length} 个已激活` : "未激活"}</strong>
+            </div>
+          </article>
+        </section>
+
+        <section class="main-grid">
+          <section class="conversation-panel panel-surface">
+            <div class="panel-header">
+              <div>
+                <span class="section-kicker">实时执行</span>
+                <h2>Coding Loop</h2>
+              </div>
+              <span class="event-count">{events().length.toString().padStart(2, "0")} 条事件</span>
+            </div>
+            <div class="timeline">
+              <Show
+                when={events().length > 0}
+                fallback={
+                  <div class="empty-state">
+                    <span>◌</span>
+                    <strong>等待一次 Prompt</strong>
+                    <p>创建 Session 后，在下方输入你的第一个 Coding 任务。</p>
                   </div>
-                  <For each={request.questions}>
-                    {(question, questionIndex) => (
-                      <div class="question-block">
-                        <strong>{question.question}</strong>
-                        <div class="answer-options">
-                          <For each={question.options}>
-                            {(option) => (
-                              <button
-                                class={`answer-option ${answerSelected(request.id, questionIndex(), option.label) ? "is-selected" : ""}`}
-                                aria-pressed={answerSelected(request.id, questionIndex(), option.label)}
-                                onClick={() => chooseAnswer(request, questionIndex(), option.label)}
-                              >
-                                <span>{option.label}</span>
-                                <small>{option.description}</small>
-                              </button>
-                            )}
-                          </For>
+                }
+              >
+                <For each={events()}>
+                  {(event) => (
+                    <article class="event-row">
+                      <span class="event-seq">{String(event.sequence).padStart(2, "0")}</span>
+                      <div class="event-body">
+                        <strong>{event.type}</strong>
+                        <small>
+                          {event.localTime} · {event.sessionID.slice(0, 8)}
+                        </small>
+                        <Show when={event.data}>
+                          <pre>{JSON.stringify(event.data, null, 2)}</pre>
+                        </Show>
+                      </div>
+                    </article>
+                  )}
+                </For>
+              </Show>
+            </div>
+            <div class="prompt-box">
+              <div class="prompt-composer">
+                <textarea
+                  aria-label="Coding Prompt"
+                  value={prompt()}
+                  onInput={(event) => setPrompt(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendPrompt()
+                  }}
+                  placeholder="描述下一步 Coding 任务…"
+                  disabled={!sessionID()}
+                />
+                <Show when={skillSuggestions().length > 0}>
+                  <div class="skill-suggestions" role="listbox" aria-label="Skill 建议">
+                    <For each={skillSuggestions()}>
+                      {(skill) => (
+                        <button
+                          class="skill-suggestion"
+                          role="option"
+                          aria-label={`@${skill.id}`}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => selectSkill(skill)}
+                        >
+                          <span>@{skill.id}</span>
+                          <small>{skill.description}</small>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Show when={activeSkillIDs().length > 0}>
+                  <div class="active-skill-row" aria-label="已附加 Skill">
+                    <span class="section-kicker">已附加</span>
+                    <For each={activeSkillIDs()}>{(id) => <span class="skill-chip">@{id}</span>}</For>
+                  </div>
+                </Show>
+              </div>
+              <button class="send-button" disabled={!sessionID() || !prompt().trim() || busy()} onClick={sendPrompt}>
+                {busy() ? "发送中…" : "发送 Prompt"}
+                <span>⌘ ↵</span>
+              </button>
+            </div>
+          </section>
+
+          <aside class="status-rail">
+            <section class="rail-panel panel-surface">
+              <div class="panel-header">
+                <div>
+                  <span class="section-kicker">运行监控</span>
+                  <h2>运行状态</h2>
+                </div>
+                <span class={`status-badge ${connected() ? "success" : "muted"}`}>{connected() ? "在线" : "离线"}</span>
+              </div>
+              <div class="status-list">
+                <div>
+                  <span>Session</span>
+                  <strong>{sessionStatus()}</strong>
+                </div>
+                <div>
+                  <span>事件流</span>
+                  <strong>{connected() ? "实时" : "未连接"}</strong>
+                </div>
+                <div>
+                  <span>上下文</span>
+                  <strong>{compactionStatus()}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="rail-panel panel-surface queue-panel">
+              <div class="panel-header">
+                <div>
+                  <span class="section-kicker">需要你处理</span>
+                  <h2>权限队列</h2>
+                </div>
+                <span class="queue-count">{permissions().length + questions().length}</span>
+              </div>
+              <Show when={permissions().length > 0} fallback={<p class="empty-copy">当前没有待处理权限请求</p>}>
+                <div class="permission-list">
+                  <For each={permissions()}>
+                    {(request) => (
+                      <div class="permission-card">
+                        <div>
+                          <span class="permission-action">{request.action}</span>
+                          <strong>{request.resource}</strong>
+                          <small>{request.reason}</small>
+                        </div>
+                        <div class="permission-actions">
+                          <button
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "allow_once")}
+                          >
+                            {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
+                          </button>
+                          <button
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "allow_always")}
+                          >
+                            始终允许
+                          </button>
+                          <button
+                            class="deny"
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "deny")}
+                          >
+                            拒绝
+                          </button>
                         </div>
                       </div>
                     )}
                   </For>
-                  <button class="primary-button" disabled={busy()} onClick={() => replyQuestion(request)}>
-                    Submit answers
-                  </button>
-                </article>
-              )}
-            </For>
-          </div>
-        </Show>
-      </section>
-
-      <section class="context-strip">
-        <div class="context-card">
-          <span class="panel-index">06</span>
-          <div>
-            <h3>Context compaction</h3>
-            <p class="context-value">{compactionStatus()}</p>
-          </div>
-        </div>
-        <div class="context-card context-sources">
-          <span class="panel-index">07</span>
-          <div>
-            <h3>Project context sources</h3>
-            <Show when={contextSources().length > 0} fallback={<p class="context-value">Waiting for Core sources</p>}>
-              <div class="source-list">
-                <For each={contextSources()}>
-                  {(source) => (
-                    <div class="source-row">
-                      <span>{source.kind}</span>
-                      <code>{source.path}</code>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-          </div>
-        </div>
-      </section>
-
-      <section class="permission-strip">
-        <div class="permission-title">
-          <span class="panel-index">08</span>
-          <div>
-            <h3>Permission queue</h3>
-            <p>Nothing executes without an explicit decision.</p>
-          </div>
-        </div>
-        <Show
-          when={permissions().length > 0}
-          fallback={<span class="queue-empty">Queue clear · awaiting tool requests</span>}
-        >
-          <div class="permission-list">
-            <For each={permissions()}>
-              {(request) => (
-                <div class="permission-card">
-                  <div>
-                    <span class="permission-action">{request.action}</span>
-                    <strong>{request.resource}</strong>
-                    <small>{request.reason}</small>
-                  </div>
-                  <div class="permission-actions">
-                    <button disabled={Boolean(pendingDecisionID())} onClick={() => decide(request.id, "allow_once")}>
-                      {pendingDecisionID() === request.id ? "Saving…" : "Allow once"}
-                    </button>
-                    <button disabled={Boolean(pendingDecisionID())} onClick={() => decide(request.id, "allow_always")}>
-                      Always
-                    </button>
-                    <button
-                      class="deny"
-                      disabled={Boolean(pendingDecisionID())}
-                      onClick={() => decide(request.id, "deny")}
-                    >
-                      Deny
-                    </button>
-                  </div>
                 </div>
-              )}
-            </For>
-          </div>
-        </Show>
-      </section>
+              </Show>
+            </section>
 
-      <footer>
-        <span>HEADLESS CORE / EXPERIMENTAL</span>
-        <span>UI is a client. Runtime is elsewhere.</span>
-      </footer>
+            <section class="rail-panel panel-surface question-panel">
+              <div class="panel-header">
+                <div>
+                  <span class="section-kicker">需要你补充</span>
+                  <h2>补充信息</h2>
+                </div>
+                <span class="queue-count">{questions().length}</span>
+              </div>
+              <Show when={questions().length > 0} fallback={<p class="empty-copy">当前没有待回答问题</p>}>
+                <div class="question-list">
+                  <For each={questions()}>
+                    {(request) => (
+                      <article class="question-card">
+                        <div class="question-card-head">
+                          <span class="permission-action">{request.id}</span>
+                          <button
+                            class="text-button"
+                            disabled={Boolean(pendingQuestionID())}
+                            onClick={() => cancelQuestion(request.id)}
+                          >
+                            {pendingQuestionID() === request.id ? "取消中…" : "取消"}
+                          </button>
+                        </div>
+                        <For each={request.questions}>
+                          {(question, questionIndex) => (
+                            <div class="question-block">
+                              <strong>{question.question}</strong>
+                              <div class="answer-options">
+                                <For each={question.options}>
+                                  {(option) => (
+                                    <button
+                                      class={`answer-option ${answerSelected(request.id, questionIndex(), option.label) ? "is-selected" : ""}`}
+                                      aria-pressed={answerSelected(request.id, questionIndex(), option.label)}
+                                      onClick={() => chooseAnswer(request, questionIndex(), option.label)}
+                                    >
+                                      <span>{option.label}</span>
+                                      <small>{option.description}</small>
+                                    </button>
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          )}
+                        </For>
+                        <button
+                          class="button button-primary"
+                          disabled={busy() || Boolean(pendingQuestionID())}
+                          onClick={() => replyQuestion(request)}
+                        >
+                          {busy() ? "提交中…" : "提交回答"}
+                        </button>
+                      </article>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </section>
+
+            <section class="rail-panel panel-surface context-panel">
+              <div class="panel-header">
+                <div>
+                  <span class="section-kicker">项目理解</span>
+                  <h2>上下文来源</h2>
+                </div>
+                <span class="queue-count">{contextSources().length}</span>
+              </div>
+              <Show when={contextSources().length > 0} fallback={<p class="empty-copy">等待 Core 加载项目指令</p>}>
+                <div class="source-list">
+                  <For each={contextSources()}>
+                    {(source) => (
+                      <div class="source-row">
+                        <span>{source.kind}</span>
+                        <code>{source.path}</code>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </section>
+          </aside>
+        </section>
+
+        <footer>
+          <span>HEADLESS CORE / INTERNAL DEMO</span>
+          <span>UI 是控制面，Runtime 在 Core</span>
+        </footer>
+      </section>
     </main>
   )
 }
