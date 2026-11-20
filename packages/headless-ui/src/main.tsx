@@ -40,8 +40,8 @@ const apiBaseUrl = import.meta.env.VITE_HEADLESS_API_URL ?? "http://127.0.0.1:40
 const client = OpenCode.make({ baseUrl: apiBaseUrl })
 
 function App() {
-  const [baseUrl, setBaseUrl] = createSignal("https://model.example.com/v1")
-  const [model, setModel] = createSignal("coding-model")
+  const [baseUrl, setBaseUrl] = createSignal("")
+  const [model, setModel] = createSignal("")
   const [credentialRef, setCredentialRef] = createSignal("")
   const [credential, setCredential] = createSignal("")
   const [directory, setDirectory] = createSignal("")

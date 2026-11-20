@@ -57,6 +57,8 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByText("权限队列", { exact: true })).toBeVisible()
     await expect(page.getByRole("heading", { name: "补充信息" })).toBeVisible()
     await expect(page.getByText("上下文压缩", { exact: true })).toBeVisible()
+    await expect(page.getByLabel("服务地址")).toHaveValue("")
+    await expect(page.getByLabel("模型名称")).toHaveValue("")
   })
 
   test.serial("validates model and workspace inputs before sending requests", async () => {
@@ -365,6 +367,8 @@ describe.serial("Headless UI smoke", () => {
     directory = await mkdtemp(join(tmpdir(), "headless-ui-control-plane-"))
 
     await page.goto(uiOrigin)
+    await page.getByLabel("服务地址").fill("https://model.example.com/v1")
+    await page.getByLabel("模型名称").fill("fixture-model")
     await page.getByRole("button", { name: "探测模型能力" }).click()
     await expect(page.getByText("文本响应：pass", { exact: true })).toBeVisible()
     await expect(page.getByText("Function Calling：pass", { exact: true })).toBeVisible()
