@@ -116,7 +116,9 @@ function App() {
       errors.baseUrl = candidate ? "请输入有效的 HTTP 或 HTTPS 服务地址" : "请输入模型服务地址"
     }
     if (!model().trim()) errors.model = "请输入模型名称"
-    if (credential().trim() && credentialRef().trim()) errors.credential = "凭据引用和凭据值只能填写一个"
+    const hasCredential = credential().trim() || credentialRef().trim()
+    if (!hasCredential) errors.credential = "请填写凭据引用或凭据值"
+    else if (credential().trim() && credentialRef().trim()) errors.credential = "凭据引用和凭据值只能填写一个"
     return errors
   }
 
@@ -774,7 +776,7 @@ function App() {
             </Show>
           </label>
           <label class={`form-field ${modelErrors().credential ? "field-invalid" : ""}`}>
-            凭据引用
+            凭据引用 <span class="required-mark">二选一必填</span>
             <input
               aria-label="凭据引用"
               value={credentialRef()}
@@ -802,7 +804,7 @@ function App() {
               }}
               placeholder="输入后不会回显"
             />
-            <span class="field-help">凭据引用与凭据值二选一，也可以暂不配置。</span>
+            <span class="field-help">凭据引用与凭据值二选一，至少填写一项。</span>
             <Show when={modelErrors().credential}>
               <span id="model-credential-error" class="field-error" role="alert">
                 {modelErrors().credential}

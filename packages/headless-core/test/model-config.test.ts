@@ -35,3 +35,14 @@ test("rejects invalid updates and preserves the last valid configuration", async
   })
   expect(await store.get()).toEqual(valid)
 })
+
+test("requires a credential value or credential reference", async () => {
+  const store = createHeadlessModelConfigStore()
+
+  await expect(
+    store.update({
+      baseUrl: "https://model.example.com/v1",
+      model: "coding-model",
+    }),
+  ).rejects.toMatchObject({ code: "invalid_credential" })
+})

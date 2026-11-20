@@ -79,6 +79,7 @@ describe.serial("Headless UI smoke", () => {
 
     await expect(page.getByText("请输入有效的 HTTP 或 HTTPS 服务地址", { exact: true })).toBeVisible()
     await expect(page.getByText("请输入模型名称", { exact: true })).toBeVisible()
+    await expect(page.getByText("请填写凭据引用或凭据值", { exact: true })).toBeVisible()
     expect(modelUpdateCalls).toBe(0)
 
     await page.getByLabel("工作目录").fill("relative/project")
@@ -161,6 +162,7 @@ describe.serial("Headless UI smoke", () => {
     await page.goto(uiOrigin)
     await page.getByLabel("服务地址").fill(upstream.url.toString().replace(/\/$/, ""))
     await page.getByLabel("模型名称").fill("fixture-model")
+    await page.getByLabel("凭据值").fill("fixture-secret")
     await page.getByRole("button", { name: "保存模型配置" }).click()
     await expect(page.getByText("模型 fixture-model 已就绪")).toBeVisible()
 
@@ -218,6 +220,7 @@ describe.serial("Headless UI smoke", () => {
       await page.goto(uiOrigin)
       await page.getByLabel("服务地址").fill(upstream.url.toString().replace(/\/$/, ""))
       await page.getByLabel("模型名称").fill("fixture-model")
+      await page.getByLabel("凭据值").fill("fixture-secret")
       await page.getByRole("button", { name: "保存模型配置" }).click()
       await page.getByLabel("工作目录").fill(directory)
       await page.getByRole("button", { name: /创建新 Session/ }).click()
@@ -369,6 +372,7 @@ describe.serial("Headless UI smoke", () => {
     await page.goto(uiOrigin)
     await page.getByLabel("服务地址").fill("https://model.example.com/v1")
     await page.getByLabel("模型名称").fill("fixture-model")
+    await page.getByLabel("凭据值").fill("fixture-secret")
     await page.getByRole("button", { name: "探测模型能力" }).click()
     await expect(page.getByText("文本响应：pass", { exact: true })).toBeVisible()
     await expect(page.getByText("Function Calling：pass", { exact: true })).toBeVisible()

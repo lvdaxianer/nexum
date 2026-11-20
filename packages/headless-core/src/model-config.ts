@@ -69,6 +69,9 @@ export function createHeadlessModelConfigStore(): HeadlessModelConfigStore {
       if (input.credentialRef !== undefined && !input.credentialRef.trim()) {
         throw new HeadlessModelConfigError("invalid_credential", "credentialRef 不能为空")
       }
+      if (input.credential === undefined && input.credentialRef === undefined) {
+        throw new HeadlessModelConfigError("invalid_credential", "必须配置凭据值或凭据引用")
+      }
 
       const safe: HeadlessModelConfig = {
         baseUrl,
