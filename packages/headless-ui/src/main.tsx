@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js"
 import { render } from "solid-js/web"
 import { OpenCode } from "@opencode/client"
 import type {
@@ -18,6 +18,20 @@ type SessionSummary = ExperimentalHeadlessSessionListOutput["data"][number]
 type ModelProbeResult = ExperimentalHeadlessModelProbeOutput["data"]
 type SkillSummary = ExperimentalHeadlessSkillListOutput["data"][number]
 type ContextSource = { sourceID: string; kind: string; path: string }
+type ChatItemKind = "user" | "assistant" | "execution" | "status"
+type ChatStatus = "streaming" | "running" | "waiting" | "completed" | "failed" | "cancelled"
+type ChatItem = {
+  id: string
+  kind: ChatItemKind
+  title: string
+  content?: string
+  detail?: string
+  status: ChatStatus
+  localTime: string
+  eventType?: string
+}
+
+const maxChatItems = 160
 
 const apiBaseUrl = import.meta.env.VITE_HEADLESS_API_URL ?? "http://127.0.0.1:4097"
 const client = OpenCode.make({ baseUrl: apiBaseUrl })
@@ -33,6 +47,7 @@ function App() {
   const [sessionStatus, setSessionStatus] = createSignal("no session")
   const [sessions, setSessions] = createSignal<SessionSummary[]>([])
   const [events, setEvents] = createSignal<TimelineEvent[]>([])
+  const [chatItems, setChatItems] = createSignal<ChatItem[]>([])
   const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
   const [questions, setQuestions] = createSignal<QuestionRequest[]>([])
   const [questionAnswers, setQuestionAnswers] = createSignal<Record<string, string[][]>>({})
@@ -52,6 +67,7 @@ function App() {
   const [pendingQuestionID, setPendingQuestionID] = createSignal("")
   const [cancelBusy, setCancelBusy] = createSignal(false)
   let streamController: AbortController | undefined
+  let promptSequence = 0
   const seenEventKeys = new Set<string>()
 
   onMount(async () => {
@@ -201,6 +217,7 @@ function App() {
     setSessionStatus(snapshot.data.session.status)
     setDirectory(snapshot.data.session.directory)
     setEvents([])
+    setChatItems([])
     setPermissions(snapshot.data.pendingPermissions)
     setQuestions(snapshot.data.pendingQuestions)
     setQuestionAnswers({})
@@ -222,6 +239,7 @@ function App() {
       sessionStorage.setItem("headless.sessionID", created.data.id)
       setSessions((current) => [...current.filter((item) => item.id !== created.data.id), created.data])
       setEvents([])
+      setChatItems([])
       setPermissions([])
       setQuestions([])
       setQuestionAnswers({})
@@ -261,6 +279,7 @@ function App() {
             { ...event, localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
           ].slice(-200),
         ])
+        setChatItems((current) => projectChatEvent(current, event))
         if (event.type === "session.completed") setSessionStatus("completed")
         if (event.type === "session.failed") setSessionStatus("failed")
         if (event.type === "session.cancelled") setSessionStatus("cancelled")
@@ -367,6 +386,9 @@ function App() {
         requestID: request.id,
         answers,
       })
+      setChatItems((current) =>
+        updateChatItem(current, `question:${request.id}`, { status: "completed", content: "补充信息已提交" }),
+      )
       await refreshQuestions()
       setNotice("补充信息已提交，运行继续")
     } catch (error) {
@@ -381,6 +403,9 @@ function App() {
     setPendingQuestionID(requestID)
     try {
       await client.experimental.headless.session.question.cancel({ sessionID: sessionID(), requestID })
+      setChatItems((current) =>
+        updateChatItem(current, `question:${requestID}`, { status: "cancelled", content: "补充信息已取消" }),
+      )
       await refreshQuestions()
       setNotice("已取消补充信息，Core 不会伪造答案")
     } catch (error) {
@@ -394,14 +419,35 @@ function App() {
     if (!sessionID() || !prompt().trim()) return
     setBusy(true)
     seenEventKeys.clear()
+    const text = prompt().trim()
+    setChatItems((current) =>
+      appendChatItem(current, {
+        id: `user:${Date.now()}:${promptSequence++}`,
+        kind: "user",
+        title: "你",
+        content: text,
+        status: "completed",
+        localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      }),
+    )
     try {
-      setActiveSkillIDs(skillIDsFromText(prompt()))
-      await client.experimental.headless.session.prompt({ sessionID: sessionID(), text: prompt().trim() })
+      setActiveSkillIDs(skillIDsFromText(text))
+      await client.experimental.headless.session.prompt({ sessionID: sessionID(), text })
       await refreshPermissions()
       setPrompt("")
       setSessionStatus("running")
       setNotice("Prompt 已提交，等待下一条运行事件")
     } catch (error) {
+      setChatItems((current) =>
+        appendChatItem(current, {
+          id: `status:prompt:${Date.now()}`,
+          kind: "status",
+          title: "Prompt 提交失败",
+          content: messageFrom(error, "请检查连接后重试"),
+          status: "failed",
+          localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }),
+      )
       setNotice(messageFrom(error, "Prompt 未提交成功，请重试"))
     } finally {
       setBusy(false)
@@ -433,6 +479,12 @@ function App() {
     setPendingDecisionID(requestID)
     try {
       await client.experimental.headless.session.permission.reply({ sessionID: sessionID(), requestID, decision })
+      setChatItems((current) =>
+        updateChatItem(current, `permission:${requestID}`, {
+          status: decision === "deny" ? "failed" : "completed",
+          content: decision === "deny" ? "权限已拒绝" : "权限已通过",
+        }),
+      )
       await refreshPermissions()
       setNotice(decision === "deny" ? "权限已拒绝" : "权限已通过")
     } catch (error) {
@@ -700,34 +752,83 @@ function App() {
               </div>
               <span class="event-count">{events().length.toString().padStart(2, "0")} 条事件</span>
             </div>
-            <div class="timeline">
-              <Show
-                when={events().length > 0}
-                fallback={
-                  <div class="empty-state">
-                    <span>◌</span>
-                    <strong>等待一次 Prompt</strong>
-                    <p>创建 Session 后，在下方输入你的第一个 Coding 任务。</p>
-                  </div>
-                }
-              >
-                <For each={events()}>
-                  {(event) => (
-                    <article class="event-row">
-                      <span class="event-seq">{String(event.sequence).padStart(2, "0")}</span>
-                      <div class="event-body">
-                        <strong>{event.type}</strong>
-                        <small>
-                          {event.localTime} · {event.sessionID.slice(0, 8)}
-                        </small>
-                        <Show when={event.data}>
-                          <pre>{JSON.stringify(event.data, null, 2)}</pre>
-                        </Show>
-                      </div>
-                    </article>
-                  )}
-                </For>
-              </Show>
+            <div class="conversation-body">
+              <div class="chat-stream" role="log" aria-live="polite">
+                <Show
+                  when={chatItems().length > 0}
+                  fallback={
+                    <div class="empty-state">
+                      <span>◌</span>
+                      <strong>等待一次 Prompt</strong>
+                      <p>创建 Session 后，在下方输入你的第一个 Coding 任务。</p>
+                    </div>
+                  }
+                >
+                  <For each={chatItems()}>
+                    {(item) => (
+                      <article class={`chat-message ${item.kind} chat-status-${item.status}`}>
+                        <span class="chat-avatar">
+                          {item.kind === "user" ? "你" : item.kind === "assistant" ? "A" : "C"}
+                        </span>
+                        <div class="chat-message-body">
+                          <div class="chat-message-head">
+                            <strong>{item.title}</strong>
+                            <span>
+                              {item.localTime} · {chatStatusLabel(item.status)}
+                            </span>
+                          </div>
+                          <Switch>
+                            <Match when={item.kind === "user" || item.kind === "assistant"}>
+                              <p class="chat-copy">{item.content || "Agent 正在输出…"}</p>
+                            </Match>
+                            <Match when={item.kind === "execution"}>
+                              <div class="execution-card">
+                                <div class="execution-card-head">
+                                  <strong>{item.title}</strong>
+                                  <span>{chatStatusLabel(item.status)}</span>
+                                </div>
+                                <p>{item.content}</p>
+                                <Show when={item.detail}>
+                                  <details>
+                                    <summary>查看结构化详情</summary>
+                                    <pre>{item.detail}</pre>
+                                  </details>
+                                </Show>
+                              </div>
+                            </Match>
+                            <Match when={item.kind === "status"}>
+                              <div class="status-card">
+                                <strong>{item.content}</strong>
+                              </div>
+                            </Match>
+                          </Switch>
+                        </div>
+                      </article>
+                    )}
+                  </For>
+                </Show>
+              </div>
+              <details class="event-trace" open>
+                <summary>事件明细 · {events().length.toString().padStart(2, "0")} 条</summary>
+                <div class="timeline">
+                  <For each={events()}>
+                    {(event) => (
+                      <article class="event-row">
+                        <span class="event-seq">{String(event.sequence).padStart(2, "0")}</span>
+                        <div class="event-body">
+                          <strong>{event.type}</strong>
+                          <small>
+                            {event.localTime} · {event.sessionID.slice(0, 8)}
+                          </small>
+                          <Show when={event.data}>
+                            <pre>{JSON.stringify(event.data, null, 2)}</pre>
+                          </Show>
+                        </div>
+                      </article>
+                    )}
+                  </For>
+                </div>
+              </details>
             </div>
             <div class="prompt-box">
               <div class="prompt-composer">
@@ -948,6 +1049,227 @@ function isContextSource(value: unknown): value is ContextSource {
   if (!value || typeof value !== "object") return false
   const source = value as Record<string, unknown>
   return typeof source.sourceID === "string" && typeof source.kind === "string" && typeof source.path === "string"
+}
+
+/**
+ * 将一条聊天条目追加到有界的前端运行记录中。
+ * @param items 当前聊天条目
+ * @param item 待追加条目
+ * @returns 保留最近窗口后的聊天条目
+ */
+function appendChatItem(items: ChatItem[], item: ChatItem): ChatItem[] {
+  return [...items, item].slice(-maxChatItems)
+}
+
+/**
+ * 按稳定条目 ID 更新聊天卡片，避免重连时重建整条消息流。
+ * @param items 当前聊天条目
+ * @param id 卡片 ID
+ * @param patch 要更新的字段
+ * @returns 更新后的聊天条目
+ */
+function updateChatItem(items: ChatItem[], id: string, patch: Partial<ChatItem>): ChatItem[] {
+  return items.map((item) => (item.id === id ? { ...item, ...patch } : item))
+}
+
+/**
+ * 将 Headless SSE 事件投影为用户可读的聊天消息或执行卡片。
+ * @param items 当前聊天条目
+ * @param event 已去重的 Headless 事件
+ * @returns 更新后的聊天条目
+ */
+function projectChatEvent(items: ChatItem[], event: ExperimentalHeadlessSessionEventsOutput): ChatItem[] {
+  const data = event.data ?? {}
+  const localTime = new Date(event.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  const detail = JSON.stringify(data, null, 2)
+  const value = (key: string) => (typeof data[key] === "string" ? data[key] : "")
+  const upsert = (item: ChatItem) => {
+    const existing = items.find((current) => current.id === item.id)
+    return existing ? updateChatItem(items, item.id, item) : appendChatItem(items, item)
+  }
+
+  switch (event.type) {
+    case "assistant.text": {
+      const idPrefix = `assistant:${event.runID}:`
+      const last = items.at(-1)
+      if (last?.kind === "assistant" && last.id.startsWith(idPrefix)) {
+        return updateChatItem(items, last.id, {
+          content: `${last.content ?? ""}${value("content")}`,
+          status: "streaming",
+          localTime,
+          eventType: event.type,
+        })
+      }
+      return appendChatItem(items, {
+        id: `${idPrefix}${event.sequence}`,
+        kind: "assistant",
+        title: "Agent",
+        content: value("content"),
+        status: "streaming",
+        localTime,
+        eventType: event.type,
+      })
+    }
+    case "tool.request":
+      return upsert({
+        id: `tool:${value("toolCallID")}`,
+        kind: "execution",
+        title: `工具调用 · ${value("toolName") || value("action") || "unknown"}`,
+        content: "Core 正在执行工具",
+        detail,
+        status: "running",
+        localTime,
+        eventType: event.type,
+      })
+    case "tool.result":
+      return upsert({
+        id: `tool:${value("toolCallID")}`,
+        kind: "execution",
+        title: `工具结果 · ${value("toolCallID") || "unknown"}`,
+        content: value("output") || (data.ok === false ? "工具执行失败" : "工具执行完成"),
+        detail,
+        status: data.ok === false ? "failed" : "completed",
+        localTime,
+        eventType: event.type,
+      })
+    case "permission.requested":
+      return upsert({
+        id: `permission:${value("requestID")}`,
+        kind: "execution",
+        title: `权限请求 · ${value("action") || "操作"}`,
+        content: value("reason") || "等待权限处理",
+        detail,
+        status: "waiting",
+        localTime,
+        eventType: event.type,
+      })
+    case "question.request":
+      return upsert({
+        id: `question:${value("requestID")}`,
+        kind: "execution",
+        title: "补充信息 · 等待回答",
+        content: "Core 正在等待你的补充信息",
+        detail,
+        status: "waiting",
+        localTime,
+        eventType: event.type,
+      })
+    case "question.result":
+      return updateChatItem(items, `question:${value("requestID")}`, {
+        title: "补充信息 · 已提交",
+        content: "补充信息已提交，运行继续",
+        status: "completed",
+        localTime,
+      })
+    case "question.cancelled":
+      return updateChatItem(items, `question:${value("requestID")}`, {
+        title: "补充信息 · 已取消",
+        content: "补充信息已取消",
+        status: "cancelled",
+        localTime,
+      })
+    case "context.compaction.started":
+    case "context.compaction.completed":
+    case "context.compaction.failed":
+      return upsert({
+        id: `context:${event.runID}`,
+        kind: "execution",
+        title: "上下文压缩",
+        content:
+          value("message") ||
+          `上下文压缩${event.type.endsWith("started") ? "进行中" : event.type.endsWith("failed") ? "失败" : "完成"}`,
+        detail,
+        status: event.type.endsWith("started") ? "running" : event.type.endsWith("failed") ? "failed" : "completed",
+        localTime,
+        eventType: event.type,
+      })
+    case "context.project.loaded":
+      return appendChatItem(items, {
+        id: `context-source:${event.sequence}`,
+        kind: "execution",
+        title: "项目上下文 · 已加载",
+        content: "Core 已加载项目指令和上下文来源",
+        detail,
+        status: "completed",
+        localTime,
+        eventType: event.type,
+      })
+    case "skill.activated":
+      return upsert({
+        id: `skill:${value("skillID")}`,
+        kind: "execution",
+        title: `Skill · ${value("name") || value("skillID") || "已激活"}`,
+        content: "Skill 已进入模型上下文",
+        detail,
+        status: "completed",
+        localTime,
+        eventType: event.type,
+      })
+    case "skill.failed":
+      return upsert({
+        id: `skill:${value("skillID")}`,
+        kind: "execution",
+        title: `Skill · ${value("skillID") || "激活失败"}`,
+        content: value("code") || "Skill 激活失败",
+        detail,
+        status: "failed",
+        localTime,
+        eventType: event.type,
+      })
+    case "session.completed":
+      return appendChatItem(
+        items.map((item) =>
+          item.id.startsWith(`assistant:${event.runID}:`) ? { ...item, status: "completed" } : item,
+        ),
+        {
+          id: `session:${event.runID}:completed`,
+          kind: "status",
+          title: "运行完成",
+          content: "本轮 Coding 任务已完成",
+          status: "completed",
+          localTime,
+          eventType: event.type,
+        },
+      )
+    case "session.failed":
+      return appendChatItem(items, {
+        id: `session:${event.runID}:failed`,
+        kind: "status",
+        title: "运行失败",
+        content: value("message") || "Core 返回运行失败",
+        status: "failed",
+        localTime,
+        eventType: event.type,
+      })
+    case "session.cancelled":
+      return appendChatItem(items, {
+        id: `session:${event.runID}:cancelled`,
+        kind: "status",
+        title: "运行已取消",
+        content: "本轮运行已停止，可以继续输入新的 Prompt",
+        status: "cancelled",
+        localTime,
+        eventType: event.type,
+      })
+    default:
+      return items
+  }
+}
+
+/**
+ * 将聊天状态转换为中文状态标签。
+ * @param status 内部聊天状态
+ * @returns 页面显示文案
+ */
+function chatStatusLabel(status: ChatStatus): string {
+  return {
+    streaming: "流式输出",
+    running: "执行中",
+    waiting: "等待处理",
+    completed: "已完成",
+    failed: "失败",
+    cancelled: "已取消",
+  }[status]
 }
 
 /**
