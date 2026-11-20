@@ -27,6 +27,8 @@ export {
   type HeadlessSkillSummary,
 } from "./skill-registry.js"
 import { normalizeHeadlessToolRequest } from "./tools.js"
+import { HeadlessSkillInvocationError } from "./skill-invocation.js"
+import type { HeadlessSkillInvocationPort } from "./skill-invocation.js"
 
 /** Agent 请求模型生成时携带的最小输入。 */
 export interface ModelToolDefinition {
@@ -290,6 +292,7 @@ export interface HeadlessCodingLoopOptions {
   readonly contextCompaction?: ContextCompactionPort
   readonly projectContext?: ProjectContextPort
   readonly question?: HeadlessQuestionPort
+  readonly skills?: HeadlessSkillInvocationPort
   readonly compactionThreshold?: number
   readonly compactionKeepRecent?: number
   readonly maxSteps?: number
@@ -336,15 +339,27 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
         await options.events.publish({ sessionID: input.sessionID, type, sequence: ++sequence, data })
       }
       let messages: ModelMessage[] = [{ role: "user", content: input.text }]
-      messages = await restoreProjectContext(input.sessionID, messages, options.projectContext, publish)
-      let prompt: ModelPrompt = {
-        sessionID: input.sessionID,
-        text: input.text,
-        messages,
-        ...(options.tools ? { tools: options.tools } : {}),
-      }
+      let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text, messages }
 
       try {
+        const skillPrompt = options.skills
+          ? await options.skills.resolve({ sessionID: input.sessionID, text: input.text })
+          : { skills: [], systemMessages: [] }
+        for (const skill of skillPrompt.skills) {
+          await publish("skill.activated", {
+            skillID: skill.id,
+            name: skill.name,
+            mention: skill.mention,
+          })
+        }
+        messages = [...skillPrompt.systemMessages, { role: "user", content: input.text }]
+        messages = await restoreProjectContext(input.sessionID, messages, options.projectContext, publish)
+        prompt = {
+          sessionID: input.sessionID,
+          text: input.text,
+          messages,
+          ...(options.tools ? { tools: options.tools } : {}),
+        }
         for (let step = 0; step < maxSteps; step++) {
           throwIfCancelled(runState)
           messages = await compactMessagesIfNeeded(messages, options, publish)
@@ -442,6 +457,9 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
 
         throw new Error("Coding Loop 超过最大模型步骤数")
       } catch (error) {
+        if (error instanceof HeadlessSkillInvocationError) {
+          await publish("skill.failed", { skillID: error.skillID, code: error.code })
+        }
         if (runState.cancelled || runState.controller.signal.aborted || error instanceof HeadlessCancellationError) {
           const current = await options.sessions.get(input.sessionID)
           const cancelled =
@@ -753,3 +771,14 @@ export type {
   ProjectContextSource,
 } from "./context.js"
 export { createHeadlessQuestionPort, HeadlessQuestionError } from "./context.js"
+export { createHeadlessSkillInvocationPort, HeadlessSkillInvocationError } from "./skill-invocation.js"
+export type {
+  HeadlessSkillAttachment,
+  HeadlessSkillInvocationErrorCode,
+  HeadlessSkillInvocationInput,
+  HeadlessSkillInvocationOptions,
+  HeadlessSkillInvocationPort,
+  HeadlessSkillMention,
+  HeadlessSkillPrompt,
+  HeadlessSkillSystemMessage,
+} from "./skill-invocation.js"

@@ -6,7 +6,7 @@
 
 ## 2. Skill Prompt 与权限生命周期
 
-- [ ] 2.1 增加 `@skill-id` 解析、Prompt attachment、Skill content 注入、`skill.use` 权限和取消语义；先写 RED，再通过 Core coding-loop 回归。
+- [x] 2.1 增加 `@skill-id` 解析、Prompt attachment、Skill content 注入、`skill.use` 权限和取消语义；先写 RED，再通过 Core coding-loop 回归。
 
 ## 3. Headless API 与客户端契约
 
