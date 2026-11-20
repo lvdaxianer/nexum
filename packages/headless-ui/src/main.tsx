@@ -398,8 +398,6 @@ function App() {
     const error = validateDirectoryInput(directory())
     setDirectoryError(error)
     if (error) {
-      setSessionCreateState("error")
-      setSessionCreateMessage(error)
       setNotice("Session 未创建，请先修正工作目录")
       focusField("session-directory")
       return false

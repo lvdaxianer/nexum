@@ -13,7 +13,7 @@ type DrawerProps = {
 }
 
 /**
- * 左侧抽屉：基于 Kobalte Dialog 的左侧面板，遮罩、焦点约束、ESC 关闭由组件库处理。
+ * 右侧抽屉：基于 Kobalte Dialog 的右侧面板，遮罩、焦点约束、ESC 关闭由组件库处理。
  * @author lvdaxianer@yeah.net
  * @date 2026-11-20
  */

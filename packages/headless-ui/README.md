@@ -9,7 +9,7 @@
 ## 目录职责
 
 - `src/main.tsx`：页面入口、聊天条目投影和控制面组件。
-- `src/drawer.tsx`：基于 Kobalte Dialog 的左侧抽屉组件。
+- `src/drawer.tsx`：基于 Kobalte Dialog 的右侧抽屉组件。
 - `src/styles.css`：页面样式。
 - `test/permission.smoke.spec.ts`：页面、聊天过程和权限流程的冒烟验证。
 - `vite.config.ts`：本地开发和构建配置。
