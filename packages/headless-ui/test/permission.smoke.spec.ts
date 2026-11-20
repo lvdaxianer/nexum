@@ -5,9 +5,12 @@ import { join, normalize } from "node:path"
 import { tmpdir } from "node:os"
 import {
   createHeadlessCodingLoop,
+  createHeadlessPermissionBroker,
   createHeadlessProjectContextPort,
   createHeadlessQuestionPort,
   createHeadlessSessionService,
+  createHeadlessSkillInvocationPort,
+  createHeadlessSkillRegistry,
   type ContextCompactionPort,
   type ModelPort,
   type PermissionPort,
@@ -291,6 +294,63 @@ describe.serial("Headless UI smoke", () => {
     await page.getByRole("button", { name: "Refresh runtime" }).click()
     await expect(page.getByText("Runtime state refreshed.", { exact: true })).toBeVisible()
   })
+})
+
+test.serial("runs the project metric Skill from page mention through Core permission", async () => {
+  browser = await chromium.launch({ headless: true })
+  const page = await browser.newPage()
+  const sessions = createHeadlessSessionService()
+  const eventHub = createHeadlessEventHub()
+  const permission = createHeadlessPermissionBroker()
+  const projectSkillRoot = normalize(join(import.meta.dir, "../../../skills"))
+  const registry = createHeadlessSkillRegistry({ roots: [projectSkillRoot] })
+  await registry.refresh()
+  const skills = createHeadlessSkillInvocationPort({ registry, permission })
+  const model: ModelPort = {
+    async *prompt(input) {
+      expect(
+        input.messages?.some(
+          (message) => message.role === "system" && message.sourceID === "skill:metric-view-lifecycle",
+        ),
+      ).toBe(true)
+      yield { type: "completed" }
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "unused" }
+    },
+  }
+  const codingLoop = createHeadlessCodingLoop({
+    model,
+    tool,
+    permission,
+    sessions,
+    events: eventHub,
+    skills,
+  })
+  apiServer = await startHeadlessServer({
+    port: 4097,
+    corsOrigins: [uiOrigin],
+    sessionService: sessions,
+    eventHub,
+    codingLoop,
+    permissionBroker: permission,
+    skillRegistry: registry,
+    skillInvocation: skills,
+  })
+  uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+  directory = await mkdtemp(join(tmpdir(), "headless-ui-project-skill-"))
+
+  await page.goto(uiOrigin)
+  await page.getByLabel("Working directory").fill(directory)
+  await page.getByRole("button", { name: /Create session/ }).click()
+  await page.getByPlaceholder("Describe the next coding move…").fill("@metric-view-lifecycle 验证指标视图")
+  await page.getByRole("button", { name: /^Send/ }).click()
+  await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible()
+  await page.getByRole("button", { name: "Allow once" }).click()
+  await expect(page.locator(".event-body strong").filter({ hasText: "skill.activated" })).toBeVisible()
+  await expect(page.locator(".pill-completed")).toBeVisible()
 })
 
 async function serveBuiltUi(request: Request): Promise<Response> {

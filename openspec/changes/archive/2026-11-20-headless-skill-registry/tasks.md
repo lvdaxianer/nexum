@@ -18,7 +18,7 @@
 
 ## 5. Skill 实测与集成收口
 
-- [ ] 5.1 使用 `metric-view-lifecycle` 做页面到 Core 的完整调用链测试，并运行 Skill 漂移检查和全部 100 个本地测试；完成安全审计、OpenSpec strict validate、最终页面验收、提交、合并和归档。
+- [x] 5.1 使用 `metric-view-lifecycle` 做页面到 Core 的完整调用链测试，并运行 Skill 漂移检查和全部 100 个本地测试；完成安全审计、OpenSpec strict validate、最终页面验收、提交、合并和归档。
 
 ## Workflow follow-up
 

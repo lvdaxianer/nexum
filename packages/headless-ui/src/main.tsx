@@ -384,6 +384,7 @@ function App() {
     try {
       setActiveSkillIDs(skillIDsFromText(prompt()))
       await client.experimental.headless.session.prompt({ sessionID: sessionID(), text: prompt().trim() })
+      await refreshPermissions()
       setPrompt("")
       setSessionStatus("running")
       setNotice("Prompt accepted. Waiting for the next runtime event.")
