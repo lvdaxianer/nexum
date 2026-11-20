@@ -17,3 +17,4 @@
 - [x] 3.1 更新 Headless UI README，说明聊天流、执行卡片和事件映射；验证：文档命令与当前页面结构一致
 - [x] 3.2 启动 Vite UI 与 Headless Server 做浏览器验收，执行类型检查、构建、smoke、OpenSpec strict 和代码审查；验证：全部命令通过且主流程可见
 - [x] 3.3 提交任务分支并合并回 `dev-v0.0.1`，清理任务 worktree；验证：主分支干净、任务分支已合并、服务可按 README 启动
+- [x] 3.4 将全部 smoke 流程纳入同一串行生命周期，避免共享浏览器和端口句柄竞争；验证：连续两次完整运行 `bun run --cwd packages/headless-ui test:smoke` 均通过
