@@ -12,6 +12,7 @@ import {
   HeadlessSessionError,
   HeadlessModelError,
   HeadlessModelProbeError,
+  HeadlessSkillInvocationError,
   createHeadlessConfiguredCodingLoop,
   createHeadlessModelProbePort,
   createOpenAICompatibleModelPort,
@@ -19,6 +20,8 @@ import {
   createHeadlessPermissionBroker,
   createHeadlessQuestionPort,
   createHeadlessSessionService,
+  createHeadlessSkillInvocationPort,
+  createHeadlessSkillRegistry,
   createHeadlessToolRegistry,
   type HeadlessCodingLoop,
   type HeadlessModelConfigStore,
@@ -27,7 +30,10 @@ import {
   type HeadlessModelProbeMode,
   type HeadlessModelProbePort,
   type HeadlessSessionService,
+  type HeadlessSkillInvocationPort,
+  type HeadlessSkillRegistry,
 } from "@opencode/headless-core"
+import { resolve } from "node:path"
 import { createHeadlessEventHub, type HeadlessEventHub } from "./events.ts"
 
 const DEFAULT_HOSTNAME = "127.0.0.1"
@@ -46,6 +52,9 @@ export interface HeadlessServerOptions {
   readonly questionPort?: HeadlessQuestionPort
   readonly modelProbe?: HeadlessModelProbePort
   readonly modelConfigStore?: HeadlessModelConfigStore
+  readonly skillRegistry?: HeadlessSkillRegistry
+  readonly skillInvocation?: HeadlessSkillInvocationPort
+  readonly skillRoots?: readonly string[]
   readonly eventHub?: HeadlessEventHub
   readonly corsOrigins?: readonly string[]
   readonly idleTimeout?: number
@@ -77,6 +86,13 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
   const eventHub = options.eventHub ?? createHeadlessEventHub()
   const permissionBroker = options.permissionBroker ?? createHeadlessPermissionBroker()
   const questionPort = options.questionPort ?? createHeadlessQuestionPort()
+  const skillRegistry =
+    options.skillRegistry ??
+    createHeadlessSkillRegistry({ roots: options.skillRoots ?? [resolve(process.cwd(), "skills")] })
+  await skillRegistry.refresh()
+  const skillInvocation =
+    options.skillInvocation ??
+    createHeadlessSkillInvocationPort({ registry: skillRegistry, permission: permissionBroker })
   const toolRegistry = createHeadlessToolRegistry({ sessions: sessionService })
   const corsOrigins = options.corsOrigins ?? DEFAULT_CORS_ORIGINS
   const codingLoop =
@@ -89,6 +105,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
       events: eventHub,
       tools: toolRegistry.definitions,
       question: questionPort,
+      skills: skillInvocation,
     })
   assertPort(port)
 
@@ -107,6 +124,8 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
         questionPort,
         modelConfigStore,
         modelProbe,
+        skillRegistry,
+        skillInvocation,
       )
       return withCorsHeaders(response, request, corsOrigins)
     },
@@ -166,6 +185,8 @@ async function handleRequest(
   questionPort?: HeadlessQuestionPort,
   modelConfigStore?: HeadlessModelConfigStore,
   modelProbe?: HeadlessModelProbePort,
+  skillRegistry?: HeadlessSkillRegistry,
+  skillInvocation?: HeadlessSkillInvocationPort,
 ): Promise<Response> {
   const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
   const url = new URL(request.url)
@@ -198,6 +219,50 @@ async function handleRequest(
       return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
     return probeModel(request, modelProbe, traceId)
+  }
+
+  if (url.pathname === "/api/experimental/headless/skills") {
+    if (request.method !== "GET") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return listSkills(skillRegistry, traceId)
+  }
+
+  if (url.pathname === "/api/experimental/headless/skills/register") {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return registerSkill(request, skillRegistry, traceId)
+  }
+
+  if (url.pathname === "/api/experimental/headless/skills/refresh") {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return refreshSkills(skillRegistry, traceId)
+  }
+
+  if (url.pathname === "/api/experimental/headless/skills/validate") {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return validateSkills(request, skillRegistry, traceId)
+  }
+
+  const skillActivateMatch = url.pathname.match(/^\/api\/experimental\/headless\/skills\/([^/]+)\/activate$/)
+  if (skillActivateMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return activateSkill(request, decodeURIComponent(skillActivateMatch[1]!), sessionService, skillInvocation, traceId)
+  }
+
+  const skillDetailMatch = url.pathname.match(/^\/api\/experimental\/headless\/skills\/([^/]+)$/)
+  if (skillDetailMatch) {
+    if (request.method !== "GET") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return detailSkill(decodeURIComponent(skillDetailMatch[1]!), skillRegistry, traceId)
   }
 
   const promptMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/prompt$/)
@@ -291,6 +356,192 @@ async function handleRequest(
   }
 
   return errorResponse(404, "HEADLESS_ROUTE_NOT_FOUND", "请求路径不存在", traceId)
+}
+
+/**
+ * 返回项目 Skill root 中的安全摘要。
+ *
+ * @param skillRegistry - Skill Registry
+ * @param traceId - 当前请求链路标识
+ * @returns Skill 摘要响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+async function listSkills(skillRegistry: HeadlessSkillRegistry | undefined, traceId: string): Promise<Response> {
+  if (!skillRegistry) return skillRegistryUnavailable(traceId)
+  return jsonResponse({ data: await skillRegistry.list() }, traceId)
+}
+
+/**
+ * 返回一个 Skill 的安全详情，不暴露宿主绝对路径。
+ *
+ * @param skillID - Skill ID
+ * @param skillRegistry - Skill Registry
+ * @param traceId - 当前请求链路标识
+ * @returns Skill 详情或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+async function detailSkill(
+  skillID: string,
+  skillRegistry: HeadlessSkillRegistry | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!skillRegistry) return skillRegistryUnavailable(traceId)
+  const summary = (await skillRegistry.list()).find((item) => item.id === skillID)
+  return summary
+    ? jsonResponse({ data: summary }, traceId)
+    : errorResponse(404, "HEADLESS_SKILL_NOT_FOUND", "Skill 不存在", traceId)
+}
+
+/**
+ * 按 ID 幂等注册已存在于配置 root 的 Skill。
+ *
+ * @param request - 注册请求
+ * @param skillRegistry - Skill Registry
+ * @param traceId - 当前请求链路标识
+ * @returns 注册后的 Skill 摘要
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+async function registerSkill(
+  request: Request,
+  skillRegistry: HeadlessSkillRegistry | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!skillRegistry) return skillRegistryUnavailable(traceId)
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload) || typeof payload.id !== "string" || payload.id.trim() === "") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "id 必须是非空字符串", traceId)
+  }
+  await skillRegistry.refresh()
+  return detailSkill(payload.id, skillRegistry, traceId)
+}
+
+/**
+ * 重新扫描配置 Skill root 并返回最新摘要。
+ *
+ * @param skillRegistry - Skill Registry
+ * @param traceId - 当前请求链路标识
+ * @returns 最新 Skill 摘要数组
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+async function refreshSkills(skillRegistry: HeadlessSkillRegistry | undefined, traceId: string): Promise<Response> {
+  if (!skillRegistry) return skillRegistryUnavailable(traceId)
+  await skillRegistry.refresh()
+  return listSkills(skillRegistry, traceId)
+}
+
+/**
+ * 校验全部 Skill 或指定 ID 的安全状态。
+ *
+ * @param request - 校验请求
+ * @param skillRegistry - Skill Registry
+ * @param traceId - 当前请求链路标识
+ * @returns 校验结果和安全摘要
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+async function validateSkills(
+  request: Request,
+  skillRegistry: HeadlessSkillRegistry | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!skillRegistry) return skillRegistryUnavailable(traceId)
+  const payload = await request.json().catch(() => ({}))
+  if (!isRecord(payload) || (payload.id !== undefined && typeof payload.id !== "string")) {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "id 必须是字符串", traceId)
+  }
+  const summaries = await skillRegistry.list()
+  const data = payload.id === undefined ? summaries : summaries.filter((item) => item.id === payload.id)
+  return jsonResponse(
+    { data: { valid: data.length > 0 && data.every((item) => item.status === "ready"), data } },
+    traceId,
+  )
+}
+
+/**
+ * 通过 Core Skill InvocationPort 激活指定 Skill。
+ *
+ * @param request - 激活请求
+ * @param skillID - 路径中的 Skill ID
+ * @param sessionService - Session 查询服务
+ * @param skillInvocation - Core Skill 激活端口
+ * @param traceId - 当前请求链路标识
+ * @returns Prompt attachment 或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+async function activateSkill(
+  request: Request,
+  skillID: string,
+  sessionService: HeadlessSessionService,
+  skillInvocation: HeadlessSkillInvocationPort | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!skillInvocation) return skillRegistryUnavailable(traceId)
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload) || typeof payload.sessionID !== "string" || typeof payload.text !== "string") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "sessionID 和 text 必须是字符串", traceId)
+  }
+  if (!(await sessionService.get(payload.sessionID))) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  try {
+    const text = ensureSkillMention(payload.text, skillID)
+    const prompt = await skillInvocation.resolve({ sessionID: payload.sessionID, text })
+    return jsonResponse({ data: prompt }, traceId)
+  } catch (error) {
+    return skillInvocationErrorResponse(error, traceId)
+  }
+}
+
+/**
+ * 确保显式激活接口不会意外激活其它 Skill。
+ *
+ * @param text - 调用方 Prompt
+ * @param skillID - 路径中的 Skill ID
+ * @returns 至少包含目标 Skill mention 的 Prompt
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+function ensureSkillMention(text: string, skillID: string): string {
+  return text.includes(`@${skillID}`) ? text : `${text.trim()} @${skillID}`.trim()
+}
+
+/**
+ * 把 Core Skill 激活错误转换为稳定 HTTP 错误。
+ *
+ * @param error - Core 端口抛出的错误
+ * @param traceId - 当前请求链路标识
+ * @returns caller-safe HTTP 错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+function skillInvocationErrorResponse(error: unknown, traceId: string): Response {
+  if (!(error instanceof HeadlessSkillInvocationError)) {
+    return errorResponse(500, "HEADLESS_SKILL_ACTIVATION_FAILED", "Skill 激活失败", traceId)
+  }
+  if (error.code === "skill_not_found") {
+    return errorResponse(404, "HEADLESS_SKILL_NOT_FOUND", error.message, traceId)
+  }
+  if (error.code === "skill_not_ready") {
+    return errorResponse(409, "HEADLESS_SKILL_NOT_READY", error.message, traceId)
+  }
+  return errorResponse(409, "HEADLESS_SKILL_PERMISSION_DENIED", error.message, traceId)
+}
+
+/**
+ * 统一返回 Skill Registry 未配置的服务错误。
+ *
+ * @param traceId - 当前请求链路标识
+ * @returns 服务不可用响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+function skillRegistryUnavailable(traceId: string): Response {
+  return errorResponse(503, "HEADLESS_SKILL_REGISTRY_NOT_CONFIGURED", "Headless Skill Registry 尚未配置", traceId)
 }
 
 /** 返回所有可供页面恢复的 Headless Session。 */

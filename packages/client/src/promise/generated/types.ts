@@ -4996,6 +4996,98 @@ export type ExperimentalHeadlessSessionListOutput = {
   data: Array<{ id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }>
 }["data"]
 
+export type ExperimentalHeadlessSkillListOutput = {
+  data: Array<{
+    id: string
+    name: string
+    description: string
+    version?: string | undefined
+    digest: string
+    fileCount: number
+    files: Array<string>
+    status: "ready" | "invalid" | "conflict"
+    diagnostics: Array<string>
+  }>
+}["data"]
+
+export type ExperimentalHeadlessSkillDetailInput = { readonly skillID: string }
+
+export type ExperimentalHeadlessSkillDetailOutput = {
+  data: {
+    id: string
+    name: string
+    description: string
+    version?: string | undefined
+    digest: string
+    fileCount: number
+    files: Array<string>
+    status: "ready" | "invalid" | "conflict"
+    diagnostics: Array<string>
+  }
+}["data"]
+
+export type ExperimentalHeadlessSkillRegisterInput = { readonly id: string }
+
+export type ExperimentalHeadlessSkillRegisterOutput = {
+  data: {
+    id: string
+    name: string
+    description: string
+    version?: string | undefined
+    digest: string
+    fileCount: number
+    files: Array<string>
+    status: "ready" | "invalid" | "conflict"
+    diagnostics: Array<string>
+  }
+}["data"]
+
+export type ExperimentalHeadlessSkillRefreshOutput = {
+  data: Array<{
+    id: string
+    name: string
+    description: string
+    version?: string | undefined
+    digest: string
+    fileCount: number
+    files: Array<string>
+    status: "ready" | "invalid" | "conflict"
+    diagnostics: Array<string>
+  }>
+}["data"]
+
+export type ExperimentalHeadlessSkillValidateInput = { readonly id?: string | undefined }
+
+export type ExperimentalHeadlessSkillValidateOutput = {
+  data: {
+    valid: boolean
+    data: Array<{
+      id: string
+      name: string
+      description: string
+      version?: string | undefined
+      digest: string
+      fileCount: number
+      files: Array<string>
+      status: "ready" | "invalid" | "conflict"
+      diagnostics: Array<string>
+    }>
+  }
+}["data"]
+
+export type ExperimentalHeadlessSkillActivateInput = {
+  readonly skillID: string
+  readonly sessionID: string
+  readonly text: string
+}
+
+export type ExperimentalHeadlessSkillActivateOutput = {
+  data: {
+    skills: Array<{ id: string; name: string; text: string; mention: { start: number; end: number; text: string } }>
+    systemMessages: Array<{ role: "system"; content: string; sourceID: string }>
+  }
+}["data"]
+
 export type ExperimentalHeadlessSessionPromptInput = { readonly sessionID: string; readonly text: string }
 
 export type ExperimentalHeadlessSessionPromptOutput = { data: { status: "accepted" } }["data"]
@@ -5046,6 +5138,8 @@ export type ExperimentalHeadlessSessionEventsOutput = {
     | "context.compaction.completed"
     | "context.compaction.failed"
     | "context.project.loaded"
+    | "skill.activated"
+    | "skill.failed"
     | "session.completed"
     | "session.failed"
     | "session.cancelled"

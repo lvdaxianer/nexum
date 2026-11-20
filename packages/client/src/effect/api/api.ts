@@ -2901,6 +2901,111 @@ export type ExperimentalHeadlessSessionListOperation<E = never> = () => Effect.E
   E
 >
 
+export type ExperimentalHeadlessSkillListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly name: string
+  readonly description: string
+  readonly version?: string | undefined
+  readonly digest: string
+  readonly fileCount: number
+  readonly files: ReadonlyArray<string>
+  readonly status: "ready" | "invalid" | "conflict"
+  readonly diagnostics: ReadonlyArray<string>
+}>
+export type ExperimentalHeadlessSkillListOperation<E = never> = () => Effect.Effect<
+  ExperimentalHeadlessSkillListOutput,
+  E
+>
+
+export type ExperimentalHeadlessSkillDetailInput = { readonly skillID: string }
+export type ExperimentalHeadlessSkillDetailOutput = {
+  readonly id: string
+  readonly name: string
+  readonly description: string
+  readonly version?: string | undefined
+  readonly digest: string
+  readonly fileCount: number
+  readonly files: ReadonlyArray<string>
+  readonly status: "ready" | "invalid" | "conflict"
+  readonly diagnostics: ReadonlyArray<string>
+}
+export type ExperimentalHeadlessSkillDetailOperation<E = never> = (
+  input: ExperimentalHeadlessSkillDetailInput,
+) => Effect.Effect<ExperimentalHeadlessSkillDetailOutput, E>
+
+export type ExperimentalHeadlessSkillRegisterInput = { readonly id: string }
+export type ExperimentalHeadlessSkillRegisterOutput = {
+  readonly id: string
+  readonly name: string
+  readonly description: string
+  readonly version?: string | undefined
+  readonly digest: string
+  readonly fileCount: number
+  readonly files: ReadonlyArray<string>
+  readonly status: "ready" | "invalid" | "conflict"
+  readonly diagnostics: ReadonlyArray<string>
+}
+export type ExperimentalHeadlessSkillRegisterOperation<E = never> = (
+  input: ExperimentalHeadlessSkillRegisterInput,
+) => Effect.Effect<ExperimentalHeadlessSkillRegisterOutput, E>
+
+export type ExperimentalHeadlessSkillRefreshOutput = ReadonlyArray<{
+  readonly id: string
+  readonly name: string
+  readonly description: string
+  readonly version?: string | undefined
+  readonly digest: string
+  readonly fileCount: number
+  readonly files: ReadonlyArray<string>
+  readonly status: "ready" | "invalid" | "conflict"
+  readonly diagnostics: ReadonlyArray<string>
+}>
+export type ExperimentalHeadlessSkillRefreshOperation<E = never> = () => Effect.Effect<
+  ExperimentalHeadlessSkillRefreshOutput,
+  E
+>
+
+export type ExperimentalHeadlessSkillValidateInput = { readonly id?: string | undefined }
+export type ExperimentalHeadlessSkillValidateOutput = {
+  readonly valid: boolean
+  readonly data: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+    readonly description: string
+    readonly version?: string | undefined
+    readonly digest: string
+    readonly fileCount: number
+    readonly files: ReadonlyArray<string>
+    readonly status: "ready" | "invalid" | "conflict"
+    readonly diagnostics: ReadonlyArray<string>
+  }>
+}
+export type ExperimentalHeadlessSkillValidateOperation<E = never> = (
+  input?: ExperimentalHeadlessSkillValidateInput,
+) => Effect.Effect<ExperimentalHeadlessSkillValidateOutput, E>
+
+export type ExperimentalHeadlessSkillActivateInput = {
+  readonly skillID: string
+  readonly sessionID: string
+  readonly text: string
+}
+export type ExperimentalHeadlessSkillActivateOutput = {
+  readonly skills: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+    readonly text: string
+    readonly mention: { readonly start: number; readonly end: number; readonly text: string }
+  }>
+  readonly systemMessages: ReadonlyArray<{
+    readonly role: "system"
+    readonly content: string
+    readonly sourceID: string
+  }>
+}
+export type ExperimentalHeadlessSkillActivateOperation<E = never> = (
+  input: ExperimentalHeadlessSkillActivateInput,
+) => Effect.Effect<ExperimentalHeadlessSkillActivateOutput, E>
+
 export type ExperimentalHeadlessSessionPromptInput = { readonly sessionID: string; readonly text: string }
 export type ExperimentalHeadlessSessionPromptOutput = { readonly status: "accepted" }
 export type ExperimentalHeadlessSessionPromptOperation<E = never> = (
@@ -2958,6 +3063,8 @@ export type ExperimentalHeadlessSessionEventsOutput = {
     | "context.compaction.completed"
     | "context.compaction.failed"
     | "context.project.loaded"
+    | "skill.activated"
+    | "skill.failed"
     | "session.completed"
     | "session.failed"
     | "session.cancelled"
@@ -3012,6 +3119,14 @@ export interface ExperimentalHeadlessApi<E = never> {
       readonly list: ExperimentalHeadlessSessionPermissionListOperation<E>
       readonly reply: ExperimentalHeadlessSessionPermissionReplyOperation<E>
     }
+  }
+  readonly skill: {
+    readonly list: ExperimentalHeadlessSkillListOperation<E>
+    readonly detail: ExperimentalHeadlessSkillDetailOperation<E>
+    readonly register: ExperimentalHeadlessSkillRegisterOperation<E>
+    readonly refresh: ExperimentalHeadlessSkillRefreshOperation<E>
+    readonly validate: ExperimentalHeadlessSkillValidateOperation<E>
+    readonly activate: ExperimentalHeadlessSkillActivateOperation<E>
   }
 }
 

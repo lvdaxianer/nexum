@@ -13,6 +13,7 @@ import {
   QuestionNotFoundError,
   ServiceUnavailableError,
   SessionNotFoundError,
+  SkillNotFoundError,
   UnauthorizedError,
 } from "../errors.js"
 
@@ -33,6 +34,92 @@ export const HeadlessSessionCreatePayload = Schema.Struct({
 
 /** Headless Prompt 请求。 */
 export const HeadlessPromptPayload = Schema.Struct({
+  text: Schema.String,
+})
+
+/**
+ * Headless Skill 的安全生命周期状态。
+ */
+export const HeadlessSkillStatus = Schema.Literals(["ready", "invalid", "conflict"])
+
+/**
+ * Headless Skill 的 mention 范围。
+ */
+export const HeadlessSkillMention = Schema.Struct({
+  start: Schema.Number,
+  end: Schema.Number,
+  text: Schema.String,
+})
+
+/**
+ * Headless Skill 的安全摘要。
+ */
+export const HeadlessSkill = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  description: Schema.String,
+  version: Schema.optional(Schema.String),
+  digest: Schema.String,
+  fileCount: Schema.Number,
+  files: Schema.Array(Schema.String),
+  status: HeadlessSkillStatus,
+  diagnostics: Schema.Array(Schema.String),
+})
+
+/**
+ * Headless Skill 激活后的 Prompt 附件。
+ */
+export const HeadlessSkillAttachment = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  text: Schema.String,
+  mention: HeadlessSkillMention,
+})
+
+/**
+ * Headless Skill 注入模型的系统消息。
+ */
+export const HeadlessSkillSystemMessage = Schema.Struct({
+  role: Schema.Literal("system"),
+  content: Schema.String,
+  sourceID: Schema.String,
+})
+
+/**
+ * Headless Skill 激活返回的 Prompt 增量。
+ */
+export const HeadlessSkillPrompt = Schema.Struct({
+  skills: Schema.Array(HeadlessSkillAttachment),
+  systemMessages: Schema.Array(HeadlessSkillSystemMessage),
+})
+
+/**
+ * Headless Skill 注册请求。
+ */
+export const HeadlessSkillRegisterPayload = Schema.Struct({
+  id: Schema.String,
+})
+
+/**
+ * Headless Skill 校验请求。
+ */
+export const HeadlessSkillValidatePayload = Schema.Struct({
+  id: Schema.optional(Schema.String),
+})
+
+/**
+ * Headless Skill 校验返回体。
+ */
+export const HeadlessSkillValidation = Schema.Struct({
+  valid: Schema.Boolean,
+  data: Schema.Array(HeadlessSkill),
+})
+
+/**
+ * Headless Skill 显式激活请求。
+ */
+export const HeadlessSkillActivatePayload = Schema.Struct({
+  sessionID: Schema.String,
   text: Schema.String,
 })
 
@@ -109,6 +196,8 @@ export const HeadlessEventType = Schema.Literals([
   "context.compaction.completed",
   "context.compaction.failed",
   "context.project.loaded",
+  "skill.activated",
+  "skill.failed",
   "session.completed",
   "session.failed",
   "session.cancelled",
@@ -232,6 +321,84 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
         identifier: "experimental.headless.session.list",
         summary: "List headless sessions",
         description: "List Session IDs, working directories, and lifecycle status for page recovery.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("experimental.headless.skill.list", "/api/experimental/headless/skills", {
+      success: Schema.Struct({ data: Schema.Array(HeadlessSkill) }),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.skill.list",
+        summary: "List headless skills",
+        description: "List safe Skill summaries without exposing host paths or credentials.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("experimental.headless.skill.detail", "/api/experimental/headless/skills/:skillID", {
+      params: { skillID: Schema.String },
+      success: Schema.Struct({ data: HeadlessSkill }),
+      error: SkillNotFoundError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.skill.detail",
+        summary: "Get a headless skill",
+        description: "Get one safe Skill summary by its stable ID.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("experimental.headless.skill.register", "/api/experimental/headless/skills/register", {
+      payload: HeadlessSkillRegisterPayload,
+      success: Schema.Struct({ data: HeadlessSkill }),
+      error: [InvalidRequestError, SkillNotFoundError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.skill.register",
+        summary: "Register an existing headless skill",
+        description: "Refresh the configured project roots and idempotently admit an existing Skill ID.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("experimental.headless.skill.refresh", "/api/experimental/headless/skills/refresh", {
+      success: Schema.Struct({ data: Schema.Array(HeadlessSkill) }),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.skill.refresh",
+        summary: "Refresh headless skills",
+        description: "Rescan the configured project Skill roots and return safe summaries.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("experimental.headless.skill.validate", "/api/experimental/headless/skills/validate", {
+      payload: HeadlessSkillValidatePayload,
+      success: Schema.Struct({ data: HeadlessSkillValidation }),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.skill.validate",
+        summary: "Validate headless skills",
+        description: "Return safe validation status for all Skills or one requested ID.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "experimental.headless.skill.activate",
+      "/api/experimental/headless/skills/:skillID/activate",
+      {
+        params: { skillID: Schema.String },
+        payload: HeadlessSkillActivatePayload,
+        success: Schema.Struct({ data: HeadlessSkillPrompt }),
+        error: [InvalidRequestError, SessionNotFoundError, SkillNotFoundError],
+      },
+    ).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.skill.activate",
+        summary: "Activate a headless skill",
+        description: "Resolve one Skill mention for a Session through the existing PermissionPort.",
       }),
     ),
   )
@@ -397,3 +564,13 @@ export type HeadlessEventType = typeof HeadlessEventType.Type
 export type HeadlessModelProbeMode = typeof HeadlessModelProbeMode.Type
 export type HeadlessModelProbePayload = typeof HeadlessModelProbePayload.Type
 export type HeadlessModelProbeResult = typeof HeadlessModelProbeResult.Type
+export type HeadlessSkillStatus = typeof HeadlessSkillStatus.Type
+export type HeadlessSkill = typeof HeadlessSkill.Type
+export type HeadlessSkillMention = typeof HeadlessSkillMention.Type
+export type HeadlessSkillAttachment = typeof HeadlessSkillAttachment.Type
+export type HeadlessSkillSystemMessage = typeof HeadlessSkillSystemMessage.Type
+export type HeadlessSkillPrompt = typeof HeadlessSkillPrompt.Type
+export type HeadlessSkillRegisterPayload = typeof HeadlessSkillRegisterPayload.Type
+export type HeadlessSkillValidatePayload = typeof HeadlessSkillValidatePayload.Type
+export type HeadlessSkillValidation = typeof HeadlessSkillValidation.Type
+export type HeadlessSkillActivatePayload = typeof HeadlessSkillActivatePayload.Type
