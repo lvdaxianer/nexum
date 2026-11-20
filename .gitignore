@@ -4,8 +4,13 @@ node_modules
 .env
 .env.local
 .idea
-.vscode
 .codex
+.claude/
+.agents/skills/
+.github/
+.husky/
+.opencode/
+.vscode/
 *~
 playground
 tmp
