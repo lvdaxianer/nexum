@@ -34,8 +34,15 @@ bun run --cwd packages/headless-ui dev
 3. 在 Runtime timeline 查看事件、刷新运行时状态、重连事件流或取消当前运行。
 4. 在 Permission queue 处理工具权限，在 Question queue 补充模型所需信息；允许、拒绝、回答和取消都会回到同一个 Session。
 5. 在 Context 查看压缩状态、最近消息和项目上下文来源。
+6. 在 Skill Registry 管理项目级 Skill，刷新或验证 `metric-view-lifecycle` 等 Skill；在 Prompt 中输入 `@skill-id` 可触发权限审批，批准后由 Core 注入 `SKILL.md` 系统提示并发布激活事件。
 
 页面只依赖 Headless Client/Server，不导入 Core，也不会把 credential 原文放入 DOM、SSE 或浏览器存储。
+
+## Skill Registry
+
+Skill Registry 是 UI 无关的 Core 能力。它从项目 Skill root 发现目录，校验 manifest、路径边界、摘要和 `SKILL.md` 完整性；Server 暴露 list/detail/register/refresh/validate/activate 管理接口，生成客户端保持同一协议契约。
+
+页面层只负责展示注册状态、验证结果、激活状态和 `@` 自动补全。Prompt 进入 Coding Loop 后，Skill Invocation Port 解析 mention、去重并等待 `skill.use` 权限；获得批准后把 Skill 内容作为带稳定 `sourceID` 的 system message 注入模型上下文，并通过 SSE 发布 `skill.activated` 或 `skill.failed`。因此任何其他 UI 只要实现同一 Headless Client 契约，即可复用 Registry、权限和 Coding Loop。
 
 ## 真实模型 Smoke
 
@@ -60,7 +67,7 @@ bun test --cwd packages/client test/headless-generated.test.ts
 bun run --cwd packages/headless-ui typecheck:tsc
 bun run --cwd packages/headless-ui build
 bun run --cwd packages/headless-ui test:smoke
-bunx openspec validate headless-control-plane --strict
+bunx openspec validate headless-skill-registry --strict
 ```
 
 验收重点：
