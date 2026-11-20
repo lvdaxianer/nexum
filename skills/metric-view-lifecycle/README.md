@@ -4,6 +4,10 @@
 
 这个 Skill 根据业务需求、已登记的 DDL 和本体/非本体分类，完成指标视图发现、生成、测试、ReAct 修复、空结果结构回退、保存和复核。
 
+## 在 Headless Core 中的边界
+
+该 Skill 是可注册的领域能力包：Core 负责发现、契约校验、权限门禁、上下文注入和调用事件；本目录负责指标视图生命周期的领域规则、参考资料和本地验证脚本。Skill 不绕过 Core 直接执行未登记的工具、数据库写操作或权限决策。
+
 ## 安装
 
 安装时必须复制整个 `metric-view-lifecycle` 目录，不能只复制 `SKILL.md`；`references/`、`scripts/` 和 `evals/` 是运行和验证所需的配套内容。
@@ -12,12 +16,12 @@
 
 把 Skill 安装到当前 AI 工具实际加载的全局目录：
 
-| 使用环境 | 目标目录示例 |
-| --- | --- |
+| 使用环境               | 目标目录示例                     |
+| ---------------------- | -------------------------------- |
 | Codex/Agent skill root | `/Users/<用户名>/.agents/skills` |
-| Claude Code | `/Users/<用户名>/.claude/skills` |
-| Codex CLI | `/Users/<用户名>/.codex/skills` |
-| 仅当前项目使用 | `<项目根目录>/.claude/skills` |
+| Claude Code            | `/Users/<用户名>/.claude/skills` |
+| Codex CLI              | `/Users/<用户名>/.codex/skills`  |
+| 仅当前项目使用         | `<项目根目录>/.claude/skills`    |
 
 如果不确定当前工具使用哪个目录，先查看已有 Skill 的位置；不要同时复制到多个目录，以免加载到不同版本。
 
