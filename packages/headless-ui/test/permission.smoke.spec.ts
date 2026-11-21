@@ -28,6 +28,7 @@ let uiServer: Bun.Server<undefined> | undefined
 let upstream: Bun.Server<undefined> | undefined
 let directory: string | undefined
 let skillRoot: string | undefined
+const extraDirectories: string[] = []
 
 afterEach(async () => {
   await browser?.close()
@@ -35,6 +36,7 @@ afterEach(async () => {
   await upstream?.stop(true)
   await uiServer?.stop(true)
   if (directory) await rm(directory, { recursive: true, force: true })
+  await Promise.all(extraDirectories.splice(0).map((item) => rm(item, { recursive: true, force: true })))
   apiServer = undefined
   browser = undefined
   upstream = undefined
@@ -65,6 +67,37 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByRole("heading", { name: "Skills" })).toBeVisible()
   })
 
+  test.serial("keeps name and directory attached to each session", async () => {
+    browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage()
+    apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    const firstDirectory = await mkdtemp(join(tmpdir(), "headless-ui-session-a-"))
+    const secondDirectory = await mkdtemp(join(tmpdir(), "headless-ui-session-b-"))
+    directory = firstDirectory
+    extraDirectories.push(secondDirectory)
+
+    await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("Session 名称").fill("前端应用")
+    await page.getByLabel("工作目录").fill(firstDirectory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.getByRole("button", { name: /前端应用/ })).toBeVisible()
+    await expect(page.locator(".current-session-directory")).toHaveText(firstDirectory)
+
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(secondDirectory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.locator(".current-session-directory")).toHaveText(secondDirectory)
+    await page.getByRole("button", { name: /前端应用/ }).click()
+    await expect(page.locator(".current-session-directory")).toHaveText(firstDirectory)
+
+    await page.getByRole("button", { name: "编辑名称" }).click()
+    await page.getByRole("dialog", { name: "编辑 Session 名称" }).getByLabel("Session 名称").fill("前端重命名")
+    await page.getByRole("button", { name: "保存名称" }).click()
+    await expect(page.getByRole("button", { name: /前端重命名/ })).toBeVisible()
+  })
+
   test.serial("validates model and workspace inputs before sending requests", async () => {
     browser = await chromium.launch({ headless: true })
     const page = await browser.newPage()
@@ -88,8 +121,9 @@ describe.serial("Headless UI smoke", () => {
     expect(modelUpdateCalls).toBe(0)
     await closeDrawer(page)
 
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill("relative/project")
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await expect(page.locator("#session-directory-error")).toHaveText(
       "请输入服务器上的绝对路径，例如 /workspace/project",
     )
@@ -103,12 +137,13 @@ describe.serial("Headless UI smoke", () => {
 
     const invalidDirectory = "/tmp/headless-ui-directory-does-not-exist"
     await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(invalidDirectory)
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
 
     await expect(page.locator("#session-directory-error")).toHaveText("工作目录不存在或不可访问")
     await expect(page.getByLabel("工作目录")).toHaveValue(invalidDirectory)
-    await expect(page.getByRole("button", { name: /创建新 Session/ })).toBeEnabled()
+    await expect(page.getByRole("button", { name: "保存并创建 Session" })).toBeEnabled()
   })
 
   test.serial("prevents duplicate session creation while the directory check is pending", async () => {
@@ -128,8 +163,9 @@ describe.serial("Headless UI smoke", () => {
     directory = await mkdtemp(join(tmpdir(), "headless-ui-create-pending-"))
 
     await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(directory)
-    await page.getByRole("button", { name: /创建新 Session/ }).dblclick()
+    await page.getByRole("button", { name: "保存并创建 Session" }).dblclick()
     await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
     expect(validations).toBe(1)
   })
@@ -142,8 +178,9 @@ describe.serial("Headless UI smoke", () => {
     directory = await mkdtemp(join(tmpdir(), "headless-ui-cancel-"))
 
     await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(directory)
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
 
     await page.getByRole("button", { name: "取消运行" }).click()
@@ -168,6 +205,7 @@ describe.serial("Headless UI smoke", () => {
     const firstDirectory = await mkdtemp(join(tmpdir(), "headless-ui-race-a-"))
     const secondDirectory = await mkdtemp(join(tmpdir(), "headless-ui-race-b-"))
     directory = firstDirectory
+    extraDirectories.push(secondDirectory)
 
     let stateCalls = 0
     await page.route("**/api/experimental/headless/session/*/state", async (route) => {
@@ -177,18 +215,20 @@ describe.serial("Headless UI smoke", () => {
     })
 
     await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(firstDirectory)
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
     const firstID = await page.locator(".session-id").innerText()
 
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(secondDirectory)
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await expect(page.locator(".session-id")).not.toHaveText(firstID)
     const secondID = await page.locator(".session-id").innerText()
 
-    await page.locator(".session-item", { hasText: firstID.slice(0, 8) }).click()
-    await page.locator(".session-item", { hasText: secondID.slice(0, 8) }).click()
+    await page.locator(".session-item", { hasText: firstDirectory }).click()
+    await page.locator(".session-item", { hasText: secondDirectory }).click()
     await page.waitForTimeout(700)
 
     expect(stateCalls).toBe(2)
@@ -236,8 +276,9 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByText("模型 fixture-model 已就绪")).toBeVisible()
     await closeDrawer(page)
 
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(directory)
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
 
     await page.getByPlaceholder("描述下一步 Coding 任务…").fill("写入 denied.txt")
@@ -294,8 +335,9 @@ describe.serial("Headless UI smoke", () => {
       await page.getByLabel("凭据值").fill("fixture-secret")
       await page.getByRole("button", { name: "保存模型配置" }).click()
       await closeDrawer(page)
+      await page.getByRole("button", { name: "新建 Session" }).click()
       await page.getByLabel("工作目录").fill(directory)
-      await page.getByRole("button", { name: /创建新 Session/ }).click()
+      await page.getByRole("button", { name: "保存并创建 Session" }).click()
       await page.getByPlaceholder("描述下一步 Coding 任务…").fill("查看环境")
       await page.getByRole("button", { name: /发送 Prompt/ }).click()
       await page.getByRole("button", { name: "允许一次" }).click()
@@ -383,8 +425,9 @@ describe.serial("Headless UI smoke", () => {
     directory = await mkdtemp(join(tmpdir(), "headless-ui-question-"))
 
     await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(directory)
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await page.getByPlaceholder("描述下一步 Coding 任务…").fill("先确认目录，再读取 README")
     await page.getByRole("button", { name: /发送 Prompt/ }).click()
     await expect(page.getByText("选择目录", { exact: true })).toBeVisible()
@@ -417,8 +460,9 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByText("example-skill", { exact: true }).first()).toBeVisible()
     await closeDrawer(page)
     directory = await mkdtemp(join(tmpdir(), "headless-ui-skill-session-"))
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(directory)
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
     await page.getByPlaceholder("描述下一步 Coding 任务…").fill("@exa")
     await expect(page.getByRole("option", { name: "@example-skill" })).toBeVisible()
@@ -454,8 +498,9 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByText("Function Calling：pass", { exact: true })).toBeVisible()
     await closeDrawer(page)
 
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(directory)
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
     const activeSession = await page.locator(".session-id").innerText()
 
@@ -518,8 +563,9 @@ describe.serial("Headless UI smoke", () => {
     directory = await mkdtemp(join(tmpdir(), "headless-ui-project-skill-"))
 
     await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(directory)
-    await page.getByRole("button", { name: /创建新 Session/ }).click()
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await page.getByPlaceholder("描述下一步 Coding 任务…").fill("@example-skill 验证 Skill 激活")
     await page.getByRole("button", { name: /发送 Prompt/ }).click()
     await expect(page.getByRole("button", { name: "允许一次" })).toBeVisible()

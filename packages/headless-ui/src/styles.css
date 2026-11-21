@@ -469,6 +469,7 @@ input[aria-invalid="true"]:focus {
 
 .session-item {
   display: flex;
+  min-width: 0;
   justify-content: space-between;
   align-items: center;
   min-height: 36px;
@@ -479,6 +480,51 @@ input[aria-invalid="true"]:focus {
   font-family: "IBM Plex Mono", monospace;
   font-size: 11px;
   text-align: left;
+}
+
+.session-item-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.session-item-name,
+.session-item-directory {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-item-name {
+  color: #30465d;
+  font-family: "Manrope", "PingFang SC", sans-serif;
+  font-size: 12px;
+}
+
+.session-item-directory {
+  max-width: 190px;
+  color: #8b98a8;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+
+.session-item-status {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  color: #8b98a8;
+  font-size: 10px;
+}
+
+.session-item-status-running {
+  color: #a76716;
+}
+
+.session-item-status-completed {
+  color: #1c8a73;
+}
+
+.session-empty {
+  margin-top: 13px;
 }
 
 .session-item small {
@@ -829,6 +875,21 @@ input[aria-invalid="true"]:focus {
   font-family: "IBM Plex Mono", monospace;
   font-size: 12px;
   word-break: break-all;
+}
+
+.session-current-name {
+  color: #1c2a3c;
+  font-size: 15px;
+}
+
+.current-session-directory {
+  max-width: min(48vw, 520px);
+  overflow: hidden;
+  color: #718197;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pill {
@@ -1664,6 +1725,10 @@ footer {
   .session-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .current-session-directory {
+    max-width: 100%;
   }
 
   .topbar-meta,
