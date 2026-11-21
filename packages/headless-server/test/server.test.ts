@@ -343,7 +343,7 @@ test("composes the default coding loop when no runtime is injected", async () =>
   const modelResponse = await fetch(new URL("/api/experimental/headless/model", server.url), {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ baseUrl: upstream.url.toString().replace(/\/$/, ""), model: "poc-model" }),
+    body: JSON.stringify({ baseUrl: upstream.url.toString().replace(/\/$/, ""), model: "poc-model", credential: "test-credential" }),
   })
   expect(modelResponse.status).toBe(200)
 
@@ -427,7 +427,7 @@ test("completes a function-calling task after an allow-once permission reply", a
   const modelResponse = await fetch(new URL("/api/experimental/headless/model", server.url), {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ baseUrl: upstream.url.toString().replace(/\/$/, ""), model: "fixture-model" }),
+    body: JSON.stringify({ baseUrl: upstream.url.toString().replace(/\/$/, ""), model: "fixture-model", credential: "test-credential" }),
   })
   expect(modelResponse.status).toBe(200)
 

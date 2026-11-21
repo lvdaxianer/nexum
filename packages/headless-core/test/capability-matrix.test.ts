@@ -16,7 +16,7 @@ import {
 
 test("rejects malformed OpenAI Function Calling arguments without emitting a tool chunk", async () => {
   const config = createHeadlessModelConfigStore()
-  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model" })
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
   const model = createOpenAICompatibleModelPort({
     config,
     fetch: async () =>
@@ -48,7 +48,7 @@ test("rejects malformed OpenAI Function Calling arguments without emitting a too
 
 test("rejects malformed Function Calling arguments with a stable model error", async () => {
   const config = createHeadlessModelConfigStore()
-  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model" })
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
   const model = createOpenAICompatibleModelPort({
     config,
     fetch: async () =>
