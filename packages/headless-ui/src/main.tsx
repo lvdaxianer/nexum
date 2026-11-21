@@ -1,8 +1,9 @@
-import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { render } from "solid-js/web"
 import { OpenCode } from "@opencode/client"
 import { Drawer } from "./drawer"
 import { ConfirmDialog } from "./confirm-dialog"
+import { MarkdownView } from "./markdown"
 import type {
   ExperimentalHeadlessModelProbeOutput,
   ExperimentalHeadlessSessionEventsOutput,
@@ -77,6 +78,7 @@ function App() {
   const [modelDrawerOpen, setModelDrawerOpen] = createSignal(false)
   const [sessionDrawerOpen, setSessionDrawerOpen] = createSignal(false)
   const [sessionEditDrawerOpen, setSessionEditDrawerOpen] = createSignal(false)
+  const [chatView, setChatView] = createSignal<"chat" | "events">("chat")
   const [sessionEditName, setSessionEditName] = createSignal("")
   const [skillsDrawerOpen, setSkillsDrawerOpen] = createSignal(false)
   const [skills, setSkills] = createSignal<SkillSummary[]>([])
@@ -92,10 +94,21 @@ function App() {
   const [renameBusy, setRenameBusy] = createSignal(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
   let streamController: AbortController | undefined
+  let conversationBody: HTMLDivElement | undefined
+  let permissionsSection: HTMLElement | undefined
+  let questionsSection: HTMLElement | undefined
   let promptSequence = 0
   let sessionSelectSequence = 0
   const eventCursors = new Map<string, string>()
   const seenEventKeys = new Set<string>()
+
+  /** Agent 回答期间（运行中/等待权限/等待回答）锁定输入，避免打断本轮执行。 */
+  const inputLocked = () =>
+    ["running", "awaiting permission", "awaiting question"].includes(sessionStatus())
+
+  function scrollRailSection(element: HTMLElement | undefined) {
+    element?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+  }
 
   onMount(async () => {
     try {
@@ -114,6 +127,22 @@ function App() {
   })
 
   onCleanup(() => streamController?.abort())
+
+  /**
+   * 新消息或事件到达时把会话区贴到底部；用户向上翻阅超过阈值时停止跟随，回到底部后恢复。
+   */
+  let followTail = true
+  createEffect(() => {
+    const items = chatItems()
+    const eventCount = events().length
+    const body = conversationBody
+    if (!body || items.length + eventCount === 0) return
+    if (followTail) body.scrollTop = body.scrollHeight
+  })
+
+  function handleConversationScroll(element: HTMLDivElement) {
+    followTail = element.scrollHeight - element.scrollTop - element.clientHeight < 96
+  }
 
   /**
    * 校验模型配置表单，并返回字段级错误。
@@ -680,7 +709,7 @@ function App() {
   }
 
   async function sendPrompt() {
-    if (!sessionID() || !prompt().trim()) return
+    if (!sessionID() || !prompt().trim() || inputLocked()) return
     setBusy(true)
     seenEventKeys.clear()
     const text = prompt().trim()
@@ -1062,37 +1091,66 @@ function App() {
 
       <section class="app-main" id="workspace">
         <header class="topbar">
-          <div>
+          <div class="topbar-copy">
             <p class="breadcrumb">内部演示 / Headless Core</p>
-            <h1>Agent 工作台</h1>
+            <div class="topbar-title">
+              <h1>Agent 工作台</h1>
+              <Show when={sessionID()}>
+                <span class="topbar-sep">·</span>
+                <strong class="topbar-session">{sessionName()}</strong>
+                <span class={`pill pill-${sessionStatus()}`}>{sessionStatus()}</span>
+              </Show>
+            </div>
+            <Show when={sessionID()}>
+              <p class="topbar-sub">
+                <span class="current-session-directory" title={directory()}>{directory()}</span>
+                <span class="session-id">{sessionID()}</span>
+              </p>
+            </Show>
           </div>
           <div class="topbar-meta">
+            <Show when={permissions().length > 0}>
+              <button
+                type="button"
+                class="attention-badge"
+                onClick={() => scrollRailSection(permissionsSection)}
+              >
+                ⚡ 权限 <span class="attention-count">{permissions().length}</span>
+              </button>
+            </Show>
+            <Show when={questions().length > 0}>
+              <button
+                type="button"
+                class="attention-badge"
+                onClick={() => scrollRailSection(questionsSection)}
+              >
+                ? 待答 <span class="attention-count">{questions().length}</span>
+              </button>
+            </Show>
             <span class={`connection-chip ${connected() ? "is-live" : ""}`}>
               <span class="status-dot" />
               {connected() ? "事件流已连接" : "等待连接"}
             </span>
             <span class="model-chip">{model() ? `全局模型 · ${model()}` : "未配置全局模型"}</span>
-          </div>
-        </header>
-
-        <div class="session-toolbar">
-          <div class="session-summary">
-            <span class="section-kicker">当前 Session</span>
-            <strong class="session-current-name">{sessionName() || "尚未选择 Session"}</strong>
-            <span class={`pill pill-${sessionStatus()}`}>{sessionStatus()}</span>
-            <Show when={sessionID()}>
-              <span class="session-id">{sessionID()}</span>
-              <span class="current-session-directory" title={directory()}>{directory()}</span>
-            </Show>
-          </div>
-          <div class="toolbar-actions">
+            <button
+              class="toolbar-button toolbar-danger"
+              disabled={!sessionID() || cancelBusy()}
+              onClick={requestCancel}
+            >
+              取消运行
+            </button>
             <Drawer
-              title="编辑 Session 名称"
-              description="名称只用于识别当前 Session，工作目录和 Session ID 不会改变。"
+              title="会话操作"
+              description="重命名当前 Session，或重新建立事件流、刷新运行状态。"
               open={sessionEditDrawerOpen()}
               onOpenChange={(open) => (open ? openRenameSession() : setSessionEditDrawerOpen(false))}
               triggerClass="toolbar-button"
-              trigger="编辑名称"
+              trigger={
+                <>
+                  <span aria-hidden="true">⋯</span>
+                  <span class="sr-only">会话操作</span>
+                </>
+              }
             >
               <label class={`form-field ${sessionNameError() ? "field-invalid" : ""}`}>
                 <span>Session 名称 <span class="required-mark">必填</span></span>
@@ -1110,71 +1168,31 @@ function App() {
                   <span class="field-error" role="alert">{sessionNameError()}</span>
                 </Show>
               </label>
-              <button class="button button-primary" disabled={!sessionID() || renameBusy()} onClick={() => void renameSession()}>
+              <button
+                class="button button-primary"
+                disabled={!sessionID() || renameBusy()}
+                onClick={() => void renameSession()}
+              >
                 {renameBusy() ? "保存中…" : "保存名称"}
               </button>
+              <div class="drawer-toolbar">
+                <p class="helper-text">事件流断开或状态停滞时，可以在这里手动恢复。</p>
+              </div>
+              <div class="button-stack">
+                <button class="button button-secondary" disabled={!sessionID()} onClick={reconnectEvents}>
+                  重新连接
+                </button>
+                <button
+                  class="button button-secondary"
+                  disabled={!sessionID() || refreshBusy()}
+                  onClick={refreshRuntime}
+                >
+                  {refreshBusy() ? "刷新中…" : "刷新状态"}
+                </button>
+              </div>
             </Drawer>
-            <button class="toolbar-button" disabled={!sessionID()} onClick={reconnectEvents}>
-              重新连接
-            </button>
-            <button class="toolbar-button" disabled={!sessionID() || refreshBusy()} onClick={refreshRuntime}>
-              {refreshBusy() ? "刷新中…" : "刷新状态"}
-            </button>
-            <button
-              class="toolbar-button toolbar-danger"
-              disabled={!sessionID() || cancelBusy()}
-              onClick={requestCancel}
-            >
-              取消运行
-            </button>
           </div>
-        </div>
-
-        <section class="capability-grid" aria-label="核心能力">
-          <article class="capability-card">
-            <span class="capability-icon">↯</span>
-            <div>
-              <span>Function Calling</span>
-              <strong class={capabilityStateClass(probeResult()?.functionCalling ?? "待探测")}>
-                {probeResult()?.functionCalling ?? "待探测"}
-              </strong>
-            </div>
-          </article>
-          <article class="capability-card">
-            <span class="capability-icon">✓</span>
-            <div>
-              <span>权限门禁</span>
-              <strong class={capabilityStateClass(permissions().length > 0 ? "待处理" : "安全")}>
-                {permissions().length > 0 ? `${permissions().length} 个待处理` : "安全"}
-              </strong>
-            </div>
-          </article>
-          <article class="capability-card">
-            <span class="capability-icon">?</span>
-            <div>
-              <span>补充信息</span>
-              <strong class={capabilityStateClass(questions().length > 0 ? "个问题" : "空闲")}>
-                {questions().length > 0 ? `${questions().length} 个问题` : "空闲"}
-              </strong>
-            </div>
-          </article>
-          <article class="capability-card">
-            <span class="capability-icon">≈</span>
-            <div>
-              <span>上下文压缩</span>
-              <strong class={`context-value ${capabilityStateClass(compactionStatus())}`}>{compactionStatus()}</strong>
-            </div>
-          </article>
-          <article class="capability-card">
-            <span class="capability-icon">✦</span>
-            <div>
-              <span>Skill</span>
-              <strong class={capabilityStateClass(activeSkillIDs().length > 0 ? "已激活" : "未激活")}>
-                {activeSkillIDs().length > 0 ? `${activeSkillIDs().length} 个已激活` : "未激活"}
-              </strong>
-            </div>
-          </article>
-        </section>
+        </header>
 
         <section class="main-grid">
           <section class="conversation-panel panel-surface">
@@ -1183,10 +1201,40 @@ function App() {
                 <span class="section-kicker">实时执行</span>
                 <h2>Coding Loop</h2>
               </div>
-              <span class="event-count">{events().length.toString().padStart(2, "0")} 条事件</span>
+              <div class="view-tabs" role="tablist" aria-label="对话区视图">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={chatView() === "chat"}
+                  class="view-tab"
+                  classList={{ "is-active": chatView() === "chat" }}
+                  onClick={() => setChatView("chat")}
+                >
+                  对话
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={chatView() === "events"}
+                  class="view-tab"
+                  classList={{ "is-active": chatView() === "events" }}
+                  onClick={() => setChatView("events")}
+                >
+                  事件<span class="view-count">{events().length}</span>
+                </button>
+              </div>
             </div>
-            <div class="conversation-body">
-              <div class="chat-stream" role="log" aria-live="polite">
+            <div
+              class="conversation-body"
+              ref={(element) => (conversationBody = element)}
+              onScroll={(event) => handleConversationScroll(event.currentTarget)}
+            >
+              <div
+                class="chat-stream"
+                role="log"
+                aria-live="polite"
+                classList={{ "is-hidden": chatView() !== "chat" }}
+              >
                 <Show
                   when={chatItems().length > 0}
                   fallback={
@@ -1240,7 +1288,15 @@ function App() {
                           </div>
                           <Switch>
                             <Match when={item.kind === "user" || item.kind === "assistant"}>
-                              <p class="chat-copy">{item.content || "Agent 正在输出…"}</p>
+                              <MarkdownView
+                                class="chat-copy"
+                                content={item.content || (item.status === "streaming" ? "Agent 正在输出…" : "")}
+                              />
+                              <Show when={item.kind === "assistant" && item.status === "streaming"}>
+                                <span class="stream-cursor" aria-hidden="true">
+                                  ▍
+                                </span>
+                              </Show>
                             </Match>
                             <Match when={item.kind === "execution"}>
                               <div class="execution-card">
@@ -1269,27 +1325,32 @@ function App() {
                   </For>
                 </Show>
               </div>
-              <details class="event-trace" open>
-                <summary>事件明细 · {events().length.toString().padStart(2, "0")} 条</summary>
-                <div class="timeline">
-                  <For each={events()}>
-                    {(event) => (
-                      <article class="event-row">
-                        <span class="event-seq">{String(event.sequence).padStart(2, "0")}</span>
-                        <div class="event-body">
-                          <strong>{event.type}</strong>
-                          <small>
-                            {event.localTime} · {event.sessionID.slice(0, 8)}
-                          </small>
-                          <Show when={event.data}>
-                            <pre>{JSON.stringify(event.data, null, 2)}</pre>
-                          </Show>
-                        </div>
-                      </article>
-                    )}
-                  </For>
-                </div>
-              </details>
+              <div class="event-trace" classList={{ "is-hidden": chatView() !== "events" }}>
+                <div class="event-trace-head">事件明细 · {events().length.toString().padStart(2, "0")} 条</div>
+                <Show
+                  when={events().length > 0}
+                  fallback={<p class="empty-copy">本轮还没有收到运行事件</p>}
+                >
+                  <div class="timeline">
+                    <For each={events()}>
+                      {(event) => (
+                        <article class="event-row">
+                          <span class="event-seq">{String(event.sequence).padStart(2, "0")}</span>
+                          <div class="event-body">
+                            <strong>{event.type}</strong>
+                            <small>
+                              {event.localTime} · {event.sessionID.slice(0, 8)}
+                            </small>
+                            <Show when={event.data}>
+                              <pre>{JSON.stringify(event.data, null, 2)}</pre>
+                            </Show>
+                          </div>
+                        </article>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </div>
             </div>
             <div class="prompt-box">
               <div class="prompt-composer">
@@ -1300,8 +1361,12 @@ function App() {
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendPrompt()
                   }}
-                  placeholder="描述下一步 Coding 任务…"
-                  disabled={!sessionID()}
+                  placeholder={
+                    inputLocked()
+                      ? "Agent 正在回复，本轮完成后可继续输入…"
+                      : "描述下一步 Coding 任务…"
+                  }
+                  disabled={!sessionID() || busy() || inputLocked()}
                 />
                 <Show when={skillSuggestions().length > 0}>
                   <div class="skill-suggestions" role="listbox" aria-label="Skill 建议">
@@ -1328,8 +1393,12 @@ function App() {
                   </div>
                 </Show>
               </div>
-              <button class="send-button" disabled={!sessionID() || !prompt().trim() || busy()} onClick={sendPrompt}>
-                {busy() ? "发送中…" : "发送 Prompt"}
+              <button
+                class="send-button"
+                disabled={!sessionID() || !prompt().trim() || busy() || inputLocked()}
+                onClick={sendPrompt}
+              >
+                {busy() ? "发送中…" : inputLocked() ? "回复中…" : "发送 Prompt"}
                 <span>⌘ ↵</span>
               </button>
             </div>
@@ -1344,7 +1413,7 @@ function App() {
                 </div>
                 <span class={`status-badge ${connected() ? "success" : "muted"}`}>{connected() ? "在线" : "离线"}</span>
               </div>
-              <div class="status-list">
+              <div class="rail-kv">
                 <div>
                   <span>Session</span>
                   <strong>{sessionStatus()}</strong>
@@ -1355,133 +1424,130 @@ function App() {
                 </div>
                 <div>
                   <span>上下文</span>
-                  <strong>{compactionStatus()}</strong>
+                  <strong class={`context-value ${capabilityStateClass(compactionStatus())}`}>{compactionStatus()}</strong>
                 </div>
               </div>
-            </section>
 
-            <section class="rail-panel panel-surface queue-panel">
-              <div class="panel-header">
-                <div>
-                  <span class="section-kicker">需要你处理</span>
-                  <h2>权限队列</h2>
-                </div>
-                <span class="queue-count">{permissions().length + questions().length}</span>
-              </div>
-              <Show when={permissions().length > 0} fallback={<p class="empty-copy">当前没有待处理权限请求</p>}>
-                <div class="permission-list">
-                  <For each={permissions()}>
-                    {(request) => (
-                      <div class="permission-card">
-                        <div>
-                          <span class="permission-action">{request.action}</span>
-                          <strong>{request.resource}</strong>
-                          <small>{request.reason}</small>
+              <Show when={permissions().length > 0}>
+                <div class="rail-section" ref={(element) => (permissionsSection = element)}>
+                  <div class="rail-section-head">
+                    <strong>权限队列</strong>
+                    <span class="rail-count">{permissions().length}</span>
+                  </div>
+                  <div class="permission-list">
+                    <For each={permissions()}>
+                      {(request) => (
+                        <div class="permission-card">
+                          <div>
+                            <span class="permission-action">{request.action}</span>
+                            <strong>{request.resource}</strong>
+                            <small>{request.reason}</small>
+                          </div>
+                          <div class="permission-actions">
+                            <button
+                              disabled={Boolean(pendingDecisionID())}
+                              onClick={() => decide(request.id, "allow_once")}
+                            >
+                              {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
+                            </button>
+                            <button
+                              disabled={Boolean(pendingDecisionID())}
+                              onClick={() => decide(request.id, "allow_always")}
+                            >
+                              始终允许
+                            </button>
+                            <button
+                              class="deny"
+                              disabled={Boolean(pendingDecisionID())}
+                              onClick={() => decide(request.id, "deny")}
+                            >
+                              拒绝
+                            </button>
+                          </div>
                         </div>
-                        <div class="permission-actions">
-                          <button
-                            disabled={Boolean(pendingDecisionID())}
-                            onClick={() => decide(request.id, "allow_once")}
-                          >
-                            {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
-                          </button>
-                          <button
-                            disabled={Boolean(pendingDecisionID())}
-                            onClick={() => decide(request.id, "allow_always")}
-                          >
-                            始终允许
-                          </button>
-                          <button
-                            class="deny"
-                            disabled={Boolean(pendingDecisionID())}
-                            onClick={() => decide(request.id, "deny")}
-                          >
-                            拒绝
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </For>
+                      )}
+                    </For>
+                  </div>
                 </div>
               </Show>
-            </section>
 
-            <section class="rail-panel panel-surface question-panel">
-              <div class="panel-header">
-                <div>
-                  <span class="section-kicker">需要你补充</span>
-                  <h2>补充信息</h2>
-                </div>
-                <span class="queue-count">{questions().length}</span>
-              </div>
-              <Show when={questions().length > 0} fallback={<p class="empty-copy">当前没有待回答问题</p>}>
-                <div class="question-list">
-                  <For each={questions()}>
-                    {(request) => (
-                      <article class="question-card">
-                        <div class="question-card-head">
-                          <span class="permission-action">{request.id}</span>
-                          <button
-                            class="text-button"
-                            disabled={Boolean(pendingQuestionID())}
-                            onClick={() => cancelQuestion(request.id)}
-                          >
-                            {pendingQuestionID() === request.id ? "取消中…" : "取消"}
-                          </button>
-                        </div>
-                        <For each={request.questions}>
-                          {(question, questionIndex) => (
-                            <div class="question-block">
-                              <strong>{question.question}</strong>
-                              <div class="answer-options">
-                                <For each={question.options}>
-                                  {(option) => (
-                                    <button
-                                      class={`answer-option ${answerSelected(request.id, questionIndex(), option.label) ? "is-selected" : ""}`}
-                                      aria-pressed={answerSelected(request.id, questionIndex(), option.label)}
-                                      onClick={() => chooseAnswer(request, questionIndex(), option.label)}
-                                    >
-                                      <span>{option.label}</span>
-                                      <small>{option.description}</small>
-                                    </button>
-                                  )}
-                                </For>
+              <Show when={questions().length > 0}>
+                <div class="rail-section" ref={(element) => (questionsSection = element)}>
+                  <div class="rail-section-head">
+                    <strong>补充信息</strong>
+                    <span class="rail-count">{questions().length}</span>
+                  </div>
+                  <div class="question-list">
+                    <For each={questions()}>
+                      {(request) => (
+                        <article class="question-card">
+                          <div class="question-card-head">
+                            <span class="permission-action">{request.id}</span>
+                            <button
+                              class="text-button"
+                              disabled={Boolean(pendingQuestionID())}
+                              onClick={() => cancelQuestion(request.id)}
+                            >
+                              {pendingQuestionID() === request.id ? "取消中…" : "取消"}
+                            </button>
+                          </div>
+                          <For each={request.questions}>
+                            {(question, questionIndex) => (
+                              <div class="question-block">
+                                <strong>{question.question}</strong>
+                                <div class="answer-options">
+                                  <For each={question.options}>
+                                    {(option) => (
+                                      <button
+                                        class={`answer-option ${answerSelected(request.id, questionIndex(), option.label) ? "is-selected" : ""}`}
+                                        aria-pressed={answerSelected(request.id, questionIndex(), option.label)}
+                                        onClick={() => chooseAnswer(request, questionIndex(), option.label)}
+                                      >
+                                        <span>{option.label}</span>
+                                        <small>{option.description}</small>
+                                      </button>
+                                    )}
+                                  </For>
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </For>
-                        <button
-                          class="button button-primary"
-                          disabled={busy() || Boolean(pendingQuestionID())}
-                          onClick={() => replyQuestion(request)}
-                        >
-                          {busy() ? "提交中…" : "提交回答"}
-                        </button>
-                      </article>
-                    )}
-                  </For>
+                            )}
+                          </For>
+                          <button
+                            class="button button-primary"
+                            disabled={busy() || Boolean(pendingQuestionID())}
+                            onClick={() => replyQuestion(request)}
+                          >
+                            {busy() ? "提交中…" : "提交回答"}
+                          </button>
+                        </article>
+                      )}
+                    </For>
+                  </div>
                 </div>
               </Show>
-            </section>
 
-            <section class="rail-panel panel-surface context-panel">
-              <div class="panel-header">
-                <div>
-                  <span class="section-kicker">项目理解</span>
-                  <h2>上下文来源</h2>
-                </div>
-                <span class="queue-count">{contextSources().length}</span>
-              </div>
-              <Show when={contextSources().length > 0} fallback={<p class="empty-copy">等待 Core 加载项目指令</p>}>
-                <div class="source-list">
-                  <For each={contextSources()}>
-                    {(source) => (
-                      <div class="source-row">
-                        <span>{source.kind}</span>
-                        <code>{source.path}</code>
+              <Show when={contextSources().length > 0}>
+                <div class="rail-section">
+                  <div class="rail-section-head">
+                    <strong>上下文来源</strong>
+                    <span class="rail-count">{contextSources().length}</span>
+                  </div>
+                  <div class="rail-kv">
+                    <For each={contextSources().slice(0, 3)}>
+                      {(source) => (
+                        <div>
+                          <span>{source.kind}</span>
+                          <strong class="rail-source-path" title={source.path}>{source.path}</strong>
+                        </div>
+                      )}
+                    </For>
+                    <Show when={contextSources().length > 3}>
+                      <div>
+                        <span>…</span>
+                        <strong>共 {contextSources().length} 项</strong>
                       </div>
-                    )}
-                  </For>
+                    </Show>
+                  </div>
                 </div>
               </Show>
             </section>
@@ -1746,7 +1812,7 @@ function capabilityStateClass(value: string): string {
  */
 function chatStatusLabel(status: ChatStatus): string {
   return {
-    streaming: "流式输出",
+    streaming: "输出中…",
     running: "执行中",
     waiting: "等待处理",
     completed: "已完成",

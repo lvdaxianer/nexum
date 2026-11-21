@@ -77,9 +77,9 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByRole("heading", { name: "Agent 工作台" })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Coding Loop" })).toBeVisible()
     await expect(page.getByRole("heading", { name: "运行状态" })).toBeVisible()
-    await expect(page.getByText("权限队列", { exact: true })).toBeVisible()
-    await expect(page.getByRole("heading", { name: "补充信息" })).toBeVisible()
-    await expect(page.getByText("上下文压缩", { exact: true })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "对话" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: /事件/ })).toBeVisible()
+    await expect(page.getByText("上下文", { exact: true })).toBeVisible()
     await openDrawer(page, /模型配置/)
     await expect(page.getByLabel("服务地址")).toHaveValue("")
     await expect(page.getByLabel("模型名称")).toHaveValue("")
@@ -125,13 +125,14 @@ describe.serial("Headless UI smoke", () => {
       occurredAt: "2026-11-21T00:00:00.000Z",
       data: { content: "session storage check" },
     })
+    await page.getByRole("tab", { name: /事件/ }).click()
     await expect(page.getByText("assistant.text", { exact: true })).toBeVisible()
     expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual(["headless.sessionID"])
     await page.getByRole("button", { name: /前端应用/ }).click()
     await expect(page.locator(".current-session-directory")).toHaveText(firstDirectory)
 
-    await page.getByRole("button", { name: "编辑名称" }).click()
-    await page.getByRole("dialog", { name: "编辑 Session 名称" }).getByLabel("Session 名称").fill("前端重命名")
+    await page.getByRole("button", { name: "会话操作" }).click()
+    await page.getByRole("dialog", { name: "会话操作" }).getByLabel("Session 名称").fill("前端重命名")
     await page.getByRole("button", { name: "保存名称" }).click()
     await expect(page.getByRole("button", { name: /前端重命名/ })).toBeVisible()
   })
@@ -324,6 +325,7 @@ describe.serial("Headless UI smoke", () => {
     await page.getByRole("button", { name: "拒绝" }).click()
 
     await expect(page.locator(".pill-failed")).toBeVisible()
+    await page.getByRole("tab", { name: /事件/ }).click()
     await expect(page.getByText("session.failed")).toBeVisible()
     await expect(page.getByRole("button", { name: "拒绝" })).toHaveCount(0)
     expect(await Bun.file(join(directory, "denied.txt")).exists()).toBe(false)
@@ -333,152 +335,155 @@ describe.serial("Headless UI smoke", () => {
     "allowing a tool completes the task without exposing credential-shaped output",
     { timeout: 15_000 },
     async () => {
-      browser = await chromium.launch({ headless: true })
-      const page = await browser.newPage()
-      let upstreamCalls = 0
-      upstream = Bun.serve({
-        port: 0,
-        async fetch() {
-          upstreamCalls += 1
-          if (upstreamCalls > 1) return Response.json({ choices: [{ message: { content: "命令已执行" } }] })
-          return Response.json({
-            choices: [
-              {
-                message: {
-                  content: null,
-                  tool_calls: [
-                    {
-                      id: "call_shell_secret",
-                      type: "function",
-                      function: {
-                        name: "shell",
-                        arguments: JSON.stringify({ command: "printf 'Authorization: Bearer super-secret-token'" }),
+        browser = await chromium.launch({ headless: true })
+        const page = await browser.newPage()
+        let upstreamCalls = 0
+        upstream = Bun.serve({
+          port: 0,
+          async fetch() {
+            upstreamCalls += 1
+            if (upstreamCalls > 1) return Response.json({ choices: [{ message: { content: "命令已执行" } }] })
+            return Response.json({
+              choices: [
+                {
+                  message: {
+                    content: null,
+                    tool_calls: [
+                      {
+                        id: "call_shell_secret",
+                        type: "function",
+                        function: {
+                          name: "shell",
+                          arguments: JSON.stringify({ command: "printf 'Authorization: Bearer super-secret-token'" }),
+                        },
                       },
-                    },
-                  ],
+                    ],
+                  },
                 },
-              },
-            ],
-          })
-        },
-      })
-      apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
-      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
-      directory = await mkdtemp(join(tmpdir(), "headless-ui-allow-"))
+              ],
+            })
+          },
+        })
+        apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+        uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+        directory = await mkdtemp(join(tmpdir(), "headless-ui-allow-"))
 
-      await page.goto(uiOrigin)
-      await openDrawer(page, /模型配置/)
-      await page.getByLabel("服务地址").fill(upstream.url.toString().replace(/\/$/, ""))
-      await page.getByLabel("模型名称").fill("fixture-model")
-      await page.getByLabel("凭据值").fill("fixture-secret")
-      await page.getByRole("button", { name: "保存模型配置" }).click()
-      await closeDrawer(page)
-      await page.getByRole("button", { name: "新建 Session" }).click()
-      await page.getByLabel("工作目录").fill(directory)
-      await page.getByRole("button", { name: "保存并创建 Session" }).click()
-      await page.getByPlaceholder("描述下一步 Coding 任务…").fill("查看环境")
-      await page.getByRole("button", { name: /发送 Prompt/ }).click()
-      await page.getByRole("button", { name: "允许一次" }).click()
+        await page.goto(uiOrigin)
+        await openDrawer(page, /模型配置/)
+        await page.getByLabel("服务地址").fill(upstream.url.toString().replace(/\/$/, ""))
+        await page.getByLabel("模型名称").fill("fixture-model")
+        await page.getByLabel("凭据值").fill("fixture-secret")
+        await page.getByRole("button", { name: "保存模型配置" }).click()
+        await closeDrawer(page)
+        await page.getByRole("button", { name: "新建 Session" }).click()
+        await page.getByLabel("工作目录").fill(directory)
+        await page.getByRole("button", { name: "保存并创建 Session" }).click()
+        await page.getByPlaceholder("描述下一步 Coding 任务…").fill("查看环境")
+        await page.getByRole("button", { name: /发送 Prompt/ }).click()
+        await page.getByRole("button", { name: "允许一次" }).click()
 
-      await expect(page.locator(".pill-completed")).toBeVisible()
-      await expect(page.locator(".chat-message.user")).toContainText("查看环境")
-      await expect(page.locator(".chat-message.assistant")).toContainText("命令已执行")
-      await expect(page.locator(".execution-card").filter({ hasText: "工具结果" })).toContainText("已完成")
-      await expect(page.getByText("tool.result")).toBeVisible()
-      await expect(page.locator("body")).not.toContainText("super-secret-token")
+        await expect(page.locator(".pill-completed")).toBeVisible()
+        await expect(page.locator(".chat-message.user")).toContainText("查看环境")
+        await expect(page.locator(".chat-message.assistant")).toContainText("命令已执行")
+        await expect(page.locator(".execution-card").filter({ hasText: "工具结果" })).toContainText("已完成")
+        await page.getByRole("tab", { name: /事件/ }).click()
+        await expect(page.getByText("tool.result")).toBeVisible()
+        await expect(page.locator("body")).not.toContainText("super-secret-token")
     },
   )
 
-  test.serial("answers a Question and shows compaction plus project context states", async () => {
-    browser = await chromium.launch({ headless: true })
-    const page = await browser.newPage()
-    const sessions = createHeadlessSessionService()
-    const questions = createHeadlessQuestionPort()
-    const eventHub = createHeadlessEventHub()
-    const projectContext = createHeadlessProjectContextPort({
-      sources: [{ sourceID: "instruction:project", kind: "instruction", path: "AGENTS.md" }],
-      readFile: async () => "仅允许 Headless API",
-    })
-    let step = 0
-    const model: ModelPort = {
-      async *prompt() {
-        step += 1
-        if (step === 1) {
-          yield {
-            type: "question",
-            questionID: "question_ui_001",
-            toolCallID: "call_question_ui_001",
-            questions: [{ header: "目录", question: "选择目录", options: [{ label: "src", description: "源代码" }] }],
+    test.serial("answers a Question and shows compaction plus project context states", async () => {
+      browser = await chromium.launch({ headless: true })
+      const page = await browser.newPage()
+      const sessions = createHeadlessSessionService()
+      const questions = createHeadlessQuestionPort()
+      const eventHub = createHeadlessEventHub()
+      const projectContext = createHeadlessProjectContextPort({
+        sources: [{ sourceID: "instruction:project", kind: "instruction", path: "AGENTS.md" }],
+        readFile: async () => "仅允许 Headless API",
+      })
+      let step = 0
+      const model: ModelPort = {
+        async *prompt() {
+          step += 1
+          if (step === 1) {
+            yield {
+              type: "question",
+              questionID: "question_ui_001",
+              toolCallID: "call_question_ui_001",
+              questions: [{ header: "目录", question: "选择目录", options: [{ label: "src", description: "源代码" }] }],
+            }
+            return
           }
-          return
-        }
-        if (step === 2) {
-          yield {
-            type: "tool-call",
-            toolCallID: "call_read_ui_001",
-            toolName: "read",
-            toolInput: { path: "README.md" },
+          if (step === 2) {
+            yield {
+              type: "tool-call",
+              toolCallID: "call_read_ui_001",
+              toolName: "read",
+              toolInput: { path: "README.md" },
+            }
+            return
           }
-          return
-        }
-        yield { type: "completed" }
-      },
-    }
-    const permission: PermissionPort = {
-      async evaluate() {
-        return "allow"
-      },
-    }
-    const tool: ToolPort = {
-      async execute() {
-        return { ok: true, output: "README 内容" }
-      },
-    }
-    const compaction: ContextCompactionPort = {
-      estimate: (messages) => (messages.some((message) => message.role === "tool") ? 100 : 1),
-      async compact() {
-        return { summary: "UI smoke summary", recentMessages: [], context: [] }
-      },
-    }
-    const codingLoop = createHeadlessCodingLoop({
-      model,
-      tool,
-      permission,
-      sessions,
-      events: eventHub,
-      question: questions,
-      projectContext,
-      contextCompaction: compaction,
-      compactionThreshold: 10,
-    })
-    apiServer = await startHeadlessServer({
-      port: 4097,
-      corsOrigins: [uiOrigin],
-      sessionService: sessions,
-      eventHub,
-      codingLoop,
-      questionPort: questions,
-    })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
-    directory = await mkdtemp(join(tmpdir(), "headless-ui-question-"))
+          yield { type: "completed" }
+        },
+      }
+      const permission: PermissionPort = {
+        async evaluate() {
+          return "allow"
+        },
+      }
+      const tool: ToolPort = {
+        async execute() {
+          return { ok: true, output: "README 内容" }
+        },
+      }
+      const compaction: ContextCompactionPort = {
+        estimate: (messages) => (messages.some((message) => message.role === "tool") ? 100 : 1),
+        async compact() {
+          return { summary: "UI smoke summary", recentMessages: [], context: [] }
+        },
+      }
+      const codingLoop = createHeadlessCodingLoop({
+        model,
+        tool,
+        permission,
+        sessions,
+        events: eventHub,
+        question: questions,
+        projectContext,
+        contextCompaction: compaction,
+        compactionThreshold: 10,
+      })
+      apiServer = await startHeadlessServer({
+        port: 4097,
+        corsOrigins: [uiOrigin],
+        sessionService: sessions,
+        eventHub,
+        codingLoop,
+        questionPort: questions,
+      })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      directory = await mkdtemp(join(tmpdir(), "headless-ui-question-"))
 
-    await page.goto(uiOrigin)
-    await page.getByRole("button", { name: "新建 Session" }).click()
-    await page.getByLabel("工作目录").fill(directory)
-    await page.getByRole("button", { name: "保存并创建 Session" }).click()
-    await page.getByPlaceholder("描述下一步 Coding 任务…").fill("先确认目录，再读取 README")
-    await page.getByRole("button", { name: /发送 Prompt/ }).click()
-    await expect(page.getByText("选择目录", { exact: true })).toBeVisible()
-    await page.getByRole("button", { name: /^src/ }).click()
-    await page.getByRole("button", { name: "提交回答" }).click()
+      await page.goto(uiOrigin)
+      await page.getByRole("button", { name: "新建 Session" }).click()
+      await page.getByLabel("工作目录").fill(directory)
+      await page.getByRole("button", { name: "保存并创建 Session" }).click()
+      await page.getByPlaceholder("描述下一步 Coding 任务…").fill("先确认目录，再读取 README")
+      await page.getByRole("button", { name: /发送 Prompt/ }).click()
+      await expect(page.getByText("选择目录", { exact: true })).toBeVisible()
+      await page.getByRole("button", { name: /^src/ }).click()
+      await page.getByRole("button", { name: "提交回答" }).click()
 
-    await expect(page.locator(".pill-completed")).toBeVisible()
-    await expect(page.locator(".context-value").filter({ hasText: "completed" })).toBeVisible()
-    await expect(page.getByText("AGENTS.md", { exact: true })).toBeVisible()
-    await expect(
-      page.locator(".event-body strong").filter({ hasText: "context.compaction.completed" }).first(),
-    ).toBeVisible()
-  })
+      await expect(page.locator(".pill-completed")).toBeVisible()
+      await expect(page.locator(".context-value").filter({ hasText: "completed" })).toBeVisible()
+      await expect(page.getByText("AGENTS.md", { exact: true })).toBeVisible()
+      await page.getByRole("tab", { name: /事件/ }).click()
+      await expect(
+        page.locator(".event-body strong").filter({ hasText: "context.compaction.completed" }).first(),
+      ).toBeVisible()
+    },
+  )
 
   test.serial("loads project Skills, completes @ autocomplete, and validates the active Skill", async () => {
     browser = await chromium.launch({ headless: true })
@@ -544,11 +549,71 @@ describe.serial("Headless UI smoke", () => {
 
     await page.reload()
     await expect(page.locator(".session-id")).toHaveText(activeSession)
-    await page.getByRole("button", { name: "重新连接" }).click()
+    await page.getByRole("button", { name: "会话操作" }).click()
+    const opsDialog = page.getByRole("dialog", { name: "会话操作" })
+    await opsDialog.getByRole("button", { name: "重新连接" }).click()
     await expect(page.getByText("事件流已连接", { exact: true })).toBeVisible()
-    await page.getByRole("button", { name: "刷新状态" }).click()
+    await opsDialog.getByRole("button", { name: "刷新状态" }).click()
     await expect(page.getByText("运行状态已刷新", { exact: true })).toBeVisible()
   })
+  test.serial(
+    "streams assistant deltas and renders markdown bold instead of raw asterisks",
+    { timeout: 15_000 },
+    async () => {
+      browser = await chromium.launch({ headless: true })
+      const page = await browser.newPage()
+      const deltas = ["第一段**重点**", "说明"]
+      upstream = Bun.serve({
+        port: 0,
+        async fetch() {
+          const encoder = new TextEncoder()
+          const stream = new ReadableStream<Uint8Array>({
+            async start(controller) {
+              for (const content of deltas) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content } }] })}\n\n`,
+                  ),
+                )
+                await new Promise((resolve) => setTimeout(resolve, 300))
+              }
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+              controller.close()
+            },
+          })
+          return new Response(stream, { headers: { "content-type": "text/event-stream" } })
+        },
+      })
+      apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      directory = await mkdtemp(join(tmpdir(), "headless-ui-stream-markdown-"))
+
+      await page.goto(uiOrigin)
+      await openDrawer(page, /模型配置/)
+      await page.getByLabel("服务地址").fill(upstream.url.toString().replace(/\/$/, ""))
+      await page.getByLabel("模型名称").fill("fixture-model")
+      await page.getByLabel("凭据值").fill("fixture-secret")
+      await page.getByRole("button", { name: "保存模型配置" }).click()
+      await expect(page.getByText("模型 fixture-model 已就绪")).toBeVisible()
+      await closeDrawer(page)
+      await page.getByRole("button", { name: "新建 Session" }).click()
+      await page.getByLabel("工作目录").fill(directory)
+      await page.getByRole("button", { name: "保存并创建 Session" }).click()
+      await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+
+      await page.getByPlaceholder("描述下一步 Coding 任务…").fill("打个招呼")
+      await page.getByRole("button", { name: /发送 Prompt/ }).click()
+
+      await expect(page.getByLabel("Coding Prompt")).toBeDisabled()
+      await expect(page.getByRole("button", { name: /回复中|发送中/ })).toBeDisabled()
+      await expect(page.locator(".pill-completed")).toBeVisible()
+      await expect(page.getByLabel("Coding Prompt")).toBeEnabled()
+      const assistant = page.locator(".chat-message.assistant")
+      await expect(assistant).toContainText("第一段重点说明")
+      await expect(assistant.locator("strong", { hasText: "重点" })).toBeVisible()
+      expect(await assistant.innerText()).not.toContain("**")
+    },
+  )
   test.serial("runs a configured Skill from page mention through Core permission", async () => {
     browser = await chromium.launch({ headless: true })
     const page = await browser.newPage()
@@ -608,6 +673,7 @@ describe.serial("Headless UI smoke", () => {
     await page.getByRole("button", { name: /发送 Prompt/ }).click()
     await expect(page.getByRole("button", { name: "允许一次" })).toBeVisible()
     await page.getByRole("button", { name: "允许一次" }).click()
+    await page.getByRole("tab", { name: /事件/ }).click()
     await expect(page.locator(".event-body strong").filter({ hasText: "skill.activated" })).toBeVisible()
     await expect(page.locator(".pill-completed")).toBeVisible()
   })

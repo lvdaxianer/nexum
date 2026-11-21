@@ -13,6 +13,8 @@
   "dependencies": {
     "@kobalte/core": "catalog:",
     "@opencode/client": "workspace:*",
+    "dompurify": "catalog:",
+    "marked": "catalog:",
     "solid-js": "catalog:"
   },
   "devDependencies": {
