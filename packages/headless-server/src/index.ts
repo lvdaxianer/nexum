@@ -695,6 +695,9 @@ async function createPrompt(
   if (!session) {
     return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
   }
+  if (session.status === "running") {
+    return errorResponse(409, "HEADLESS_SESSION_RUN_CONFLICT", "Session 当前正在运行，请等待本轮完成后再提交", traceId)
+  }
   if (!codingLoop) {
     return errorResponse(503, "HEADLESS_RUNTIME_NOT_CONFIGURED", "Headless Runtime 尚未配置", traceId)
   }
@@ -1233,9 +1236,7 @@ function traceIdFrom(value: string | null): string {
 /** 记录统一 HTTP 异常边界的安全诊断上下文，同时保持响应 caller-safe。 */
 function logRequestFailure(request: Request, traceId: string, error: unknown): void {
   const details =
-    error instanceof Error
-      ? { name: error.name, message: error.message, stack: error.stack }
-      : { value: String(error) }
+    error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { value: String(error) }
   console.error("headless.request_failed", {
     traceId,
     method: request.method,

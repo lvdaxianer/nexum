@@ -223,9 +223,7 @@ test("refuses to start with a corrupt persistent session file", async () => {
   const filePath = join(root, "sessions.json")
   await Bun.write(filePath, "not-json")
 
-  await expect(
-    startHeadlessServer({ port: 0, sessionStore: createFileSessionStore({ filePath }) }),
-  ).rejects.toThrow()
+  await expect(startHeadlessServer({ port: 0, sessionStore: createFileSessionStore({ filePath }) })).rejects.toThrow()
 })
 
 test("probes the configured model without returning model content or credentials", async () => {
@@ -248,7 +246,10 @@ test("probes the configured model without returning model content or credentials
   const body = (await response.json()) as { data: { text: string; functionCalling: string } }
 
   expect(response.status).toBe(200)
-  expect(body).toMatchObject({ data: { text: "pass", functionCalling: "pass" }, meta: { protocolVersion: "headless.v1" } })
+  expect(body).toMatchObject({
+    data: { text: "pass", functionCalling: "pass" },
+    meta: { protocolVersion: "headless.v1" },
+  })
   expect(JSON.stringify(body)).not.toContain("credential")
 })
 
@@ -324,7 +325,51 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
     },
   )
   expect(cancelResponse.status).toBe(200)
-  expect(await cancelResponse.json()).toMatchObject({ data: { status: "cancelled" }, meta: { protocolVersion: "headless.v1" } })
+  expect(await cancelResponse.json()).toMatchObject({
+    data: { status: "cancelled" },
+    meta: { protocolVersion: "headless.v1" },
+  })
+})
+
+test("rejects a prompt while the session is already running", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-prompt-conflict-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createHeadlessSessionService()
+  const session = await sessionService.create({ directory })
+  await sessionService.setStatus(session.sessionID, "running")
+  const server = await startHeadlessServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        return (await sessionService.get(input.sessionID))!
+      },
+      async cancel(sessionID) {
+        return sessionService.setStatus(sessionID, "cancelled")
+      },
+    },
+  })
+  servers.push(server)
+
+  const response = await fetch(new URL(`/api/experimental/headless/session/${session.sessionID}/prompt`, server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-trace-id": "prompt_conflict_trace" },
+    body: JSON.stringify({ text: "第二次提交" }),
+  })
+  const body = (await response.json()) as {
+    errorCode: string
+    message: string
+    traceId: string
+    meta: { protocolVersion: string; traceId: string }
+  }
+
+  expect(response.status).toBe(409)
+  expect(body).toEqual({
+    errorCode: "HEADLESS_SESSION_RUN_CONFLICT",
+    message: "Session 当前正在运行，请等待本轮完成后再提交",
+    traceId: "prompt_conflict_trace",
+    meta: { protocolVersion: "headless.v1", traceId: "prompt_conflict_trace" },
+  })
 })
 
 test("composes the default coding loop when no runtime is injected", async () => {
@@ -343,7 +388,11 @@ test("composes the default coding loop when no runtime is injected", async () =>
   const modelResponse = await fetch(new URL("/api/experimental/headless/model", server.url), {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ baseUrl: upstream.url.toString().replace(/\/$/, ""), model: "poc-model", credential: "test-credential" }),
+    body: JSON.stringify({
+      baseUrl: upstream.url.toString().replace(/\/$/, ""),
+      model: "poc-model",
+      credential: "test-credential",
+    }),
   })
   expect(modelResponse.status).toBe(200)
 
@@ -385,6 +434,18 @@ test("composes the default coding loop when no runtime is injected", async () =>
   expect(eventText).toContain("default runtime is alive")
   expect(eventText).toContain('"type":"session.completed"')
   expect(modelRequests).toHaveLength(1)
+
+  const secondPromptResponse = await fetch(
+    new URL(`/api/experimental/headless/session/${sessionBody.data.id}/prompt`, server.url),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "请再运行一次" }),
+    },
+  )
+  expect(secondPromptResponse.status).toBe(200)
+  await readSseUntil(reader, '"type":"session.completed"')
+  expect(modelRequests).toHaveLength(2)
   await reader.cancel()
 })
 
@@ -427,7 +488,11 @@ test("completes a function-calling task after an allow-once permission reply", a
   const modelResponse = await fetch(new URL("/api/experimental/headless/model", server.url), {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ baseUrl: upstream.url.toString().replace(/\/$/, ""), model: "fixture-model", credential: "test-credential" }),
+    body: JSON.stringify({
+      baseUrl: upstream.url.toString().replace(/\/$/, ""),
+      model: "fixture-model",
+      credential: "test-credential",
+    }),
   })
   expect(modelResponse.status).toBe(200)
 
@@ -681,7 +746,10 @@ test("serves Question replies and streams tool plus context compaction completio
     },
   )
   expect(replyResponse.status).toBe(200)
-  expect(await replyResponse.json()).toMatchObject({ data: { status: "answered" }, meta: { protocolVersion: "headless.v1" } })
+  expect(await replyResponse.json()).toMatchObject({
+    data: { status: "answered" },
+    meta: { protocolVersion: "headless.v1" },
+  })
 
   const completionText = await readSseUntil(reader, '"type":"session.completed"')
   expect(completionText).toContain('"type":"question.result"')
@@ -715,7 +783,10 @@ test("cancels a pending Question through the HTTP boundary", async () => {
     { method: "POST" },
   )
   expect(response.status).toBe(200)
-  expect(await response.json()).toMatchObject({ data: { status: "cancelled" }, meta: { protocolVersion: "headless.v1" } })
+  expect(await response.json()).toMatchObject({
+    data: { status: "cancelled" },
+    meta: { protocolVersion: "headless.v1" },
+  })
   await expect(pending).resolves.toEqual({ ok: false, output: "问题已取消" })
 })
 

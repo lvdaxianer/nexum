@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
-import { HeadlessSessionError, createHeadlessSessionService, createInMemorySessionStore } from "../src/index.ts"
+import { createHeadlessSessionService, createInMemorySessionStore } from "../src/index.ts"
 
 const temporaryDirectories: string[] = []
 
@@ -81,7 +81,7 @@ test("rejects an invalid directory without creating a session", async () => {
   expect(await store.list()).toEqual([])
 })
 
-test("keeps session state transitions explicit and terminal", async () => {
+test("keeps session state transitions explicit and restartable", async () => {
   const directory = await makeDirectory()
   const service = createHeadlessSessionService()
   const session = await service.create({ directory })
@@ -91,5 +91,18 @@ test("keeps session state transitions explicit and terminal", async () => {
 
   expect(running.status).toBe("running")
   expect(completed.status).toBe("completed")
-  await expect(service.setStatus(session.sessionID, "running")).rejects.toBeInstanceOf(HeadlessSessionError)
+  expect((await service.setStatus(session.sessionID, "running")).status).toBe("running")
+})
+
+test("allows a completed session to start a later run", async () => {
+  const directory = await makeDirectory()
+  const service = createHeadlessSessionService()
+  const session = await service.create({ directory })
+
+  await service.setStatus(session.sessionID, "running")
+  await service.setStatus(session.sessionID, "completed")
+
+  const restarted = await service.setStatus(session.sessionID, "running")
+
+  expect(restarted.status).toBe("running")
 })

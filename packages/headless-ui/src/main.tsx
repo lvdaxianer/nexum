@@ -29,6 +29,7 @@ type ChatItem = {
   title: string
   content?: string
   detail?: string
+  thinking?: boolean
   status: ChatStatus
   localTime: string
   eventType?: string
@@ -103,8 +104,7 @@ function App() {
   const seenEventKeys = new Set<string>()
 
   /** Agent 回答期间（运行中/等待权限/等待回答）锁定输入，避免打断本轮执行。 */
-  const inputLocked = () =>
-    ["running", "awaiting permission", "awaiting question"].includes(sessionStatus())
+  const inputLocked = () => ["running", "awaiting permission", "awaiting question"].includes(sessionStatus())
 
   function scrollRailSection(element: HTMLElement | undefined) {
     element?.scrollIntoView({ behavior: "smooth", block: "nearest" })
@@ -417,7 +417,7 @@ function App() {
     setSessionStatus(snapshot.data.session.status)
     setDirectory(snapshot.data.session.directory)
     setEvents([])
-    setChatItems([])
+    setChatItems(snapshot.data.session.status === "running" ? [thinkingChatItem(session.id)] : [])
     setPermissions(snapshot.data.pendingPermissions)
     setQuestions(snapshot.data.pendingQuestions)
     setQuestionAnswers({})
@@ -713,33 +713,42 @@ function App() {
     setBusy(true)
     seenEventKeys.clear()
     const text = prompt().trim()
+    const thinkingID = `thinking:${sessionID()}:${Date.now()}:${promptSequence++}`
     setChatItems((current) =>
-      appendChatItem(current, {
-        id: `user:${Date.now()}:${promptSequence++}`,
-        kind: "user",
-        title: "你",
-        content: text,
-        status: "completed",
-        localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      }),
+      appendChatItem(
+        appendChatItem(current, {
+          id: `user:${Date.now()}:${promptSequence++}`,
+          kind: "user",
+          title: "你",
+          content: text,
+          status: "completed",
+          localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }),
+        thinkingChatItem(sessionID(), thinkingID),
+      ),
     )
+    const previousStatus = sessionStatus()
+    setSessionStatus("running")
     try {
       setActiveSkillIDs(skillIDsFromText(text))
       await client.experimental.headless.session.prompt({ sessionID: sessionID(), text })
       await refreshPermissions()
       setPrompt("")
-      setSessionStatus("running")
       setNotice("Prompt 已提交，等待下一条运行事件")
     } catch (error) {
+      setSessionStatus(previousStatus)
       setChatItems((current) =>
-        appendChatItem(current, {
-          id: `status:prompt:${Date.now()}`,
-          kind: "status",
-          title: "Prompt 提交失败",
-          content: messageFrom(error, "请检查连接后重试"),
-          status: "failed",
-          localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        }),
+        appendChatItem(
+          current.filter((item) => item.id !== thinkingID),
+          {
+            id: `status:prompt:${Date.now()}`,
+            kind: "status",
+            title: "Prompt 提交失败",
+            content: messageFrom(error, "请检查连接后重试"),
+            status: "failed",
+            localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          },
+        ),
       )
       setNotice(messageFrom(error, "Prompt 未提交成功，请重试"))
     } finally {
@@ -834,7 +843,9 @@ function App() {
             }
           >
             <label class={`form-field ${sessionNameError() ? "field-invalid" : ""}`}>
-              <span>Session 名称 <span class="label-note">可选</span></span>
+              <span>
+                Session 名称 <span class="label-note">可选</span>
+              </span>
               <input
                 id="session-create-name"
                 aria-label="Session 名称"
@@ -848,11 +859,15 @@ function App() {
               />
               <span class="field-help">名称只用于识别 Session，不会改变工作目录。</span>
               <Show when={sessionNameError()}>
-                <span class="field-error" role="alert">{sessionNameError()}</span>
+                <span class="field-error" role="alert">
+                  {sessionNameError()}
+                </span>
               </Show>
             </label>
             <label class={`form-field ${directoryError() ? "field-invalid" : ""}`}>
-              <span>工作目录 <span class="required-mark">必填</span></span>
+              <span>
+                工作目录 <span class="required-mark">必填</span>
+              </span>
               <input
                 id="session-directory"
                 aria-label="工作目录"
@@ -1061,7 +1076,10 @@ function App() {
             </div>
             <span class="status-badge">{sessions().length} 个</span>
           </div>
-          <Show when={sessions().length > 0} fallback={<p class="empty-copy session-empty">还没有 Session，点击上方“新建 Session”开始。</p>}>
+          <Show
+            when={sessions().length > 0}
+            fallback={<p class="empty-copy session-empty">还没有 Session，点击上方“新建 Session”开始。</p>}
+          >
             <div class="session-list" aria-label="可用 Session">
               <For each={sessions()}>
                 {(session) => (
@@ -1071,11 +1089,11 @@ function App() {
                     title={session.directory}
                     onClick={() => void selectSession(session)}
                   >
-                    <span class="session-item-copy">
+                    <span class="session-item-top">
                       <strong class="session-item-name">{session.name}</strong>
-                      <small class="session-item-directory">{session.directory}</small>
+                      <span class={`session-status-pill session-status-${session.status}`}>{session.status}</span>
                     </span>
-                    <small class={`session-item-status session-item-status-${session.status}`}>{session.status}</small>
+                    <small class="session-item-directory">{session.directory}</small>
                   </button>
                 )}
               </For>
@@ -1103,27 +1121,21 @@ function App() {
             </div>
             <Show when={sessionID()}>
               <p class="topbar-sub">
-                <span class="current-session-directory" title={directory()}>{directory()}</span>
+                <span class="current-session-directory" title={directory()}>
+                  {directory()}
+                </span>
                 <span class="session-id">{sessionID()}</span>
               </p>
             </Show>
           </div>
           <div class="topbar-meta">
             <Show when={permissions().length > 0}>
-              <button
-                type="button"
-                class="attention-badge"
-                onClick={() => scrollRailSection(permissionsSection)}
-              >
+              <button type="button" class="attention-badge" onClick={() => scrollRailSection(permissionsSection)}>
                 ⚡ 权限 <span class="attention-count">{permissions().length}</span>
               </button>
             </Show>
             <Show when={questions().length > 0}>
-              <button
-                type="button"
-                class="attention-badge"
-                onClick={() => scrollRailSection(questionsSection)}
-              >
+              <button type="button" class="attention-badge" onClick={() => scrollRailSection(questionsSection)}>
                 ? 待答 <span class="attention-count">{questions().length}</span>
               </button>
             </Show>
@@ -1153,7 +1165,9 @@ function App() {
               }
             >
               <label class={`form-field ${sessionNameError() ? "field-invalid" : ""}`}>
-                <span>Session 名称 <span class="required-mark">必填</span></span>
+                <span>
+                  Session 名称 <span class="required-mark">必填</span>
+                </span>
                 <input
                   id="session-edit-name"
                   aria-label="Session 名称"
@@ -1165,7 +1179,9 @@ function App() {
                   }}
                 />
                 <Show when={sessionNameError()}>
-                  <span class="field-error" role="alert">{sessionNameError()}</span>
+                  <span class="field-error" role="alert">
+                    {sessionNameError()}
+                  </span>
                 </Show>
               </label>
               <button
@@ -1229,12 +1245,7 @@ function App() {
               ref={(element) => (conversationBody = element)}
               onScroll={(event) => handleConversationScroll(event.currentTarget)}
             >
-              <div
-                class="chat-stream"
-                role="log"
-                aria-live="polite"
-                classList={{ "is-hidden": chatView() !== "chat" }}
-              >
+              <div class="chat-stream" role="log" aria-live="polite" classList={{ "is-hidden": chatView() !== "chat" }}>
                 <Show
                   when={chatItems().length > 0}
                   fallback={
@@ -1288,14 +1299,31 @@ function App() {
                           </div>
                           <Switch>
                             <Match when={item.kind === "user" || item.kind === "assistant"}>
-                              <MarkdownView
-                                class="chat-copy"
-                                content={item.content || (item.status === "streaming" ? "Agent 正在输出…" : "")}
-                              />
-                              <Show when={item.kind === "assistant" && item.status === "streaming"}>
-                                <span class="stream-cursor" aria-hidden="true">
-                                  ▍
-                                </span>
+                              <Show
+                                when={item.thinking}
+                                fallback={
+                                  <>
+                                    <MarkdownView
+                                      class="chat-copy"
+                                      content={item.content || (item.status === "streaming" ? "Agent 正在输出…" : "")}
+                                    />
+                                    <Show when={item.kind === "assistant" && item.status === "streaming"}>
+                                      <span class="stream-cursor" aria-hidden="true">
+                                        ▍
+                                      </span>
+                                    </Show>
+                                  </>
+                                }
+                              >
+                                <div class="thinking-card" role="status" aria-label="正在思考">
+                                  <span class="thinking-orb" aria-hidden="true" />
+                                  <strong>正在思考</strong>
+                                  <span class="thinking-dots" aria-hidden="true">
+                                    <i>·</i>
+                                    <i>·</i>
+                                    <i>·</i>
+                                  </span>
+                                </div>
                               </Show>
                             </Match>
                             <Match when={item.kind === "execution"}>
@@ -1327,10 +1355,7 @@ function App() {
               </div>
               <div class="event-trace" classList={{ "is-hidden": chatView() !== "events" }}>
                 <div class="event-trace-head">事件明细 · {events().length.toString().padStart(2, "0")} 条</div>
-                <Show
-                  when={events().length > 0}
-                  fallback={<p class="empty-copy">本轮还没有收到运行事件</p>}
-                >
+                <Show when={events().length > 0} fallback={<p class="empty-copy">本轮还没有收到运行事件</p>}>
                   <div class="timeline">
                     <For each={events()}>
                       {(event) => (
@@ -1352,55 +1377,63 @@ function App() {
                 </Show>
               </div>
             </div>
-            <div class="prompt-box">
-              <div class="prompt-composer">
-                <textarea
-                  aria-label="Coding Prompt"
-                  value={prompt()}
-                  onInput={(event) => setPrompt(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendPrompt()
-                  }}
-                  placeholder={
-                    inputLocked()
-                      ? "Agent 正在回复，本轮完成后可继续输入…"
-                      : "描述下一步 Coding 任务…"
-                  }
-                  disabled={!sessionID() || busy() || inputLocked()}
-                />
-                <Show when={skillSuggestions().length > 0}>
-                  <div class="skill-suggestions" role="listbox" aria-label="Skill 建议">
-                    <For each={skillSuggestions()}>
-                      {(skill) => (
-                        <button
-                          class="skill-suggestion"
-                          role="option"
-                          aria-label={`@${skill.id}`}
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => selectSkill(skill)}
-                        >
-                          <span>@{skill.id}</span>
-                          <small>{skill.description}</small>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={activeSkillIDs().length > 0}>
-                  <div class="active-skill-row" aria-label="已附加 Skill">
-                    <span class="section-kicker">已附加</span>
-                    <For each={activeSkillIDs()}>{(id) => <span class="skill-chip">@{id}</span>}</For>
-                  </div>
-                </Show>
+            <div class="prompt-shell">
+              <textarea
+                class="prompt-input"
+                aria-label="Coding Prompt"
+                rows={1}
+                value={prompt()}
+                onInput={(event) => setPrompt(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendPrompt()
+                }}
+                placeholder={inputLocked() ? "Agent 正在回复，本轮完成后可继续输入…" : "描述下一步 Coding 任务…"}
+                disabled={!sessionID() || busy() || inputLocked()}
+              />
+              <Show when={skillSuggestions().length > 0}>
+                <div class="skill-suggestions" role="listbox" aria-label="Skill 建议">
+                  <For each={skillSuggestions()}>
+                    {(skill) => (
+                      <button
+                        class="skill-suggestion"
+                        role="option"
+                        aria-label={`@${skill.id}`}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectSkill(skill)}
+                      >
+                        <span>@{skill.id}</span>
+                        <small>{skill.description}</small>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={activeSkillIDs().length > 0}>
+                <div class="active-skill-row" aria-label="已附加 Skill">
+                  <span class="section-kicker">已附加</span>
+                  <For each={activeSkillIDs()}>{(id) => <span class="skill-chip">@{id}</span>}</For>
+                </div>
+              </Show>
+              <div class="prompt-bar">
+                <span class={`prompt-hint ${inputLocked() ? "is-locked" : ""}`}>
+                  {inputLocked() ? (
+                    <>
+                      <span class="prompt-hint-dot" aria-hidden="true" />
+                      Agent 正在回复，完成后可继续输入
+                    </>
+                  ) : (
+                    "⌘ ↵ 发送 · @ 引用 Skill"
+                  )}
+                </span>
+                <button
+                  class="send-fab"
+                  disabled={!sessionID() || !prompt().trim() || busy() || inputLocked()}
+                  onClick={sendPrompt}
+                  aria-label="发送 Prompt"
+                >
+                  {busy() ? "…" : "↑"}
+                </button>
               </div>
-              <button
-                class="send-button"
-                disabled={!sessionID() || !prompt().trim() || busy() || inputLocked()}
-                onClick={sendPrompt}
-              >
-                {busy() ? "发送中…" : inputLocked() ? "回复中…" : "发送 Prompt"}
-                <span>⌘ ↵</span>
-              </button>
             </div>
           </section>
 
@@ -1424,7 +1457,9 @@ function App() {
                 </div>
                 <div>
                   <span>上下文</span>
-                  <strong class={`context-value ${capabilityStateClass(compactionStatus())}`}>{compactionStatus()}</strong>
+                  <strong class={`context-value ${capabilityStateClass(compactionStatus())}`}>
+                    {compactionStatus()}
+                  </strong>
                 </div>
               </div>
 
@@ -1537,7 +1572,9 @@ function App() {
                       {(source) => (
                         <div>
                           <span>{source.kind}</span>
-                          <strong class="rail-source-path" title={source.path}>{source.path}</strong>
+                          <strong class="rail-source-path" title={source.path}>
+                            {source.path}
+                          </strong>
                         </div>
                       )}
                     </For>
@@ -1598,6 +1635,17 @@ function appendChatItem(items: ChatItem[], item: ChatItem): ChatItem[] {
   return [...items, item].slice(-maxChatItems)
 }
 
+function thinkingChatItem(sessionID: string, id = `thinking:${sessionID}`): ChatItem {
+  return {
+    id,
+    kind: "assistant",
+    title: "Agent",
+    thinking: true,
+    status: "running",
+    localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+  }
+}
+
 /**
  * 按稳定条目 ID 更新聊天卡片，避免重连时重建整条消息流。
  * @param items 当前聊天条目
@@ -1632,6 +1680,17 @@ function projectChatEvent(items: ChatItem[], event: ExperimentalHeadlessSessionE
       if (last?.kind === "assistant" && last.id.startsWith(idPrefix)) {
         return updateChatItem(items, last.id, {
           content: `${last.content ?? ""}${value("content")}`,
+          status: "streaming",
+          localTime,
+          eventType: event.type,
+        })
+      }
+      const thinking = items.find((item) => item.kind === "assistant" && item.thinking)
+      if (thinking) {
+        return updateChatItem(items, thinking.id, {
+          id: `${idPrefix}${event.sequence}`,
+          content: value("content"),
+          thinking: false,
           status: "streaming",
           localTime,
           eventType: event.type,
@@ -1756,7 +1815,11 @@ function projectChatEvent(items: ChatItem[], event: ExperimentalHeadlessSessionE
     case "session.completed":
       return appendChatItem(
         items.map((item) =>
-          item.id.startsWith(`assistant:${event.runID}:`) ? { ...item, status: "completed" } : item,
+          item.id.startsWith(`assistant:${event.runID}:`)
+            ? { ...item, status: "completed" }
+            : item.thinking
+              ? { ...item, thinking: false, content: "本轮任务已完成", status: "completed" }
+              : item,
         ),
         {
           id: `session:${event.runID}:completed`,
@@ -1769,25 +1832,39 @@ function projectChatEvent(items: ChatItem[], event: ExperimentalHeadlessSessionE
         },
       )
     case "session.failed":
-      return appendChatItem(items, {
-        id: `session:${event.runID}:failed`,
-        kind: "status",
-        title: "运行失败",
-        content: value("message") || "Core 返回运行失败",
-        status: "failed",
-        localTime,
-        eventType: event.type,
-      })
+      return appendChatItem(
+        items.map((item) =>
+          item.thinking
+            ? { ...item, thinking: false, content: value("message") || "Core 返回运行失败", status: "failed" }
+            : item,
+        ),
+        {
+          id: `session:${event.runID}:failed`,
+          kind: "status",
+          title: "运行失败",
+          content: value("message") || "Core 返回运行失败",
+          status: "failed",
+          localTime,
+          eventType: event.type,
+        },
+      )
     case "session.cancelled":
-      return appendChatItem(items, {
-        id: `session:${event.runID}:cancelled`,
-        kind: "status",
-        title: "运行已取消",
-        content: "本轮运行已停止，可以继续输入新的 Prompt",
-        status: "cancelled",
-        localTime,
-        eventType: event.type,
-      })
+      return appendChatItem(
+        items.map((item) =>
+          item.thinking
+            ? { ...item, thinking: false, content: "本轮运行已停止，可以继续输入新的 Prompt", status: "cancelled" }
+            : item,
+        ),
+        {
+          id: `session:${event.runID}:cancelled`,
+          kind: "status",
+          title: "运行已取消",
+          content: "本轮运行已停止，可以继续输入新的 Prompt",
+          status: "cancelled",
+          localTime,
+          eventType: event.type,
+        },
+      )
     default:
       return items
   }

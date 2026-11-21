@@ -125,6 +125,91 @@ test("continues the model conversation with the assistant tool call and tool res
   ])
 })
 
+test("rejects a second run while the first run is active", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-loop-concurrent-"))
+  temporaryDirectories.push(directory)
+  const sessions = createHeadlessSessionService()
+  const session = await sessions.create({ directory })
+  let releaseFirstRun = () => {}
+  let markFirstRunStarted = () => {}
+  const firstRunStarted = new Promise<void>((resolve) => {
+    markFirstRunStarted = resolve
+  })
+  const firstRunGate = new Promise<void>((resolve) => {
+    releaseFirstRun = resolve
+  })
+  let calls = 0
+  const model: ModelPort = {
+    async *prompt() {
+      calls += 1
+      if (calls === 1) {
+        markFirstRunStarted()
+        await firstRunGate
+      }
+      yield { type: "completed" }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "unused" }
+    },
+  }
+  const events: EventSink = { async publish() {} }
+  const loop = createHeadlessCodingLoop({ model, tool, permission, sessions, events })
+
+  const firstRun = loop.run({ sessionID: session.sessionID, text: "第一轮" })
+  await firstRunStarted
+  const secondRun = loop.run({ sessionID: session.sessionID, text: "第二轮" })
+
+  await expect(secondRun).rejects.toMatchObject({ code: "session_busy" })
+  releaseFirstRun()
+  await firstRun
+})
+
+test("runs a completed session again with a fresh prompt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-loop-restart-"))
+  temporaryDirectories.push(directory)
+  const sessions = createHeadlessSessionService()
+  const session = await sessions.create({ directory })
+  const prompts: string[] = []
+  const events: Array<{ type: string }> = []
+  const model: ModelPort = {
+    async *prompt(input) {
+      prompts.push(input.text)
+      yield { type: "text", content: input.text }
+      yield { type: "completed" }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "unused" }
+    },
+  }
+  const eventSink: EventSink = {
+    async publish(event) {
+      events.push({ type: event.type })
+    },
+  }
+  const loop = createHeadlessCodingLoop({ model, tool, permission, sessions, events: eventSink })
+
+  await loop.run({ sessionID: session.sessionID, text: "第一轮任务" })
+  await loop.run({ sessionID: session.sessionID, text: "第二轮任务" })
+
+  expect(prompts).toEqual(["第一轮任务", "第二轮任务"])
+  expect(events.filter((event) => event.type === "session.completed")).toHaveLength(2)
+  expect((await sessions.get(session.sessionID))?.status).toBe("completed")
+})
+
 test("executes every tool call in one assistant response before continuing", async () => {
   const directory = await mkdtemp(join(tmpdir(), "headless-loop-multi-tool-"))
   temporaryDirectories.push(directory)
