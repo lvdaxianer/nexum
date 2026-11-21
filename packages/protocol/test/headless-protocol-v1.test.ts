@@ -35,7 +35,14 @@ test("decodes the v1 success metadata and capability discovery contract", () => 
 
 test("decodes a recoverable session state and an identified runtime event", () => {
   const state = Schema.decodeUnknownSync(HeadlessSessionState)({
-    session: { id: "session_001", directory: "/workspace/demo", status: "running" },
+    session: {
+      id: "session_001",
+      name: "demo",
+      directory: "/workspace/demo",
+      status: "running",
+      createdAt: "2026-11-20T03:00:00.000Z",
+      updatedAt: "2026-11-20T03:00:00.000Z",
+    },
     pendingPermissions: [],
     pendingQuestions: [],
     lastSequence: 4,

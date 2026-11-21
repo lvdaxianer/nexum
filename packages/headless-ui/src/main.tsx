@@ -46,6 +46,8 @@ function App() {
   const [model, setModel] = createSignal("")
   const [credentialRef, setCredentialRef] = createSignal("")
   const [credential, setCredential] = createSignal("")
+  const [sessionName, setSessionName] = createSignal("")
+  const [sessionCreateName, setSessionCreateName] = createSignal("")
   const [directory, setDirectory] = createSignal("")
   const [prompt, setPrompt] = createSignal("")
   const [sessionID, setSessionID] = createSignal("")
@@ -67,10 +69,14 @@ function App() {
   const [modelSaveState, setModelSaveState] = createSignal<ActionState>("idle")
   const [modelSaveMessage, setModelSaveMessage] = createSignal("")
   const [directoryError, setDirectoryError] = createSignal("")
+  const [sessionNameError, setSessionNameError] = createSignal("")
   const [sessionCreateState, setSessionCreateState] = createSignal<ActionState>("idle")
   const [sessionCreateMessage, setSessionCreateMessage] = createSignal("")
   const [refreshBusy, setRefreshBusy] = createSignal(false)
   const [modelDrawerOpen, setModelDrawerOpen] = createSignal(false)
+  const [sessionDrawerOpen, setSessionDrawerOpen] = createSignal(false)
+  const [sessionEditDrawerOpen, setSessionEditDrawerOpen] = createSignal(false)
+  const [sessionEditName, setSessionEditName] = createSignal("")
   const [skillsDrawerOpen, setSkillsDrawerOpen] = createSignal(false)
   const [skills, setSkills] = createSignal<SkillSummary[]>([])
   const [skillBusy, setSkillBusy] = createSignal(false)
@@ -82,10 +88,12 @@ function App() {
   const [pendingDecisionID, setPendingDecisionID] = createSignal("")
   const [pendingQuestionID, setPendingQuestionID] = createSignal("")
   const [cancelBusy, setCancelBusy] = createSignal(false)
+  const [renameBusy, setRenameBusy] = createSignal(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
   let streamController: AbortController | undefined
   let promptSequence = 0
   let sessionSelectSequence = 0
+  const eventCursors = new Map<string, string>()
   const seenEventKeys = new Set<string>()
 
   onMount(async () => {
@@ -283,12 +291,13 @@ function App() {
     const available = (await client.experimental.headless.session.list()).data
     setSessions(available)
     const saved = savedID ? available.find((item) => item.id === savedID) : undefined
-    if (!saved) {
+    const initial = saved ?? available[0]
+    if (!initial) {
       if (savedID) sessionStorage.removeItem("headless.sessionID")
       return
     }
-    await selectSession(saved, false)
-    setNotice(`已恢复页面中的 Session：${saved.id.slice(0, 8)}`)
+    await selectSession(initial, false)
+    setNotice(saved ? `已恢复 Session：${saved.name}` : `已选择最近的 Session：${initial.name}`)
   }
 
   async function refreshRuntime() {
@@ -374,6 +383,7 @@ function App() {
     const snapshot = await client.experimental.headless.session.state({ sessionID: session.id })
     if (sequence !== sessionSelectSequence) return
     setSessionID(session.id)
+    setSessionName(snapshot.data.session.name)
     setSessionStatus(snapshot.data.session.status)
     setDirectory(snapshot.data.session.directory)
     setEvents([])
@@ -386,7 +396,7 @@ function App() {
     seenEventKeys.clear()
     sessionStorage.setItem("headless.sessionID", session.id)
     connectEvents(session.id)
-    if (announce) setNotice(`已选择 Session：${session.id.slice(0, 8)}`)
+    if (announce) setNotice(`已选择 Session：${snapshot.data.session.name}`)
   }
 
   /**
@@ -402,6 +412,7 @@ function App() {
       focusField("session-directory")
       return false
     }
+    setSessionNameError("")
     return true
   }
 
@@ -415,7 +426,10 @@ function App() {
     setSessionCreateState("pending")
     setSessionCreateMessage("正在检查目录并创建 Session…")
     try {
-      const created = await client.experimental.headless.session.create({ directory: directory().trim() })
+      const created = await client.experimental.headless.session.create({
+        directory: directory().trim(),
+        ...(sessionCreateName().trim() ? { name: sessionCreateName().trim() } : {}),
+      })
       applyCreatedSession(created.data)
     } catch (error) {
       handleSessionCreateFailure(error)
@@ -431,6 +445,7 @@ function App() {
    */
   function applyCreatedSession(created: SessionSummary) {
     setSessionID(created.id)
+    setSessionName(created.name)
     setSessionStatus(created.status)
     setDirectory(created.directory)
     sessionStorage.setItem("headless.sessionID", created.id)
@@ -444,9 +459,11 @@ function App() {
     setContextSources([])
     seenEventKeys.clear()
     connectEvents(created.id)
+    setSessionDrawerOpen(false)
+    setSessionNameError("")
     setSessionCreateState("success")
     setSessionCreateMessage("目录已校验，Session 创建成功")
-    setNotice(`Session ${created.id.slice(0, 8)} 已创建，等待 Prompt`)
+    setNotice(`Session「${created.name}」已创建，等待 Prompt`)
   }
 
   /**
@@ -456,10 +473,49 @@ function App() {
    */
   function handleSessionCreateFailure(error: unknown) {
     const message = messageFrom(error, "Session 创建失败，请检查工作目录")
-    setDirectoryError(message)
+    if (message.includes("名称")) setSessionNameError(message)
+    else setDirectoryError(message)
     setSessionCreateState("error")
     setSessionCreateMessage(message)
     setNotice(message)
+  }
+
+  function openRenameSession() {
+    const current = sessions().find((session) => session.id === sessionID())
+    if (!current) return
+    setSessionEditName(current.name)
+    setSessionEditDrawerOpen(true)
+  }
+
+  function openCreateSession() {
+    setSessionCreateName("")
+    setDirectory("")
+    setDirectoryError("")
+    setSessionNameError("")
+    setSessionCreateState("idle")
+    setSessionCreateMessage("")
+    setSessionDrawerOpen(true)
+  }
+
+  async function renameSession() {
+    const name = sessionEditName().trim()
+    if (renameBusy() || !sessionID() || !name) {
+      setSessionNameError("请输入 Session 名称")
+      return
+    }
+    setRenameBusy(true)
+    try {
+      const updated = await client.experimental.headless.session.update({ sessionID: sessionID(), name })
+      setSessions((current) => current.map((session) => (session.id === updated.data.id ? updated.data : session)))
+      setSessionName(updated.data.name)
+      setSessionEditDrawerOpen(false)
+      setSessionNameError("")
+      setNotice(`Session 已重命名为「${updated.data.name}」`)
+    } catch (error) {
+      setSessionNameError(messageFrom(error, "Session 名称更新失败，请重试"))
+    } finally {
+      setRenameBusy(false)
+    }
   }
 
   async function connectEvents(id: string) {
@@ -468,7 +524,7 @@ function App() {
     streamController = controller
     setConnected(true)
     try {
-      const lastEventID = sessionStorage.getItem(`headless.eventID.${id}`) ?? undefined
+      const lastEventID = eventCursors.get(id)
       for await (const event of client.experimental.headless.session.events(
         { sessionID: id },
         {
@@ -479,7 +535,7 @@ function App() {
         const eventKey = event.eventID
         if (seenEventKeys.has(eventKey)) continue
         seenEventKeys.add(eventKey)
-        sessionStorage.setItem(`headless.eventID.${id}`, event.eventID)
+        eventCursors.set(id, event.eventID)
         setEvents((current) => [
           ...[
             ...current,
@@ -736,6 +792,70 @@ function App() {
             <span>◌</span>Session
           </a>
           <Drawer
+            title="新建 Session"
+            description="为一个独立的工作目录创建可恢复的 Session。模型配置是全局的，不需要在这里重复填写。"
+            open={sessionDrawerOpen()}
+            onOpenChange={(open) => (open ? openCreateSession() : setSessionDrawerOpen(false))}
+            triggerClass="nav-item"
+            trigger={
+              <>
+                <span>＋</span>新建 Session
+              </>
+            }
+          >
+            <label class={`form-field ${sessionNameError() ? "field-invalid" : ""}`}>
+              <span>Session 名称 <span class="label-note">可选</span></span>
+              <input
+                id="session-create-name"
+                aria-label="Session 名称"
+                aria-invalid={Boolean(sessionNameError())}
+                value={sessionCreateName()}
+                onInput={(event) => {
+                  setSessionCreateName(event.currentTarget.value)
+                  setSessionNameError("")
+                }}
+                placeholder="默认使用目录名称"
+              />
+              <span class="field-help">名称只用于识别 Session，不会改变工作目录。</span>
+              <Show when={sessionNameError()}>
+                <span class="field-error" role="alert">{sessionNameError()}</span>
+              </Show>
+            </label>
+            <label class={`form-field ${directoryError() ? "field-invalid" : ""}`}>
+              <span>工作目录 <span class="required-mark">必填</span></span>
+              <input
+                id="session-directory"
+                aria-label="工作目录"
+                aria-invalid={Boolean(directoryError())}
+                aria-describedby={directoryError() ? "session-directory-error" : "session-directory-help"}
+                value={directory()}
+                onInput={(event) => {
+                  setDirectory(event.currentTarget.value)
+                  setDirectoryError("")
+                  setSessionCreateState("idle")
+                  setSessionCreateMessage("")
+                }}
+                placeholder="/workspace/project"
+              />
+              <span id="session-directory-help" class="field-help">
+                填写运行服务器上的绝对路径，目录必须已存在且可读写。
+              </span>
+              <Show when={directoryError()}>
+                <span id="session-directory-error" class="field-error" role="alert">
+                  {directoryError()}
+                </span>
+              </Show>
+            </label>
+            <button class="button button-primary" disabled={sessionBusy()} onClick={createSession}>
+              {sessionBusy() ? "创建中…" : "保存并创建 Session"} <span>→</span>
+            </button>
+            <Show when={sessionCreateMessage()}>
+              <p class={`form-feedback form-feedback-${sessionCreateState()}`} role="status" aria-live="polite">
+                {sessionCreateMessage()}
+              </p>
+            </Show>
+          </Drawer>
+          <Drawer
             title="Skills"
             description="Skill 先注册、校验，再进入模型上下文。"
             open={skillsDrawerOpen()}
@@ -906,57 +1026,26 @@ function App() {
         <section class="sidebar-card" id="session">
           <div class="card-heading">
             <div>
-              <span class="section-kicker">项目上下文</span>
+              <span class="section-kicker">可恢复工作区</span>
               <h2>Session</h2>
             </div>
             <span class="status-badge">{sessions().length} 个</span>
           </div>
-          <label class={`form-field ${directoryError() ? "field-invalid" : ""}`}>
-            <span>
-              工作目录 <span class="required-mark">必填</span>
-            </span>
-            <input
-              id="session-directory"
-              aria-label="工作目录"
-              aria-invalid={Boolean(directoryError())}
-              aria-describedby={directoryError() ? "session-directory-error" : "session-directory-help"}
-              value={directory()}
-              onInput={(event) => {
-                setDirectory(event.currentTarget.value)
-                setDirectoryError("")
-                setSessionCreateState("idle")
-                setSessionCreateMessage("")
-              }}
-              placeholder="/workspace/project"
-            />
-            <span id="session-directory-help" class="field-help">
-              填写运行服务器上的绝对路径，目录必须已存在且可读写。
-            </span>
-            <Show when={directoryError()}>
-              <span id="session-directory-error" class="field-error" role="alert">
-                {directoryError()}
-              </span>
-            </Show>
-          </label>
-          <button class="button button-secondary" disabled={sessionBusy()} onClick={createSession}>
-            {sessionBusy() ? "创建中…" : "创建新 Session"} <span>→</span>
-          </button>
-          <Show when={sessionCreateMessage()}>
-            <p class={`form-feedback form-feedback-${sessionCreateState()}`} role="status" aria-live="polite">
-              {sessionCreateMessage()}
-            </p>
-          </Show>
-          <Show when={sessions().length > 0}>
+          <Show when={sessions().length > 0} fallback={<p class="empty-copy session-empty">还没有 Session，点击上方“新建 Session”开始。</p>}>
             <div class="session-list" aria-label="可用 Session">
               <For each={sessions()}>
                 {(session) => (
                   <button
                     class={`session-item ${session.id === sessionID() ? "is-active" : ""}`}
                     aria-pressed={session.id === sessionID()}
+                    title={session.directory}
                     onClick={() => void selectSession(session)}
                   >
-                    <span>{session.id.slice(0, 8)}</span>
-                    <small>{session.status}</small>
+                    <span class="session-item-copy">
+                      <strong class="session-item-name">{session.name}</strong>
+                      <small class="session-item-directory">{session.directory}</small>
+                    </span>
+                    <small class={`session-item-status session-item-status-${session.status}`}>{session.status}</small>
                   </button>
                 )}
               </For>
@@ -981,17 +1070,49 @@ function App() {
               <span class="status-dot" />
               {connected() ? "事件流已连接" : "等待连接"}
             </span>
-            <span class="model-chip">{model() || "未配置模型"}</span>
+            <span class="model-chip">{model() ? `全局模型 · ${model()}` : "未配置全局模型"}</span>
           </div>
         </header>
 
         <div class="session-toolbar">
           <div class="session-summary">
             <span class="section-kicker">当前 Session</span>
-            <strong class="session-id">{sessionID() || "尚未创建 Session"}</strong>
+            <strong class="session-current-name">{sessionName() || "尚未选择 Session"}</strong>
             <span class={`pill pill-${sessionStatus()}`}>{sessionStatus()}</span>
+            <Show when={sessionID()}>
+              <span class="session-id">{sessionID()}</span>
+              <span class="current-session-directory" title={directory()}>{directory()}</span>
+            </Show>
           </div>
           <div class="toolbar-actions">
+            <Drawer
+              title="编辑 Session 名称"
+              description="名称只用于识别当前 Session，工作目录和 Session ID 不会改变。"
+              open={sessionEditDrawerOpen()}
+              onOpenChange={(open) => (open ? openRenameSession() : setSessionEditDrawerOpen(false))}
+              triggerClass="toolbar-button"
+              trigger="编辑名称"
+            >
+              <label class={`form-field ${sessionNameError() ? "field-invalid" : ""}`}>
+                <span>Session 名称 <span class="required-mark">必填</span></span>
+                <input
+                  id="session-edit-name"
+                  aria-label="Session 名称"
+                  aria-invalid={Boolean(sessionNameError())}
+                  value={sessionEditName()}
+                  onInput={(event) => {
+                    setSessionEditName(event.currentTarget.value)
+                    setSessionNameError("")
+                  }}
+                />
+                <Show when={sessionNameError()}>
+                  <span class="field-error" role="alert">{sessionNameError()}</span>
+                </Show>
+              </label>
+              <button class="button button-primary" disabled={!sessionID() || renameBusy()} onClick={() => void renameSession()}>
+                {renameBusy() ? "保存中…" : "保存名称"}
+              </button>
+            </Drawer>
             <button class="toolbar-button" disabled={!sessionID()} onClick={reconnectEvents}>
               重新连接
             </button>
@@ -1083,7 +1204,7 @@ function App() {
                             </div>
                             <div class="empty-step">
                               <span class="step-mark">2</span>
-                              填写工作目录并创建 Session
+                              创建或选择一个 Session
                               <small>待完成</small>
                             </div>
                             <div class="empty-step">

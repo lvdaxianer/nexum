@@ -23,8 +23,11 @@ export const HeadlessSessionStatus = Schema.Literals(["idle", "running", "comple
 /** Headless Session 的最小公开信息。 */
 export const HeadlessSession = Schema.Struct({
   id: Schema.String,
+  name: Schema.String,
   directory: Schema.String,
   status: HeadlessSessionStatus,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
 })
 
 /** Headless Protocol v1 的公共响应元数据。 */
@@ -74,6 +77,12 @@ export const HeadlessSessionState = Schema.Struct({
 /** Headless Session 创建请求。 */
 export const HeadlessSessionCreatePayload = Schema.Struct({
   directory: Schema.String,
+  name: Schema.optional(Schema.String),
+})
+
+/** Headless Session 展示名称更新请求。 */
+export const HeadlessSessionUpdatePayload = Schema.Struct({
+  name: Schema.String,
 })
 
 /** Headless Prompt 请求。 */
@@ -385,6 +394,20 @@ export const HeadlessGroup = HttpApiGroup.make("server.headless")
         identifier: "experimental.headless.session.list",
         summary: "List headless sessions",
         description: "List Session IDs, working directories, and lifecycle status for page recovery.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put("experimental.headless.session.update", "/api/experimental/headless/session/:sessionID", {
+      params: { sessionID: Schema.String },
+      payload: HeadlessSessionUpdatePayload,
+      success: Schema.Struct({ data: HeadlessSession, meta: HeadlessResponseMeta }),
+      error: [InvalidRequestError, SessionNotFoundError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "experimental.headless.session.update",
+        summary: "Update a headless session name",
+        description: "Update the display name of a headless session without changing its working directory.",
       }),
     ),
   )

@@ -331,6 +331,8 @@ import type {
   ExperimentalHeadlessSessionCreateInput,
   ExperimentalHeadlessSessionCreateOutput,
   ExperimentalHeadlessSessionListOutput,
+  ExperimentalHeadlessSessionUpdateInput,
+  ExperimentalHeadlessSessionUpdateOutput,
   ExperimentalHeadlessSessionStateInput,
   ExperimentalHeadlessSessionStateOutput,
   ExperimentalHeadlessSkillListOutput,
@@ -2068,15 +2070,24 @@ const EndpointExperimentalHeadlessModelProbe =
 const EndpointExperimentalHeadlessSessionCreate =
   (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionCreateInput) =>
     preserveEffect<ExperimentalHeadlessSessionCreateOutput>()(
-      raw["experimental.headless.session.create"]({ payload: { directory: input["directory"] } }).pipe(
-        Effect.mapError(mapClientError),
-      ),
+      raw["experimental.headless.session.create"]({
+        payload: { directory: input["directory"], name: input["name"] },
+      }).pipe(Effect.mapError(mapClientError)),
     )
 
 const EndpointExperimentalHeadlessSessionList = (raw: RawClient["server.headless"]) => () =>
   preserveEffect<ExperimentalHeadlessSessionListOutput>()(
     raw["experimental.headless.session.list"]({}).pipe(Effect.mapError(mapClientError)),
   )
+
+const EndpointExperimentalHeadlessSessionUpdate =
+  (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionUpdateInput) =>
+    preserveEffect<ExperimentalHeadlessSessionUpdateOutput>()(
+      raw["experimental.headless.session.update"]({
+        params: { sessionID: input["sessionID"] },
+        payload: { name: input["name"] },
+      }).pipe(Effect.mapError(mapClientError)),
+    )
 
 const EndpointExperimentalHeadlessSessionState =
   (raw: RawClient["server.headless"]) => (input: ExperimentalHeadlessSessionStateInput) =>
@@ -2209,6 +2220,7 @@ const adaptGroupExperimentalHeadless = (raw: RawClient["server.headless"]) => ({
   session: {
     create: EndpointExperimentalHeadlessSessionCreate(raw),
     list: EndpointExperimentalHeadlessSessionList(raw),
+    update: EndpointExperimentalHeadlessSessionUpdate(raw),
     state: EndpointExperimentalHeadlessSessionState(raw),
     prompt: EndpointExperimentalHeadlessSessionPrompt(raw),
     question: {

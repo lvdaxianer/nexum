@@ -335,6 +335,8 @@ import type {
   ExperimentalHeadlessSessionCreateInput,
   ExperimentalHeadlessSessionCreateOutput,
   ExperimentalHeadlessSessionListOutput,
+  ExperimentalHeadlessSessionUpdateInput,
+  ExperimentalHeadlessSessionUpdateOutput,
   ExperimentalHeadlessSessionStateInput,
   ExperimentalHeadlessSessionStateOutput,
   ExperimentalHeadlessSkillListOutput,
@@ -1896,7 +1898,7 @@ export function make(options: ClientOptions) {
               {
                 method: "POST",
                 path: `/api/experimental/headless/session`,
-                body: { directory: input["directory"] },
+                body: { directory: input["directory"], name: input["name"] },
                 successStatus: 200,
                 declaredStatuses: [400],
                 empty: false,
@@ -1910,6 +1912,18 @@ export function make(options: ClientOptions) {
                 path: `/api/experimental/headless/session`,
                 successStatus: 200,
                 declaredStatuses: [],
+                empty: false,
+              },
+              requestOptions,
+            ),
+          update: (input: ExperimentalHeadlessSessionUpdateInput, requestOptions?: RequestOptions) =>
+            request<ExperimentalHeadlessSessionUpdateOutput>(
+              {
+                method: "PUT",
+                path: `/api/experimental/headless/session/${encodeURIComponent(input.sessionID)}`,
+                body: { name: input["name"] },
+                successStatus: 200,
+                declaredStatuses: [400, 404],
                 empty: false,
               },
               requestOptions,

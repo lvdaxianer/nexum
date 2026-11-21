@@ -6,7 +6,7 @@
  */
 
 import { access, constants, stat } from "node:fs/promises"
-import { isAbsolute, normalize } from "node:path"
+import { basename, isAbsolute, normalize } from "node:path"
 import { createOpenAICompatibleModelPort } from "./model.js"
 import type { HeadlessModelConfigStore } from "./model-config.js"
 import type {
@@ -115,8 +115,11 @@ export interface PermissionPort {
 /** Session 的最小持久化记录。 */
 export interface SessionRecord {
   readonly sessionID: string
+  readonly name: string
   readonly directory: string
   readonly status: "idle" | "running" | "completed" | "failed" | "cancelled"
+  readonly createdAt: string
+  readonly updatedAt: string
 }
 
 /** Session 存储端口。 */
@@ -130,11 +133,17 @@ export interface SessionStore {
 export type HeadlessSessionStatus = SessionRecord["status"]
 
 /** 可由 Headless Session Service 返回的领域错误类型。 */
-export type HeadlessSessionErrorCode = "invalid_directory" | "session_not_found" | "invalid_transition"
+export type HeadlessSessionErrorCode = "invalid_directory" | "invalid_name" | "session_not_found" | "invalid_transition"
 
 /** Headless Session 创建请求。 */
 export interface HeadlessSessionCreateInput {
   readonly directory: string
+  readonly name?: string
+}
+
+/** Headless Session 的可变展示元数据。 */
+export interface HeadlessSessionUpdateInput {
+  readonly name: string
 }
 
 /** Headless Session Service 的可替换目录校验端口。 */
@@ -147,6 +156,7 @@ export interface HeadlessSessionService {
   readonly create: (input: HeadlessSessionCreateInput) => Promise<SessionRecord>
   readonly list: () => Promise<readonly SessionRecord[]>
   readonly get: (sessionID: string) => Promise<SessionRecord | undefined>
+  readonly update: (sessionID: string, input: HeadlessSessionUpdateInput) => Promise<SessionRecord>
   readonly setStatus: (sessionID: string, status: HeadlessSessionStatus) => Promise<SessionRecord>
 }
 
@@ -190,10 +200,12 @@ export function createInMemorySessionStore(): InMemorySessionStore {
       sessions.set(session.sessionID, { ...session })
     },
     async list() {
-      return Array.from(sessions.values(), (session) => ({ ...session }))
+      return sortSessions(Array.from(sessions.values(), (session) => ({ ...session })))
     },
   }
 }
+
+export { createFileSessionStore, type FileSessionStoreOptions } from "./session-store.js"
 
 /**
  * 校验 Headless Session 的工作目录。
@@ -241,10 +253,15 @@ export function createHeadlessSessionService(options: HeadlessSessionServiceOpti
     async create(input) {
       const directory = normalize(input.directory.trim())
       await directoryValidator.validate(directory)
+      const name = normalizeSessionName(input.name, directory)
+      const timestamp = new Date().toISOString()
       const session: SessionRecord = {
         sessionID: crypto.randomUUID(),
+        name,
         directory,
         status: "idle",
+        createdAt: timestamp,
+        updatedAt: timestamp,
       }
       await store.save(session)
       return session
@@ -254,6 +271,16 @@ export function createHeadlessSessionService(options: HeadlessSessionServiceOpti
     },
     get(sessionID) {
       return store.get(sessionID)
+    },
+    async update(sessionID, input) {
+      const current = await store.get(sessionID)
+      if (!current) {
+        throw new HeadlessSessionError("session_not_found", "Session 不存在", sessionID)
+      }
+      const name = requireSessionName(input.name)
+      const next = { ...current, name, updatedAt: nextSessionTimestamp(current.updatedAt) }
+      await store.save(next)
+      return next
     },
     async setStatus(sessionID, status) {
       const current = await store.get(sessionID)
@@ -268,11 +295,41 @@ export function createHeadlessSessionService(options: HeadlessSessionServiceOpti
           sessionID,
         )
       }
-      const next = { ...current, status }
+      const next = { ...current, status, updatedAt: nextSessionTimestamp(current.updatedAt) }
       await store.save(next)
       return next
     },
   }
+}
+
+function normalizeSessionName(name: string | undefined, directory: string): string {
+  const candidate = name?.trim() || basename(directory)
+  if (!candidate) {
+    throw new HeadlessSessionError("invalid_name", "Session 名称不能为空")
+  }
+  return candidate
+}
+
+function requireSessionName(name: string): string {
+  const candidate = name.trim()
+  if (!candidate) {
+    throw new HeadlessSessionError("invalid_name", "Session 名称不能为空")
+  }
+  return candidate
+}
+
+function sortSessions(sessions: SessionRecord[]): SessionRecord[] {
+  return sessions.sort((left, right) => {
+    const updated = right.updatedAt.localeCompare(left.updatedAt)
+    if (updated !== 0) return updated
+    return left.sessionID.localeCompare(right.sessionID)
+  })
+}
+
+function nextSessionTimestamp(previous: string): string {
+  const current = Date.now()
+  const previousTime = Date.parse(previous)
+  return new Date(Math.max(current, Number.isNaN(previousTime) ? current : previousTime + 1)).toISOString()
 }
 
 /** Coding Loop 的一次 Prompt 输入。 */

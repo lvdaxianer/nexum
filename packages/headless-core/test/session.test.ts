@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { HeadlessSessionError, createHeadlessSessionService, createInMemorySessionStore } from "../src/index.ts"
 
 const temporaryDirectories: string[] = []
@@ -27,6 +27,36 @@ test("creates an idle session for a valid working directory", async () => {
   expect(await service.get(session.sessionID)).toEqual(session)
 })
 
+test("creates a named session with durable timestamps", async () => {
+  const directory = await makeDirectory()
+  const service = createHeadlessSessionService()
+
+  const session = await service.create({ directory })
+
+  expect(session.name).toBe(basename(directory))
+  expect(session.createdAt).toBeString()
+  expect(session.updatedAt).toBe(session.createdAt)
+})
+
+test("updates a session name without changing its directory or id", async () => {
+  const directory = await makeDirectory()
+  const service = createHeadlessSessionService()
+  const session = await service.create({ directory, name: "旧名称" })
+
+  const updated = await service.update(session.sessionID, { name: "新名称" })
+
+  expect(updated).toMatchObject({ sessionID: session.sessionID, directory, name: "新名称" })
+  expect(updated.updatedAt).not.toBe(session.updatedAt)
+})
+
+test("rejects an empty name when updating a session", async () => {
+  const directory = await makeDirectory()
+  const service = createHeadlessSessionService()
+  const session = await service.create({ directory, name: "项目" })
+
+  await expect(service.update(session.sessionID, { name: "   " })).rejects.toMatchObject({ code: "invalid_name" })
+})
+
 test("lists sessions for page-level session recovery", async () => {
   const firstDirectory = await makeDirectory()
   const secondDirectory = await makeDirectory()
@@ -35,7 +65,9 @@ test("lists sessions for page-level session recovery", async () => {
   const first = await service.create({ directory: firstDirectory })
   const second = await service.create({ directory: secondDirectory })
 
-  expect(await service.list()).toEqual([first, second])
+  expect(new Set((await service.list()).map((session) => session.sessionID))).toEqual(
+    new Set([first.sessionID, second.sessionID]),
+  )
 })
 
 test("rejects an invalid directory without creating a session", async () => {
