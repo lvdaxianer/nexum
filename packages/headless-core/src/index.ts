@@ -277,7 +277,7 @@ export function createHeadlessSessionService(options: HeadlessSessionServiceOpti
       if (!current) {
         throw new HeadlessSessionError("session_not_found", "Session 不存在", sessionID)
       }
-      const name = normalizeSessionName(input.name, current.directory)
+      const name = requireSessionName(input.name)
       const next = { ...current, name, updatedAt: nextSessionTimestamp(current.updatedAt) }
       await store.save(next)
       return next
@@ -304,6 +304,14 @@ export function createHeadlessSessionService(options: HeadlessSessionServiceOpti
 
 function normalizeSessionName(name: string | undefined, directory: string): string {
   const candidate = name?.trim() || basename(directory)
+  if (!candidate) {
+    throw new HeadlessSessionError("invalid_name", "Session 名称不能为空")
+  }
+  return candidate
+}
+
+function requireSessionName(name: string): string {
+  const candidate = name.trim()
   if (!candidate) {
     throw new HeadlessSessionError("invalid_name", "Session 名称不能为空")
   }

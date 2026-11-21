@@ -49,6 +49,14 @@ test("updates a session name without changing its directory or id", async () => 
   expect(updated.updatedAt).not.toBe(session.updatedAt)
 })
 
+test("rejects an empty name when updating a session", async () => {
+  const directory = await makeDirectory()
+  const service = createHeadlessSessionService()
+  const session = await service.create({ directory, name: "项目" })
+
+  await expect(service.update(session.sessionID, { name: "   " })).rejects.toMatchObject({ code: "invalid_name" })
+})
+
 test("lists sessions for page-level session recovery", async () => {
   const firstDirectory = await makeDirectory()
   const secondDirectory = await makeDirectory()
