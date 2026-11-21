@@ -368,8 +368,14 @@ export interface HeadlessConfiguredCodingLoopOptions extends Omit<HeadlessCoding
 /** 单 Agent Headless Coding Loop。 */
 export interface HeadlessCodingLoop {
   readonly run: (input: HeadlessCodingLoopInput) => Promise<SessionRecord>
+  readonly start?: (input: HeadlessCodingLoopInput) => HeadlessCodingLoopStart
   readonly cancel: (sessionID: string) => Promise<SessionRecord>
 }
+
+/** 用于在 HTTP admission 与异步执行之间保持同一 Session 的运行占用。 */
+export type HeadlessCodingLoopStart =
+  | { readonly accepted: true; readonly promise: Promise<SessionRecord> }
+  | { readonly accepted: false }
 
 /**
  * 创建最小单 Agent Coding Loop。
@@ -387,152 +393,91 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
   const activeRuns = new Map<string, ActiveRun>()
   const sessionSequences = new Map<string, number>()
 
-  return {
-    async run(input) {
-      const session = await options.sessions.get(input.sessionID)
-      if (!session) {
-        throw new HeadlessSessionError("session_not_found", "Session 不存在", input.sessionID)
-      }
+  const execute = async (input: HeadlessCodingLoopInput, runState: ActiveRun) => {
+    const session = await options.sessions.get(input.sessionID).catch((error) => {
+      if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
+      throw error
+    })
+    if (!session) {
+      if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
+      throw new HeadlessSessionError("session_not_found", "Session 不存在", input.sessionID)
+    }
 
-      if (activeRuns.has(input.sessionID)) {
-        throw new HeadlessSessionError("session_busy", "Session 当前正在运行", input.sessionID)
-      }
-      const runState: ActiveRun = { controller: new AbortController(), cancelled: false }
-      activeRuns.set(input.sessionID, runState)
-      const runID = crypto.randomUUID()
-      const publish = async (type: string, data?: Record<string, unknown>) => {
-        const sequence = (sessionSequences.get(input.sessionID) ?? 0) + 1
-        sessionSequences.set(input.sessionID, sequence)
-        await options.events.publish({
-          eventID: crypto.randomUUID(),
-          runID,
-          sessionID: input.sessionID,
-          type,
-          sequence,
-          occurredAt: new Date().toISOString(),
-          data,
+    const runID = crypto.randomUUID()
+    const publish = async (type: string, data?: Record<string, unknown>) => {
+      const sequence = (sessionSequences.get(input.sessionID) ?? 0) + 1
+      sessionSequences.set(input.sessionID, sequence)
+      await options.events.publish({
+        eventID: crypto.randomUUID(),
+        runID,
+        sessionID: input.sessionID,
+        type,
+        sequence,
+        occurredAt: new Date().toISOString(),
+        data,
+      })
+    }
+    let messages: ModelMessage[] = [{ role: "user", content: input.text }]
+    let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text, messages }
+
+    try {
+      await options.sessions.setStatus(input.sessionID, "running")
+      const skillPrompt = options.skills
+        ? await options.skills.resolve({ sessionID: input.sessionID, text: input.text })
+        : { skills: [], systemMessages: [] }
+      for (const skill of skillPrompt.skills) {
+        await publish("skill.activated", {
+          skillID: skill.id,
+          name: skill.name,
+          mention: skill.mention,
         })
       }
-      let messages: ModelMessage[] = [{ role: "user", content: input.text }]
-      let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text, messages }
-
-      try {
-        await options.sessions.setStatus(input.sessionID, "running")
-        const skillPrompt = options.skills
-          ? await options.skills.resolve({ sessionID: input.sessionID, text: input.text })
-          : { skills: [], systemMessages: [] }
-        for (const skill of skillPrompt.skills) {
-          await publish("skill.activated", {
-            skillID: skill.id,
-            name: skill.name,
-            mention: skill.mention,
-          })
-        }
-        messages = [...skillPrompt.systemMessages, { role: "user", content: input.text }]
+      messages = [...skillPrompt.systemMessages, { role: "user", content: input.text }]
+      messages = await restoreProjectContext(input.sessionID, messages, options.projectContext, publish)
+      prompt = {
+        sessionID: input.sessionID,
+        text: input.text,
+        messages,
+        ...(options.tools ? { tools: options.tools } : {}),
+      }
+      for (let step = 0; step < maxSteps; step++) {
+        throwIfCancelled(runState)
+        messages = await compactMessagesIfNeeded(messages, options, publish)
         messages = await restoreProjectContext(input.sessionID, messages, options.projectContext, publish)
-        prompt = {
-          sessionID: input.sessionID,
-          text: input.text,
-          messages,
-          ...(options.tools ? { tools: options.tools } : {}),
-        }
-        for (let step = 0; step < maxSteps; step++) {
+        prompt = { ...prompt, messages }
+        let continued = false
+        for await (const chunk of options.model.prompt({ ...prompt, signal: runState.controller.signal })) {
           throwIfCancelled(runState)
-          messages = await compactMessagesIfNeeded(messages, options, publish)
-          messages = await restoreProjectContext(input.sessionID, messages, options.projectContext, publish)
-          prompt = { ...prompt, messages }
-          let continued = false
-          for await (const chunk of options.model.prompt({ ...prompt, signal: runState.controller.signal })) {
-            throwIfCancelled(runState)
-            if (chunk.type === "text") {
-              await publish("assistant.text", { content: chunk.content ?? "" })
-              continue
-            }
-            if (chunk.type === "completed") {
-              const completed = await options.sessions.setStatus(input.sessionID, "completed")
-              await publish("session.completed")
-              return completed
-            }
+          if (chunk.type === "text") {
+            await publish("assistant.text", { content: chunk.content ?? "" })
+            continue
+          }
+          if (chunk.type === "completed") {
+            const completed = await options.sessions.setStatus(input.sessionID, "completed")
+            await publish("session.completed")
+            return completed
+          }
 
-            const questionChunk = toQuestionChunk(chunk)
-            if (questionChunk) {
-              const request = createQuestionRequest(input.sessionID, questionChunk)
-              await publish("question.request", {
-                requestID: request.id,
-                toolCallID: request.toolCallID,
-                questions: request.questions,
-              })
-              if (!options.question) throw new Error("Question 端口未配置")
-              const result = await options.question.ask(request)
-              if (!result.ok) {
-                await publish("question.cancelled", { requestID: request.id, toolCallID: request.toolCallID })
-                throw new Error(result.output)
-              }
-              await publish("question.result", { requestID: request.id, toolCallID: request.toolCallID })
-              messages = appendQuestionResult(messages, request, result)
-              prompt = {
-                sessionID: input.sessionID,
-                text: input.text,
-                toolResults: [result],
-                messages,
-                ...(options.tools ? { tools: options.tools } : {}),
-              }
-              continued = true
-              break
+          const questionChunk = toQuestionChunk(chunk)
+          if (questionChunk) {
+            const request = createQuestionRequest(input.sessionID, questionChunk)
+            await publish("question.request", {
+              requestID: request.id,
+              toolCallID: request.toolCallID,
+              questions: request.questions,
+            })
+            if (!options.question) throw new Error("Question 端口未配置")
+            const result = await options.question.ask(request)
+            if (!result.ok) {
+              await publish("question.cancelled", { requestID: request.id, toolCallID: request.toolCallID })
+              throw new Error(result.output)
             }
-
-            const toolCalls = chunk.toolCalls ?? [legacyToolCall(chunk)]
-            messages = [
-              ...messages,
-              {
-                role: "assistant",
-                toolCalls,
-              },
-            ]
-            const toolResults: ToolResult[] = []
-            for (const toolCall of toolCalls) {
-              const request = makeToolRequest(input.sessionID, toolCall)
-              const toolCallID = toolCall.id
-              await publish("tool.request", {
-                toolCallID,
-                action: request.action,
-                resource: redactHeadlessSensitiveValue(request.resource) as string,
-                toolName: request.toolName,
-                input: redactHeadlessSensitiveValue(request.input) as Record<string, unknown>,
-              })
-              const permissionEvaluation = options.permission.evaluate(request)
-              if ("list" in options.permission && typeof options.permission.list === "function") {
-                const pending = (await options.permission.list(input.sessionID)).find(
-                  (item: { action: string; resource: string; id: string; reason?: string }) =>
-                    item.action === request.action,
-                )
-                if (pending) {
-                  await publish("permission.requested", {
-                    requestID: pending.id,
-                    action: pending.action,
-                    resource: pending.resource,
-                    reason: pending.reason,
-                  })
-                }
-              }
-              const effect = await permissionEvaluation
-              if (effect !== "allow") {
-                throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
-              }
-              const result = await options.tool.execute(request)
-              const toolResult = { ...result, toolCallID }
-              toolResults.push(toolResult)
-              await publish("tool.result", {
-                toolCallID,
-                ok: result.ok,
-                output: redactHeadlessSensitiveValue(result.output) as string,
-              })
-              messages = [...messages, { role: "tool", toolCallID, content: result.output }]
-            }
+            await publish("question.result", { requestID: request.id, toolCallID: request.toolCallID })
+            messages = appendQuestionResult(messages, request, result)
             prompt = {
               sessionID: input.sessionID,
               text: input.text,
-              toolResults,
+              toolResults: [result],
               messages,
               ...(options.tools ? { tools: options.tools } : {}),
             }
@@ -540,30 +485,105 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
             break
           }
 
-          if (continued) continue
-          const completed = await options.sessions.setStatus(input.sessionID, "completed")
-          await publish("session.completed")
-          return completed
+          const toolCalls = chunk.toolCalls ?? [legacyToolCall(chunk)]
+          messages = [
+            ...messages,
+            {
+              role: "assistant",
+              toolCalls,
+            },
+          ]
+          const toolResults: ToolResult[] = []
+          for (const toolCall of toolCalls) {
+            const request = makeToolRequest(input.sessionID, toolCall)
+            const toolCallID = toolCall.id
+            await publish("tool.request", {
+              toolCallID,
+              action: request.action,
+              resource: redactHeadlessSensitiveValue(request.resource) as string,
+              toolName: request.toolName,
+              input: redactHeadlessSensitiveValue(request.input) as Record<string, unknown>,
+            })
+            const permissionEvaluation = options.permission.evaluate(request)
+            if ("list" in options.permission && typeof options.permission.list === "function") {
+              const pending = (await options.permission.list(input.sessionID)).find(
+                (item: { action: string; resource: string; id: string; reason?: string }) =>
+                  item.action === request.action,
+              )
+              if (pending) {
+                await publish("permission.requested", {
+                  requestID: pending.id,
+                  action: pending.action,
+                  resource: pending.resource,
+                  reason: pending.reason,
+                })
+              }
+            }
+            const effect = await permissionEvaluation
+            if (effect !== "allow") {
+              throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
+            }
+            const result = await options.tool.execute(request)
+            const toolResult = { ...result, toolCallID }
+            toolResults.push(toolResult)
+            await publish("tool.result", {
+              toolCallID,
+              ok: result.ok,
+              output: redactHeadlessSensitiveValue(result.output) as string,
+            })
+            messages = [...messages, { role: "tool", toolCallID, content: result.output }]
+          }
+          prompt = {
+            sessionID: input.sessionID,
+            text: input.text,
+            toolResults,
+            messages,
+            ...(options.tools ? { tools: options.tools } : {}),
+          }
+          continued = true
+          break
         }
 
-        throw new Error("Coding Loop 超过最大模型步骤数")
-      } catch (error) {
-        if (error instanceof HeadlessSkillInvocationError) {
-          await publish("skill.failed", { skillID: error.skillID, code: error.code })
-        }
-        if (runState.cancelled || runState.controller.signal.aborted || error instanceof HeadlessCancellationError) {
-          const current = await options.sessions.get(input.sessionID)
-          const cancelled =
-            current?.status === "cancelled" ? current : await options.sessions.setStatus(input.sessionID, "cancelled")
-          await publish("session.cancelled")
-          return cancelled
-        }
-        await options.sessions.setStatus(input.sessionID, "failed")
-        await publish("session.failed", { message: safeErrorMessage(error) })
-        throw error
-      } finally {
-        if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
+        if (continued) continue
+        const completed = await options.sessions.setStatus(input.sessionID, "completed")
+        await publish("session.completed")
+        return completed
       }
+
+      throw new Error("Coding Loop 超过最大模型步骤数")
+    } catch (error) {
+      if (error instanceof HeadlessSkillInvocationError) {
+        await publish("skill.failed", { skillID: error.skillID, code: error.code })
+      }
+      if (runState.cancelled || runState.controller.signal.aborted || error instanceof HeadlessCancellationError) {
+        const current = await options.sessions.get(input.sessionID)
+        const cancelled =
+          current?.status === "cancelled" ? current : await options.sessions.setStatus(input.sessionID, "cancelled")
+        await publish("session.cancelled")
+        return cancelled
+      }
+      await options.sessions.setStatus(input.sessionID, "failed")
+      await publish("session.failed", { message: safeErrorMessage(error) })
+      throw error
+    } finally {
+      if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
+    }
+  }
+  const start = (input: HeadlessCodingLoopInput): HeadlessCodingLoopStart => {
+    if (activeRuns.has(input.sessionID)) return { accepted: false }
+    const runState: ActiveRun = { controller: new AbortController(), cancelled: false }
+    activeRuns.set(input.sessionID, runState)
+    return { accepted: true, promise: execute(input, runState) }
+  }
+
+  return {
+    start,
+    run(input) {
+      const started = start(input)
+      if (!started.accepted) {
+        return Promise.reject(new HeadlessSessionError("session_busy", "Session 当前正在运行", input.sessionID))
+      }
+      return started.promise
     },
     async cancel(sessionID) {
       const current = await options.sessions.get(sessionID)

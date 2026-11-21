@@ -707,7 +707,11 @@ async function createPrompt(
     return errorResponse(400, "HEADLESS_INVALID_REQUEST", "text 必须是非空字符串", traceId)
   }
 
-  void codingLoop.run({ sessionID, text: payload.text }).catch(() => undefined)
+  const started = codingLoop.start?.({ sessionID, text: payload.text })
+  if (started && !started.accepted) {
+    return errorResponse(409, "HEADLESS_SESSION_RUN_CONFLICT", "Session 当前正在运行，请等待本轮完成后再提交", traceId)
+  }
+  void (started?.promise ?? codingLoop.run({ sessionID, text: payload.text })).catch(() => undefined)
   return jsonResponse({ data: { status: "accepted" } }, traceId)
 }
 

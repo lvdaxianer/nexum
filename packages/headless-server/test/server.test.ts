@@ -372,6 +372,66 @@ test("rejects a prompt while the session is already running", async () => {
   })
 })
 
+test("rejects concurrent prompts before the first run persists running", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-prompt-race-"))
+  temporaryDirectories.push(directory)
+  const baseSessionService = createHeadlessSessionService()
+  const session = await baseSessionService.create({ directory })
+  let getCount = 0
+  let releaseGets = () => {}
+  const getsReady = new Promise<void>((resolve) => {
+    releaseGets = resolve
+  })
+  const sessionService = {
+    ...baseSessionService,
+    async get(sessionID: string) {
+      const current = await baseSessionService.get(sessionID)
+      getCount += 1
+      if (getCount === 2) releaseGets()
+      await getsReady
+      return current
+    },
+  }
+  const model: ModelPort = {
+    async *prompt() {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      yield { type: "text", content: "完成" }
+      yield { type: "completed" }
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "" }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const codingLoop = createHeadlessCodingLoop({
+    model,
+    tool,
+    permission,
+    sessions: baseSessionService,
+    events: { async publish() {} },
+  })
+  const server = await startHeadlessServer({ port: 0, sessionService, codingLoop })
+  servers.push(server)
+
+  const prompt = (text: string) =>
+    fetch(new URL(`/api/experimental/headless/session/${session.sessionID}/prompt`, server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    })
+  const responses = await Promise.all([prompt("第一条"), prompt("第二条")])
+  const statuses = responses.map((response) => response.status).sort((left, right) => left - right)
+
+  expect(statuses).toEqual([200, 409])
+  await new Promise((resolve) => setTimeout(resolve, 100))
+})
+
 test("composes the default coding loop when no runtime is injected", async () => {
   const modelRequests: string[] = []
   const upstream = Bun.serve({
