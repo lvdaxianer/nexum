@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import { createHeadlessModelConfigStore, HeadlessModelConfigError } from "../src/index.ts"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { createFileModelConfigStore, createHeadlessModelConfigStore, HeadlessModelConfigError } from "../src/index.ts"
 
 test("stores one safe OpenAI-compatible model configuration", async () => {
   const store = createHeadlessModelConfigStore()
@@ -45,4 +48,23 @@ test("requires a credential value or credential reference", async () => {
       model: "coding-model",
     }),
   ).rejects.toMatchObject({ code: "invalid_credential" })
+})
+
+test("restores a file-backed model configuration after the store is recreated", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "headless-model-config-"))
+  try {
+    const filePath = join(directory, "model-config.json")
+    const firstStore = createFileModelConfigStore({ filePath })
+    const saved = await firstStore.update({
+      baseUrl: "https://model.example.com/v1",
+      model: "coding-model",
+      credential: "super-secret-value",
+    })
+
+    const secondStore = createFileModelConfigStore({ filePath })
+    expect(await secondStore.get()).toEqual(saved)
+    expect(await secondStore.resolveCredential()).toBe("super-secret-value")
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })

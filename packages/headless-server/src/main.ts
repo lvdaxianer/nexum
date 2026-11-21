@@ -1,4 +1,4 @@
-import { createFileSessionStore } from "@opencode/headless-core"
+import { createFileModelConfigStore, createFileSessionStore } from "@opencode/headless-core"
 import { resolve } from "node:path"
 import { startHeadlessServer } from "./index"
 
@@ -10,11 +10,12 @@ import { startHeadlessServer } from "./index"
  * @date 2026-11-19
  */
 async function main(): Promise<void> {
-  const sessionFile =
-    process.env.OPENCODE_HEADLESS_SESSION_FILE ??
-    resolve(process.env.OPENCODE_HEADLESS_DATA_DIR ?? resolve(process.cwd(), ".headless"), "sessions.json")
+  const dataDirectory = process.env.OPENCODE_HEADLESS_DATA_DIR ?? resolve(process.cwd(), ".headless")
+  const sessionFile = process.env.OPENCODE_HEADLESS_SESSION_FILE ?? resolve(dataDirectory, "sessions.json")
+  const modelConfigFile = process.env.OPENCODE_HEADLESS_MODEL_CONFIG_FILE ?? resolve(dataDirectory, "model-config.json")
   const sessionStore = createFileSessionStore({ filePath: sessionFile })
-  const server = await startHeadlessServer({ sessionStore })
+  const modelConfigStore = createFileModelConfigStore({ filePath: modelConfigFile })
+  const server = await startHeadlessServer({ sessionStore, modelConfigStore })
   process.stdout.write(`Headless Service listening at ${server.url}\n`)
 
   const shutdown = async (): Promise<void> => {

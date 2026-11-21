@@ -863,7 +863,12 @@ export type {
   HeadlessPermissionReply,
   HeadlessPermissionRequest,
 } from "./permission.js"
-export { createHeadlessModelConfigStore, HeadlessModelConfigError } from "./model-config.js"
+export {
+  createFileModelConfigStore,
+  createHeadlessModelConfigStore,
+  HeadlessModelConfigError,
+  type FileModelConfigStoreOptions,
+} from "./model-config.js"
 export type {
   HeadlessModelConfig,
   HeadlessModelConfigErrorCode,
