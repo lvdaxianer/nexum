@@ -2901,12 +2901,15 @@ export type ExperimentalHeadlessModelProbeOperation<E = never> = (
   input?: ExperimentalHeadlessModelProbeInput,
 ) => Effect.Effect<ExperimentalHeadlessModelProbeOutput, E>
 
-export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string }
+export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string; readonly name?: string | undefined }
 export type ExperimentalHeadlessSessionCreateOutput = {
   readonly data: {
     readonly id: string
+    readonly name: string
     readonly directory: string
     readonly status: "idle" | "running" | "completed" | "failed" | "cancelled"
+    readonly createdAt: string
+    readonly updatedAt: string
   }
   readonly meta: { readonly protocolVersion: "headless.v1"; readonly traceId: string }
 }
@@ -2917,8 +2920,11 @@ export type ExperimentalHeadlessSessionCreateOperation<E = never> = (
 export type ExperimentalHeadlessSessionListOutput = {
   readonly data: ReadonlyArray<{
     readonly id: string
+    readonly name: string
     readonly directory: string
     readonly status: "idle" | "running" | "completed" | "failed" | "cancelled"
+    readonly createdAt: string
+    readonly updatedAt: string
   }>
   readonly meta: { readonly protocolVersion: "headless.v1"; readonly traceId: string }
 }
@@ -2927,13 +2933,32 @@ export type ExperimentalHeadlessSessionListOperation<E = never> = () => Effect.E
   E
 >
 
+export type ExperimentalHeadlessSessionUpdateInput = { readonly sessionID: string; readonly name: string }
+export type ExperimentalHeadlessSessionUpdateOutput = {
+  readonly data: {
+    readonly id: string
+    readonly name: string
+    readonly directory: string
+    readonly status: "idle" | "running" | "completed" | "failed" | "cancelled"
+    readonly createdAt: string
+    readonly updatedAt: string
+  }
+  readonly meta: { readonly protocolVersion: "headless.v1"; readonly traceId: string }
+}
+export type ExperimentalHeadlessSessionUpdateOperation<E = never> = (
+  input: ExperimentalHeadlessSessionUpdateInput,
+) => Effect.Effect<ExperimentalHeadlessSessionUpdateOutput, E>
+
 export type ExperimentalHeadlessSessionStateInput = { readonly sessionID: string }
 export type ExperimentalHeadlessSessionStateOutput = {
   readonly data: {
     readonly session: {
       readonly id: string
+      readonly name: string
       readonly directory: string
       readonly status: "idle" | "running" | "completed" | "failed" | "cancelled"
+      readonly createdAt: string
+      readonly updatedAt: string
     }
     readonly pendingPermissions: ReadonlyArray<{
       readonly id: string
@@ -3211,6 +3236,7 @@ export interface ExperimentalHeadlessApi<E = never> {
   readonly session: {
     readonly create: ExperimentalHeadlessSessionCreateOperation<E>
     readonly list: ExperimentalHeadlessSessionListOperation<E>
+    readonly update: ExperimentalHeadlessSessionUpdateOperation<E>
     readonly state: ExperimentalHeadlessSessionStateOperation<E>
     readonly prompt: ExperimentalHeadlessSessionPromptOperation<E>
     readonly question: {

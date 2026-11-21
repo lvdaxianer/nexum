@@ -30,6 +30,7 @@ import {
   type HeadlessModelProbeMode,
   type HeadlessModelProbePort,
   type HeadlessSessionService,
+  type SessionStore,
   type HeadlessSkillInvocationPort,
   type HeadlessSkillRegistry,
 } from "@opencode/headless-core"
@@ -76,6 +77,7 @@ export interface HeadlessServerOptions {
   readonly hostname?: string
   readonly port?: number
   readonly sessionService?: HeadlessSessionService
+  readonly sessionStore?: SessionStore
   readonly codingLoop?: HeadlessCodingLoop
   readonly permissionBroker?: HeadlessPermissionBroker
   readonly questionPort?: HeadlessQuestionPort
@@ -107,7 +109,7 @@ export interface HeadlessServer {
 export async function startHeadlessServer(options: HeadlessServerOptions = {}): Promise<HeadlessServer> {
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
   const port = options.port ?? DEFAULT_PORT
-  const sessionService = options.sessionService ?? createHeadlessSessionService()
+  const sessionService = options.sessionService ?? createHeadlessSessionService({ store: options.sessionStore })
   const modelConfigStore = options.modelConfigStore ?? createHeadlessModelConfigStore()
   const modelProbe =
     options.modelProbe ??
@@ -252,6 +254,14 @@ async function handleRequest(
       return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
     return createSession(request, sessionService, traceId)
+  }
+
+  const updateSessionMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)$/)
+  if (updateSessionMatch) {
+    if (request.method !== "PUT") {
+      return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 PUT 请求", traceId)
+    }
+    return updateSession(request, decodeURIComponent(updateSessionMatch[1]!), sessionService, traceId)
   }
 
   if (url.pathname === "/api/experimental/headless/model") {
@@ -615,8 +625,11 @@ function skillRegistryUnavailable(traceId: string): Response {
 async function listSessions(sessionService: HeadlessSessionService, traceId: string): Promise<Response> {
   const data = (await sessionService.list()).map((session) => ({
     id: session.sessionID,
+    name: session.name,
     directory: session.directory,
     status: session.status,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
   }))
   return jsonResponse({ data }, traceId)
 }
@@ -797,7 +810,14 @@ async function getSessionState(
   return jsonResponse(
     {
       data: {
-        session: { id: session.sessionID, directory: session.directory, status: session.status },
+        session: {
+          id: session.sessionID,
+          name: session.name,
+          directory: session.directory,
+          status: session.status,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
+        },
         pendingPermissions,
         pendingQuestions,
         lastSequence: eventHub.lastSequence(sessionID),
@@ -976,18 +996,29 @@ async function createSession(
   traceId: string,
 ): Promise<Response> {
   const payload = await request.json().catch(() => undefined)
-  if (!isRecord(payload) || typeof payload.directory !== "string" || payload.directory.trim() === "") {
+  if (
+    !isRecord(payload) ||
+    typeof payload.directory !== "string" ||
+    payload.directory.trim() === "" ||
+    (payload.name !== undefined && typeof payload.name !== "string")
+  ) {
     return errorResponse(400, "HEADLESS_INVALID_REQUEST", "directory 必须是非空字符串", traceId)
   }
 
   try {
-    const session = await sessionService.create({ directory: payload.directory })
+    const session = await sessionService.create({
+      directory: payload.directory,
+      ...(payload.name !== undefined ? { name: payload.name } : {}),
+    })
     return jsonResponse(
       {
         data: {
           id: session.sessionID,
+          name: session.name,
           directory: session.directory,
           status: session.status,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
         },
       },
       traceId,
@@ -997,6 +1028,44 @@ async function createSession(
       return errorResponse(400, "HEADLESS_INVALID_DIRECTORY", error.message, traceId)
     }
     return errorResponse(500, "HEADLESS_SESSION_CREATE_FAILED", "Session 创建失败", traceId)
+  }
+}
+
+/** 更新 Headless Session 的展示名称。 */
+async function updateSession(
+  request: Request,
+  sessionID: string,
+  sessionService: HeadlessSessionService,
+  traceId: string,
+): Promise<Response> {
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload) || typeof payload.name !== "string") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "name 必须是字符串", traceId)
+  }
+
+  try {
+    const session = await sessionService.update(sessionID, { name: payload.name })
+    return jsonResponse(
+      {
+        data: {
+          id: session.sessionID,
+          name: session.name,
+          directory: session.directory,
+          status: session.status,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
+        },
+      },
+      traceId,
+    )
+  } catch (error) {
+    if (error instanceof HeadlessSessionError && error.code === "session_not_found") {
+      return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", error.message, traceId)
+    }
+    if (error instanceof HeadlessSessionError && error.code === "invalid_name") {
+      return errorResponse(400, "HEADLESS_INVALID_REQUEST", error.message, traceId)
+    }
+    return errorResponse(500, "HEADLESS_SESSION_UPDATE_FAILED", "Session 更新失败", traceId)
   }
 }
 

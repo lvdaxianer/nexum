@@ -4999,15 +4999,43 @@ export type ExperimentalHeadlessModelProbeOutput = {
   meta: { protocolVersion: "headless.v1"; traceId: string }
 }
 
-export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string }
+export type ExperimentalHeadlessSessionCreateInput = { readonly directory: string; readonly name?: string | undefined }
 
 export type ExperimentalHeadlessSessionCreateOutput = {
-  data: { id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }
+  data: {
+    id: string
+    name: string
+    directory: string
+    status: "idle" | "running" | "completed" | "failed" | "cancelled"
+    createdAt: string
+    updatedAt: string
+  }
   meta: { protocolVersion: "headless.v1"; traceId: string }
 }
 
 export type ExperimentalHeadlessSessionListOutput = {
-  data: Array<{ id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }>
+  data: Array<{
+    id: string
+    name: string
+    directory: string
+    status: "idle" | "running" | "completed" | "failed" | "cancelled"
+    createdAt: string
+    updatedAt: string
+  }>
+  meta: { protocolVersion: "headless.v1"; traceId: string }
+}
+
+export type ExperimentalHeadlessSessionUpdateInput = { readonly sessionID: string; readonly name: string }
+
+export type ExperimentalHeadlessSessionUpdateOutput = {
+  data: {
+    id: string
+    name: string
+    directory: string
+    status: "idle" | "running" | "completed" | "failed" | "cancelled"
+    createdAt: string
+    updatedAt: string
+  }
   meta: { protocolVersion: "headless.v1"; traceId: string }
 }
 
@@ -5015,7 +5043,14 @@ export type ExperimentalHeadlessSessionStateInput = { readonly sessionID: string
 
 export type ExperimentalHeadlessSessionStateOutput = {
   data: {
-    session: { id: string; directory: string; status: "idle" | "running" | "completed" | "failed" | "cancelled" }
+    session: {
+      id: string
+      name: string
+      directory: string
+      status: "idle" | "running" | "completed" | "failed" | "cancelled"
+      createdAt: string
+      updatedAt: string
+    }
     pendingPermissions: Array<{
       id: string
       sessionID: string

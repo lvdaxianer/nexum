@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   createHeadlessCodingLoop,
+  createFileSessionStore,
   createHeadlessModelConfigStore,
   createHeadlessPermissionBroker,
   createHeadlessQuestionPort,
@@ -132,8 +133,63 @@ test("lists sessions for page-level recovery", async () => {
   const body = (await response.json()) as { data: Array<{ id: string; directory: string; status: string }> }
 
   expect(response.status).toBe(200)
-  expect(body.data.map((item) => item.directory)).toEqual([firstDirectory, secondDirectory])
+  expect(new Set(body.data.map((item) => item.directory))).toEqual(new Set([firstDirectory, secondDirectory]))
   expect(body.data.every((item) => item.status === "idle")).toBe(true)
+})
+
+test("creates and updates independently named sessions", async () => {
+  const firstDirectory = await mkdtemp(join(tmpdir(), "headless-server-named-a-"))
+  const secondDirectory = await mkdtemp(join(tmpdir(), "headless-server-named-b-"))
+  temporaryDirectories.push(firstDirectory, secondDirectory)
+  const server = await startHeadlessServer({ port: 0 })
+  servers.push(server)
+
+  const firstResponse = await fetch(new URL("/api/experimental/headless/session", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "前端", directory: firstDirectory }),
+  })
+  const first = (await firstResponse.json()) as { data: { id: string; name: string; directory: string } }
+  const secondResponse = await fetch(new URL("/api/experimental/headless/session", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ directory: secondDirectory }),
+  })
+  const second = (await secondResponse.json()) as { data: { id: string; name: string; directory: string } }
+
+  expect(first.data.name).toBe("前端")
+  expect(second.data.name).toBeString()
+  expect(second.data.directory).toBe(secondDirectory)
+
+  const update = await fetch(new URL(`/api/experimental/headless/session/${first.data.id}`, server.url), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "前端应用" }),
+  })
+  const updateBody = (await update.json()) as { data: { id: string; name: string; directory: string } }
+  expect(updateBody.data).toMatchObject({ id: first.data.id, name: "前端应用", directory: firstDirectory })
+})
+
+test("restores sessions from a file store after the server restarts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "headless-server-persistent-"))
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-persistent-project-"))
+  temporaryDirectories.push(root, directory)
+  const filePath = join(root, "sessions.json")
+  const firstServer = await startHeadlessServer({ port: 0, sessionStore: createFileSessionStore({ filePath }) })
+  const createResponse = await fetch(new URL("/api/experimental/headless/session", firstServer.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "持久化项目", directory }),
+  })
+  expect(createResponse.status).toBe(200)
+  await firstServer.stop(true)
+
+  const secondServer = await startHeadlessServer({ port: 0, sessionStore: createFileSessionStore({ filePath }) })
+  servers.push(secondServer)
+  const listResponse = await fetch(new URL("/api/experimental/headless/session", secondServer.url))
+  const body = (await listResponse.json()) as { data: Array<{ name: string; directory: string }> }
+
+  expect(body.data).toEqual([expect.objectContaining({ name: "持久化项目", directory })])
 })
 
 test("probes the configured model without returning model content or credentials", async () => {
