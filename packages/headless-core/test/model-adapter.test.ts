@@ -27,6 +27,67 @@ test("sends the active model configuration to one OpenAI-compatible endpoint", a
   expect(request?.url).toBe("https://model.example.com/v1/chat/completions")
   expect(request?.init?.headers).toMatchObject({ authorization: "Bearer super-secret-value" })
   expect(request?.init?.body).toContain('"model":"coding-model"')
+  expect(request?.init?.body).toContain('"stream":true')
+})
+
+test("requests streaming and yields each SSE text delta as it arrives", async () => {
+  const config = createHeadlessModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const deltas = ["你好", "，", "世界"]
+  const sseBody = deltas
+    .map(
+      (content) =>
+        `data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: "assistant", content } }] })}\n\n`,
+    )
+    .join("")
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () => new Response(`${sseBody}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } }),
+  })
+
+  expect(await collect(model)).toEqual([
+    { type: "text", content: "你好" },
+    { type: "text", content: "，" },
+    { type: "text", content: "世界" },
+    { type: "completed" },
+  ])
+})
+
+test("assembles fragmented streaming tool calls into a single chunk", async () => {
+  const config = createHeadlessModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const sseBody = [
+    { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_stream_1", type: "function", function: { name: "write", arguments: "" } }] } }] },
+    { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"path":"notes.txt' } }] } }] },
+    { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '","content":"hello"}' } }] } }] },
+  ]
+    .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+    .join("")
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () => new Response(`${sseBody}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } }),
+  })
+
+  expect(await collect(model)).toEqual([
+    {
+      type: "tool-call",
+      toolCalls: [{ id: "call_stream_1", name: "write", input: { path: "notes.txt", content: "hello" } }],
+      toolCallID: "call_stream_1",
+      toolName: "write",
+      toolInput: { path: "notes.txt", content: "hello" },
+    },
+  ])
+})
+
+test("rejects a malformed SSE payload with a stable error", async () => {
+  const config = createHeadlessModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () => new Response("data: not-json\n\ndata: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } }),
+  })
+
+  await expect(collect(model)).rejects.toMatchObject({ code: "invalid_response" })
 })
 
 test("returns a safe authentication error without provider fallback", async () => {
@@ -55,6 +116,7 @@ test("sends tool definitions and parses an OpenAI-compatible function call", asy
   await config.update({
     baseUrl: "https://model.example.com/v1",
     model: "coding-model",
+    credential: "test-credential",
   })
   let requestBody: Record<string, unknown> | undefined
   const model = createOpenAICompatibleModelPort({
