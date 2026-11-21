@@ -47,6 +47,27 @@ afterEach(async () => {
 })
 
 describe.serial("Headless UI smoke", () => {
+  test.serial("uses the served UI host for default API requests", async () => {
+    browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage()
+    const remoteUiOrigin = "http://localhost:5173"
+    const remoteApiOrigin = "http://localhost:4097"
+    apiServer = await startHeadlessServer({
+      port: 4097,
+      corsOrigins: [remoteUiOrigin],
+    })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    const apiRequest = page.waitForRequest(
+      (request) =>
+        request.method() === "GET" &&
+        request.url().startsWith(`${remoteApiOrigin}/api/experimental/headless/`),
+    )
+
+    await page.goto(remoteUiOrigin)
+    await apiRequest
+    await expect(page.getByRole("heading", { name: "Agent 工作台" })).toBeVisible()
+  })
+
   test.serial("renders the internal Agent workbench shell", async () => {
     browser = await chromium.launch({ headless: true })
     const page = await browser.newPage()
