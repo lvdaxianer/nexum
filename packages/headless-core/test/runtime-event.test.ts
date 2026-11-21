@@ -5,8 +5,11 @@ import { createHeadlessCodingLoop, type EventSink, type ModelPort, type Permissi
 test("gives events a run identity and keeps sequence monotonic across prompts", async () => {
   const session: SessionRecord = {
     sessionID: "session_001",
+    name: "demo",
     directory: "/workspace/demo",
     status: "idle",
+    createdAt: "2026-11-21T00:00:00.000Z",
+    updatedAt: "2026-11-21T00:00:00.000Z",
   }
   const events: Array<{
     eventID: string
@@ -25,6 +28,9 @@ test("gives events a run identity and keeps sequence monotonic across prompts", 
     },
     async get() {
       return { ...session, status }
+    },
+    async update(_sessionID: string, input) {
+      return { ...session, name: input.name }
     },
     async setStatus(_sessionID: string, nextStatus: SessionRecord["status"]) {
       return { ...session, status: nextStatus }
