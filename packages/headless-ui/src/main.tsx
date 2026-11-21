@@ -38,7 +38,8 @@ type ActionState = "idle" | "pending" | "success" | "error"
 
 const maxChatItems = 160
 
-const apiBaseUrl = import.meta.env.VITE_HEADLESS_API_URL ?? "http://127.0.0.1:4097"
+const apiBaseUrl =
+  import.meta.env.VITE_HEADLESS_API_URL ?? `${window.location.protocol}//${window.location.hostname}:4097`
 const client = OpenCode.make({ baseUrl: apiBaseUrl })
 
 function App() {
