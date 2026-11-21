@@ -50,6 +50,6 @@
 
 运行 `bunx openspec validate headless-ui-api-origin --strict`，检查 `git diff --check` 和代码审查规范。
 
-- [ ] **Step 3: 提交、合并到 `dev-v0.0.1` 并重新部署**
+- [x] **Step 3: 提交、合并到 `dev-v0.0.1` 并重新部署**
 
 使用中文 Conventional Commit，合并后重新打包 UI、部署服务器并验证 `http://10.100.31.167:5173/` 的 API 请求地址和 Session 工作目录保存流程。
