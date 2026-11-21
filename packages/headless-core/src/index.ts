@@ -133,7 +133,12 @@ export interface SessionStore {
 export type HeadlessSessionStatus = SessionRecord["status"]
 
 /** 可由 Headless Session Service 返回的领域错误类型。 */
-export type HeadlessSessionErrorCode = "invalid_directory" | "invalid_name" | "session_not_found" | "invalid_transition"
+export type HeadlessSessionErrorCode =
+  | "invalid_directory"
+  | "invalid_name"
+  | "session_not_found"
+  | "invalid_transition"
+  | "session_busy"
 
 /** Headless Session 创建请求。 */
 export interface HeadlessSessionCreateInput {
@@ -389,7 +394,9 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
         throw new HeadlessSessionError("session_not_found", "Session 不存在", input.sessionID)
       }
 
-      await options.sessions.setStatus(input.sessionID, "running")
+      if (activeRuns.has(input.sessionID)) {
+        throw new HeadlessSessionError("session_busy", "Session 当前正在运行", input.sessionID)
+      }
       const runState: ActiveRun = { controller: new AbortController(), cancelled: false }
       activeRuns.set(input.sessionID, runState)
       const runID = crypto.randomUUID()
@@ -410,6 +417,7 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
       let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text, messages }
 
       try {
+        await options.sessions.setStatus(input.sessionID, "running")
         const skillPrompt = options.skills
           ? await options.skills.resolve({ sessionID: input.sessionID, text: input.text })
           : { skills: [], systemMessages: [] }
@@ -765,6 +773,7 @@ function safeErrorMessage(error: unknown): string {
 function isAllowedTransition(from: HeadlessSessionStatus, to: HeadlessSessionStatus): boolean {
   if (from === "idle") return to === "running" || to === "cancelled"
   if (from === "running") return to === "completed" || to === "failed" || to === "cancelled"
+  if (from === "completed" || from === "failed" || from === "cancelled") return to === "running"
   return false
 }
 
