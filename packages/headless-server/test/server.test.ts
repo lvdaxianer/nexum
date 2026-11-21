@@ -9,6 +9,7 @@ import {
   createHeadlessPermissionBroker,
   createHeadlessQuestionPort,
   createHeadlessSessionService,
+  type SessionStore,
   type ContextCompactionPort,
   type EventSink,
   type ModelPort,
@@ -190,6 +191,41 @@ test("restores sessions from a file store after the server restarts", async () =
   const body = (await listResponse.json()) as { data: Array<{ name: string; directory: string }> }
 
   expect(body.data).toEqual([expect.objectContaining({ name: "持久化项目", directory })])
+})
+
+test("returns a stable JSON error when the session store fails during a request", async () => {
+  const sessionStore: SessionStore = {
+    async get() {
+      return undefined
+    },
+    async list() {
+      throw new Error("internal session store details")
+    },
+    async save() {},
+  }
+  const server = await startHeadlessServer({
+    port: 0,
+    sessionService: createHeadlessSessionService({ store: sessionStore }),
+  })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/experimental/headless/session", server.url))
+  const body = (await response.json()) as { errorCode: string; message: string }
+
+  expect(response.status).toBe(500)
+  expect(body).toMatchObject({ errorCode: "HEADLESS_INTERNAL_ERROR", message: "Headless Service 暂时不可用" })
+  expect(JSON.stringify(body)).not.toContain("internal session store details")
+})
+
+test("refuses to start with a corrupt persistent session file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "headless-server-corrupt-"))
+  temporaryDirectories.push(root)
+  const filePath = join(root, "sessions.json")
+  await Bun.write(filePath, "not-json")
+
+  await expect(
+    startHeadlessServer({ port: 0, sessionStore: createFileSessionStore({ filePath }) }),
+  ).rejects.toThrow()
 })
 
 test("probes the configured model without returning model content or credentials", async () => {

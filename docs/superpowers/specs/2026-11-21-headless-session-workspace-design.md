@@ -228,4 +228,3 @@ bun run --cwd packages/headless-ui test:smoke
 2. Server/Protocol：扩展创建和列表契约，接入持久化 Store，补服务端测试并生成客户端类型。
 3. UI：重排 Session-first 信息架构，增加名称字段、Session 列表和全局模型入口，补切换/刷新 smoke 测试。
 4. 集成验证：按工作流执行代码审查、完整检查、提交并合并回 `dev-v0.0.1`。
-

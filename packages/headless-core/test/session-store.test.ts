@@ -63,3 +63,21 @@ test("rejects corrupt session files without replacing them", async () => {
   await expect(createFileSessionStore({ filePath }).list()).rejects.toThrow()
   expect(await Bun.file(filePath).text()).toBe("not-json")
 })
+
+test("serializes concurrent saves without losing sessions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "headless-session-store-"))
+  temporaryDirectories.push(root)
+  const store = createFileSessionStore({ filePath: join(root, "sessions.json") })
+  const sessions = ["session_a", "session_b"].map((sessionID) => ({
+    sessionID,
+    name: sessionID,
+    directory: `/workspace/${sessionID}`,
+    status: "idle" as const,
+    createdAt: "2026-11-21T00:00:00.000Z",
+    updatedAt: "2026-11-21T00:00:00.000Z",
+  }))
+
+  await Promise.all(sessions.map((session) => store.save(session)))
+
+  expect(await store.list()).toHaveLength(2)
+})

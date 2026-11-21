@@ -70,7 +70,8 @@ describe.serial("Headless UI smoke", () => {
   test.serial("keeps name and directory attached to each session", async () => {
     browser = await chromium.launch({ headless: true })
     const page = await browser.newPage()
-    apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+    const eventHub = createHeadlessEventHub()
+    apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin], eventHub })
     uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
     const firstDirectory = await mkdtemp(join(tmpdir(), "headless-ui-session-a-"))
     const secondDirectory = await mkdtemp(join(tmpdir(), "headless-ui-session-b-"))
@@ -85,10 +86,26 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByRole("button", { name: /前端应用/ })).toBeVisible()
     await expect(page.locator(".current-session-directory")).toHaveText(firstDirectory)
 
+    const secondEventsResponse = page.waitForResponse(
+      (response) => response.url().includes("/api/experimental/headless/session/") && response.url().endsWith("/events"),
+    )
     await page.getByRole("button", { name: "新建 Session" }).click()
     await page.getByLabel("工作目录").fill(secondDirectory)
     await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await expect(page.locator(".current-session-directory")).toHaveText(secondDirectory)
+    await secondEventsResponse
+    const secondID = await page.locator(".session-id").innerText()
+    await eventHub.publish({
+      eventID: "event_session_storage",
+      runID: "run_session_storage",
+      sessionID: secondID,
+      type: "assistant.text",
+      sequence: 1,
+      occurredAt: "2026-11-21T00:00:00.000Z",
+      data: { content: "session storage check" },
+    })
+    await expect(page.getByText("assistant.text", { exact: true })).toBeVisible()
+    expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual(["headless.sessionID"])
     await page.getByRole("button", { name: /前端应用/ }).click()
     await expect(page.locator(".current-session-directory")).toHaveText(firstDirectory)
 

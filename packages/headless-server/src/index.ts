@@ -139,6 +139,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
       skills: skillInvocation,
     })
   assertPort(port)
+  if (options.sessionStore) await options.sessionStore.list()
 
   const server = Bun.serve({
     hostname,
@@ -146,19 +147,29 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
     idleTimeout: options.idleTimeout ?? 0,
     fetch: async (request) => {
       if (request.method === "OPTIONS") return corsPreflight(request, corsOrigins)
-      const response = await handleRequest(
-        request,
-        sessionService,
-        eventHub,
-        codingLoop,
-        permissionBroker,
-        questionPort,
-        modelConfigStore,
-        modelProbe,
-        skillRegistry,
-        skillInvocation,
-      )
-      return withCorsHeaders(response, request, corsOrigins)
+      try {
+        const response = await handleRequest(
+          request,
+          sessionService,
+          eventHub,
+          codingLoop,
+          permissionBroker,
+          questionPort,
+          modelConfigStore,
+          modelProbe,
+          skillRegistry,
+          skillInvocation,
+        )
+        return withCorsHeaders(response, request, corsOrigins)
+      } catch (error) {
+        const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
+        logRequestFailure(request, traceId, error)
+        return withCorsHeaders(
+          errorResponse(500, "HEADLESS_INTERNAL_ERROR", "Headless Service 暂时不可用", traceId),
+          request,
+          corsOrigins,
+        )
+      }
     },
   })
 
@@ -1031,7 +1042,15 @@ async function createSession(
   }
 }
 
-/** 更新 Headless Session 的展示名称。 */
+/**
+ * 更新 Headless Session 的展示名称。
+ *
+ * @param request - 包含新名称的 JSON 请求
+ * @param sessionID - 待更新的 Session ID
+ * @param sessionService - Session 创建与状态服务
+ * @param traceId - 当前请求链路标识
+ * @returns 更新后的 Session 或 caller-safe 错误响应
+ */
 async function updateSession(
   request: Request,
   sessionID: string,
@@ -1209,4 +1228,18 @@ function assertPort(port: number): void {
 function traceIdFrom(value: string | null): string {
   const candidate = value?.trim()
   return candidate && TRACE_ID_PATTERN.test(candidate) ? candidate : crypto.randomUUID()
+}
+
+/** 记录统一 HTTP 异常边界的安全诊断上下文，同时保持响应 caller-safe。 */
+function logRequestFailure(request: Request, traceId: string, error: unknown): void {
+  const details =
+    error instanceof Error
+      ? { name: error.name, message: error.message, stack: error.stack }
+      : { value: String(error) }
+  console.error("headless.request_failed", {
+    traceId,
+    method: request.method,
+    path: new URL(request.url).pathname,
+    error: details,
+  })
 }

@@ -1,3 +1,9 @@
+/** Headless Session 的 JSON 文件持久化 Store。
+ *
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-21
+ */
+
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { basename, dirname } from "node:path"
@@ -17,6 +23,7 @@ interface StoredSessionFile {
 /** 创建基于 JSON 文件的 POC SessionStore。 */
 export function createFileSessionStore(options: FileSessionStoreOptions): SessionStore {
   let loaded: Promise<Map<string, SessionRecord>> | undefined
+  let writeQueue = Promise.resolve()
 
   async function load(): Promise<Map<string, SessionRecord>> {
     if (!loaded) loaded = readSessions(options.filePath)
@@ -32,10 +39,17 @@ export function createFileSessionStore(options: FileSessionStoreOptions): Sessio
       return sortSessions(Array.from((await load()).values(), (session) => ({ ...session })))
     },
     async save(session) {
-      const next = new Map(await load())
-      next.set(session.sessionID, { ...session })
-      await persistSessions(options.filePath, next)
-      loaded = Promise.resolve(next)
+      const operation = writeQueue.then(async () => {
+        const next = new Map(await load())
+        next.set(session.sessionID, { ...session })
+        await persistSessions(options.filePath, next)
+        loaded = Promise.resolve(next)
+      })
+      writeQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      )
+      await operation
     },
   }
 }
@@ -104,4 +118,3 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isMissingFile(error: unknown): boolean {
   return isRecord(error) && error.code === "ENOENT"
 }
-

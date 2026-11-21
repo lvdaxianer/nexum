@@ -88,10 +88,12 @@ function App() {
   const [pendingDecisionID, setPendingDecisionID] = createSignal("")
   const [pendingQuestionID, setPendingQuestionID] = createSignal("")
   const [cancelBusy, setCancelBusy] = createSignal(false)
+  const [renameBusy, setRenameBusy] = createSignal(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
   let streamController: AbortController | undefined
   let promptSequence = 0
   let sessionSelectSequence = 0
+  const eventCursors = new Map<string, string>()
   const seenEventKeys = new Set<string>()
 
   onMount(async () => {
@@ -497,10 +499,11 @@ function App() {
 
   async function renameSession() {
     const name = sessionEditName().trim()
-    if (!sessionID() || !name) {
+    if (renameBusy() || !sessionID() || !name) {
       setSessionNameError("请输入 Session 名称")
       return
     }
+    setRenameBusy(true)
     try {
       const updated = await client.experimental.headless.session.update({ sessionID: sessionID(), name })
       setSessions((current) => current.map((session) => (session.id === updated.data.id ? updated.data : session)))
@@ -510,6 +513,8 @@ function App() {
       setNotice(`Session 已重命名为「${updated.data.name}」`)
     } catch (error) {
       setSessionNameError(messageFrom(error, "Session 名称更新失败，请重试"))
+    } finally {
+      setRenameBusy(false)
     }
   }
 
@@ -519,7 +524,7 @@ function App() {
     streamController = controller
     setConnected(true)
     try {
-      const lastEventID = sessionStorage.getItem(`headless.eventID.${id}`) ?? undefined
+      const lastEventID = eventCursors.get(id)
       for await (const event of client.experimental.headless.session.events(
         { sessionID: id },
         {
@@ -530,7 +535,7 @@ function App() {
         const eventKey = event.eventID
         if (seenEventKeys.has(eventKey)) continue
         seenEventKeys.add(eventKey)
-        sessionStorage.setItem(`headless.eventID.${id}`, event.eventID)
+        eventCursors.set(id, event.eventID)
         setEvents((current) => [
           ...[
             ...current,
@@ -1104,8 +1109,8 @@ function App() {
                   <span class="field-error" role="alert">{sessionNameError()}</span>
                 </Show>
               </label>
-              <button class="button button-primary" disabled={!sessionID()} onClick={() => void renameSession()}>
-                保存名称
+              <button class="button button-primary" disabled={!sessionID() || renameBusy()} onClick={() => void renameSession()}>
+                {renameBusy() ? "保存中…" : "保存名称"}
               </button>
             </Drawer>
             <button class="toolbar-button" disabled={!sessionID()} onClick={reconnectEvents}>
