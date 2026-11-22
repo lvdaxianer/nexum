@@ -1,5 +1,6 @@
 export const NEXUM_PROTOCOL_VERSION = "nexum.runtime.v1" as const
 export const NEXUM_API_PREFIX = "/api/nexum" as const
+export const NEXUM_EXPERIMENTAL_API_PREFIX = "/api/experimental/nexum" as const
 
 export type JsonObject = Record<string, unknown>
 
@@ -19,11 +20,13 @@ export const NEXUM_EVENT_TYPES = [
   "context.project.loaded",
   "skill.activated",
   "skill.failed",
+  "model.attempt",
   "model.retry",
   "coding-loop.limit.reached",
   "session.completed",
   "session.failed",
   "session.cancelled",
+  "run.settled",
 ] as const
 
 export type NexumEventType = (typeof NEXUM_EVENT_TYPES)[number]
@@ -39,6 +42,41 @@ export type NexumReasoningEventData = {
 
 export type NexumTextEventData = {
   readonly content: string
+}
+
+export type NexumModelErrorCode =
+  | "not_configured"
+  | "authentication_failed"
+  | "network_error"
+  | "timeout"
+  | "rate_limited"
+  | "upstream_error"
+  | "invalid_request"
+  | "unavailable"
+  | "context_overflow"
+  | "invalid_response"
+
+export type NexumModelAttemptEventData = {
+  readonly attempt: number
+  readonly maxRetries: number
+}
+
+export type NexumModelRetryEventData = {
+  readonly attempt: number
+  readonly maxRetries: number
+  readonly delayMs: number
+  readonly errorCode?: NexumModelErrorCode
+  readonly willRetry: true
+}
+
+export type NexumRunSettledEventData = {
+  readonly result: "completed" | "failed" | "cancelled"
+}
+
+export type NexumEventDataByType = {
+  "model.attempt": NexumModelAttemptEventData
+  "model.retry": NexumModelRetryEventData
+  "run.settled": NexumRunSettledEventData
 }
 
 export type NexumEnvelope<T> = {
@@ -131,14 +169,14 @@ export type NexumSessionState = {
   readonly lastSequence: number
 }
 
-export type NexumEvent = {
+export type NexumEvent<T extends NexumEventType = NexumEventType> = {
   readonly eventID: string
   readonly runID: string
-  readonly type: NexumEventType
+  readonly type: T
   readonly sessionID: string
   readonly sequence: number
   readonly occurredAt: string
-  readonly data?: JsonObject
+  readonly data?: T extends keyof NexumEventDataByType ? NexumEventDataByType[T] : JsonObject
 }
 
 export type NexumModelProbe = {

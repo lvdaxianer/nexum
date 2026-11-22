@@ -968,6 +968,7 @@ async function* promptWithRetry(
     let yielded = false
     try {
       throwIfCancelled(runState)
+      await publish("model.attempt", { attempt: retryCount + 1, maxRetries })
       for await (const chunk of readModelWithTimeout(
         model.prompt({ ...prompt, signal: runState.controller.signal }),
         runState,
@@ -986,6 +987,7 @@ async function* promptWithRetry(
         attempt: retryCount,
         maxRetries,
         delayMs,
+        willRetry: true,
         ...(error instanceof NexumModelError ? { errorCode: error.code } : {}),
       })
       if (delayMs > 0) {

@@ -11,7 +11,7 @@
 
 ## 3. Protocol 与 Client
 
-- [ ] 3.1 增加 Attempt、Retry、Settled 事件及安全数据类型，并按实验性 API 约定定义 continue 请求/响应；运行 Protocol、Client 契约测试并确认事件类型与字段顺序稳定。
+- [x] 3.1 增加 Attempt、Retry、Settled 事件及安全数据类型，并按实验性 API 约定定义 continue 请求/响应；运行 Protocol、Client 契约测试并确认事件类型与字段顺序稳定。
 
 ## 4. Application 接入
 

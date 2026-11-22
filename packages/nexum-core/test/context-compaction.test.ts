@@ -89,10 +89,12 @@ test("compacts accumulated tool history before the next model step", async () =>
     { role: "tool", toolCallID: "call_read_001", content: "README 内容" },
   ])
   expect(events.map((event) => event.type)).toEqual([
+    "model.attempt",
     "tool.request",
     "tool.result",
     "context.compaction.started",
     "context.compaction.completed",
+    "model.attempt",
     "session.completed",
     "run.settled",
   ])

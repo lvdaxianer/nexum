@@ -23,7 +23,13 @@ test("exposes capabilities and v1 response metadata", async () => {
     headers: { "x-trace-id": "capability_trace" },
   })
   const body = (await response.json()) as {
-    data: { protocolVersion: string; transport: { events: string }; features: string[]; eventTypes: string[]; capabilities: { id: string; status: string }[] }
+    data: {
+      protocolVersion: string
+      transport: { events: string }
+      features: readonly string[]
+      eventTypes: readonly string[]
+      capabilities: readonly { id: string; status: string }[]
+    }
     meta: { protocolVersion: string; traceId: string }
   }
 
