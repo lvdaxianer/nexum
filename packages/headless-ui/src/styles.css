@@ -223,7 +223,8 @@ strong {
 .topbar,
 .permission-card,
 .question-card-head,
-.skill-row-title {
+.skill-row-title,
+.rail-section-head {
   justify-content: space-between;
 }
 
@@ -907,8 +908,9 @@ input[aria-invalid="true"]:focus {
 
 .topbar-meta {
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  min-width: fit-content;
 }
 
 .connection-chip,
@@ -1057,71 +1059,63 @@ input[aria-invalid="true"]:focus {
   display: none !important;
 }
 
+.conversation-panel .panel-header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e8edf2;
+}
+
+.conversation-panel .panel-header h2 {
+  margin-top: 2px;
+  font-size: 14px;
+}
+
 .chat-stream {
   display: grid;
   min-height: 320px;
-  gap: 18px;
-  padding: 16px 4px 22px;
+  gap: 26px;
+  padding: 22px 8px 20px;
   align-content: start;
 }
 
 .chat-message {
-  display: grid;
-  gap: 12px;
+  min-width: 0;
 }
 
-.chat-message.user {
-  grid-template-columns: 32px minmax(0, 1fr);
+/* 轮转标签：小字 who + 时间，无头像无气泡 */
+.turn-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
-.chat-message.assistant,
-.chat-message.execution,
-.chat-message.status {
-  grid-template-columns: minmax(0, 1fr) 32px;
+.turn-label .who {
+  color: #8b98a8;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.chat-message.assistant .chat-avatar,
-.chat-message.execution .chat-avatar,
-.chat-message.status .chat-avatar {
-  order: 2;
+.turn-label .who.is-user {
+  color: #356a9e;
 }
 
-.chat-message.assistant .chat-message-body,
-.chat-message.execution .chat-message-body,
-.chat-message.status .chat-message-body {
-  order: 1;
-  justify-self: end;
-  max-width: 86%;
+.turn-meta {
+  color: #b3bfcc;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
 }
 
-.chat-message.user .chat-message-body {
-  justify-self: start;
-  max-width: 78%;
-}
-
-.chat-message.user .chat-message-body {
-  padding: 10px 13px;
-  border: 1px solid #dbe4f0;
-  border-radius: 12px;
-  border-top-left-radius: 4px;
-  background: #f2f7fd;
-}
-
-.chat-message.assistant .chat-message-body {
-  padding: 10px 13px 12px;
-  border: 1px solid #e6ecf2;
-  border-radius: 12px;
-  border-top-right-radius: 4px;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(16, 42, 67, 0.04);
-}
-
-.chat-message.user .chat-message-head {
-  display: none;
+.turn-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 .stream-cursor {
-  margin-left: 2px;
   color: #0d7778;
   font-weight: 600;
   animation: blink 1s steps(2) infinite;
@@ -1133,64 +1127,16 @@ input[aria-invalid="true"]:focus {
   }
 }
 
-.chat-avatar {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border-radius: 10px;
-  background: #e7f5f2;
-  color: #168276;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.chat-message.user .chat-avatar {
-  background: #e8f0fa;
-  color: #356a9e;
-}
-
-.chat-message.status .chat-avatar,
-.chat-message.execution .chat-avatar {
-  background: #f0f2f5;
-  color: #738094;
-}
-
-.chat-message-body {
-  min-width: 0;
-}
-
-.chat-message-head,
-.execution-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.chat-message-head strong {
-  color: #243b53;
-  font-size: 13px;
-}
-
-.chat-message-head span,
-.execution-card-head span {
-  color: #8b98a8;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
-}
-
+/* 全文内容，Codex 风阅读流 */
 .chat-copy {
-  margin-top: 7px;
-  color: #43586e;
-  font-size: 13.5px;
-  line-height: 1.7;
+  color: #3a4c61;
+  font-size: 14.5px;
+  line-height: 1.75;
   overflow-wrap: break-word;
 }
 
 .chat-copy p {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
 
 .chat-copy p:last-child {
@@ -1201,9 +1147,9 @@ input[aria-invalid="true"]:focus {
 .chat-copy h2,
 .chat-copy h3,
 .chat-copy h4 {
-  margin: 12px 0 6px;
-  color: #243b53;
-  font-size: 14.5px;
+  margin: 14px 0 8px;
+  color: #1c2a3c;
+  font-size: 15px;
 }
 
 .chat-copy h1:first-child,
@@ -1215,16 +1161,16 @@ input[aria-invalid="true"]:focus {
 
 .chat-copy ul,
 .chat-copy ol {
-  margin: 4px 0 8px;
-  padding-left: 22px;
+  margin: 6px 0 12px;
+  padding-left: 24px;
 }
 
 .chat-copy li {
-  margin: 3px 0;
+  margin: 4px 0;
 }
 
 .chat-copy li::marker {
-  color: #8494a6;
+  color: #9aa7b5;
 }
 
 .chat-copy a {
@@ -1234,24 +1180,25 @@ input[aria-invalid="true"]:focus {
 }
 
 .chat-copy code {
-  padding: 1.5px 5px;
+  padding: 2px 5px;
   border-radius: 5px;
   background: #eef2f6;
   color: #b34e47;
   font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .chat-copy pre {
-  margin: 8px 0;
-  padding: 11px 13px;
+  margin: 12px 0;
+  padding: 13px 15px;
   overflow-x: auto;
-  border-radius: 9px;
-  background: #14202f;
-  color: #dbe7f3;
+  border: 1px solid #e6ecf2;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #243447;
   font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 12.5px;
+  line-height: 1.65;
 }
 
 .chat-copy pre code {
@@ -1262,22 +1209,22 @@ input[aria-invalid="true"]:focus {
 }
 
 .chat-copy blockquote {
-  margin: 8px 0;
-  padding: 2px 0 2px 11px;
-  border-left: 3px solid #9fd4d0;
+  margin: 10px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid #c6d3de;
   color: #6b7c8f;
 }
 
 .chat-copy table {
-  margin: 8px 0;
+  margin: 10px 0;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .chat-copy th,
 .chat-copy td {
-  padding: 5px 10px;
-  border: 1px solid #dbe2ea;
+  padding: 6px 11px;
+  border: 1px solid #e2e8ee;
   text-align: left;
 }
 
@@ -1288,7 +1235,7 @@ input[aria-invalid="true"]:focus {
 }
 
 .chat-copy hr {
-  margin: 10px 0;
+  margin: 12px 0;
   border: 0;
   border-top: 1px solid #e2e7ee;
 }
@@ -1371,43 +1318,135 @@ input[aria-invalid="true"]:focus {
   }
 }
 
-.execution-card {
-  display: grid;
-  gap: 7px;
-  margin-top: 8px;
-  padding: 12px 14px;
-  border: 1px solid #cfe4df;
-  border-left: 3px solid #51a797;
-  border-radius: 10px;
-  background: #f4fbf9;
+/* 行内活动条目：工具、权限、问题等，细条而非卡片 */
+.act-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-left: 2px solid #9fd4d0;
+  border-radius: 0 8px 8px 0;
+  background: #f6faf9;
+  font-size: 12.5px;
 }
 
-.execution-card-head strong {
-  color: #2b756a;
+.act-row.warn {
+  border-left-color: #dda856;
+  background: #fffaf1;
+}
+
+.act-row.bad {
+  border-left-color: #cf6a61;
+  background: #fff6f5;
+}
+
+.act-row.mut {
+  border-left-color: #c3cfda;
+  background: #f5f7fa;
+}
+
+.act-icon {
+  color: #41877d;
+  font-size: 13px;
+}
+
+.act-row.warn .act-icon {
+  color: #a76716;
+}
+
+.act-row.bad .act-icon {
+  color: #b34e47;
+}
+
+.act-name {
+  color: #2b4a45;
   font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.act-row.warn .act-name {
+  color: #7c5a1d;
+}
+
+.act-row.bad .act-name {
+  color: #96453f;
+}
+
+.act-desc {
+  overflow: hidden;
+  color: #7d8b9a;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.act-status {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: #8b98a8;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+
+.act-status.ok {
+  color: #1c8a73;
+}
+
+.act-status.run {
+  color: #a76716;
+}
+
+.act-status.bad {
+  color: #b34e47;
+}
+
+.act-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.act-actions button {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid #b9ded7;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #167d70;
   font-size: 11px;
 }
 
-.execution-card p,
-.status-card strong {
-  color: #587064;
-  font-size: 12px;
-  line-height: 1.6;
+.act-actions button:hover:not(:disabled) {
+  background: #eef8f5;
 }
 
-.execution-card details {
-  margin-top: 3px;
-  border-top: 1px solid #dbece8;
-  padding-top: 8px;
+.act-actions .deny {
+  border-color: #e4b8b3;
+  color: #b34e47;
 }
 
-.execution-card summary {
+.act-actions .deny:hover:not(:disabled) {
+  background: #fdf1f0;
+}
+
+.act-row details {
+  flex: 1 1 100%;
+  margin-top: 2px;
+  border-top: 1px solid rgba(16, 42, 67, 0.06);
+  padding-top: 6px;
+}
+
+.act-row summary {
   color: #41877d;
   cursor: pointer;
   font-size: 11px;
 }
 
-.execution-card pre {
+.act-row details pre {
   max-height: 180px;
   margin: 8px 0 0;
   overflow: auto;
@@ -1418,44 +1457,22 @@ input[aria-invalid="true"]:focus {
   white-space: pre-wrap;
 }
 
-.chat-status-waiting .execution-card {
-  border-color: #efd9b3;
-  border-left-color: #d89a3d;
-  background: #fffaf1;
+/* 轮次结束态：居中细分隔线文案 */
+.turn-end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+  color: #9aa7b5;
+  font-size: 11.5px;
 }
 
-.chat-status-waiting .execution-card-head strong,
-.chat-status-waiting .execution-card p {
-  color: #9b6b25;
-}
-
-.chat-status-failed .execution-card,
-.chat-status-failed .status-card {
-  border-color: #edc8c3;
-  border-left-color: #cf6a61;
-  background: #fff6f5;
-}
-
-.chat-status-failed .execution-card-head strong,
-.chat-status-failed .execution-card p,
-.chat-status-failed .status-card strong {
-  color: #ae514a;
-}
-
-.chat-status-cancelled .execution-card,
-.chat-status-cancelled .status-card {
-  border-color: #d8dfe6;
-  border-left-color: #8c98a5;
-  background: #f7f8fa;
-}
-
-.status-card {
-  margin-top: 7px;
-  padding: 12px 14px;
-  border: 1px solid #cce3d8;
-  border-left: 3px solid #50a583;
-  border-radius: 10px;
-  background: #f3faf6;
+.turn-end::before,
+.turn-end::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e8edf2;
 }
 
 .event-trace {
@@ -2173,6 +2190,7 @@ footer {
   }
 
   .topbar-meta {
+    flex-wrap: wrap;
     justify-content: flex-start;
   }
 

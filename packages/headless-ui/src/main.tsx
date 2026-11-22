@@ -30,6 +30,7 @@ type ChatItem = {
   content?: string
   detail?: string
   thinking?: boolean
+  skillIDs?: readonly string[]
   status: ChatStatus
   localTime: string
   eventType?: string
@@ -96,7 +97,6 @@ function App() {
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
   let streamController: AbortController | undefined
   let conversationBody: HTMLDivElement | undefined
-  let permissionPrompt: HTMLElement | undefined
   let permissionsSection: HTMLElement | undefined
   let questionsSection: HTMLElement | undefined
   let promptSequence = 0
@@ -722,6 +722,7 @@ function App() {
           kind: "user",
           title: "你",
           content: text,
+          skillIDs: skillIDsFromText(text),
           status: "completed",
           localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }),
@@ -1131,11 +1132,7 @@ function App() {
           </div>
           <div class="topbar-meta">
             <Show when={permissions().length > 0}>
-              <button
-                type="button"
-                class="attention-badge"
-                onClick={() => scrollRailSection(permissionPrompt ?? permissionsSection)}
-              >
+              <button type="button" class="attention-badge" onClick={() => scrollRailSection(permissionsSection)}>
                 ⚡ 权限 <span class="attention-count">{permissions().length}</span>
               </button>
             </Show>
@@ -1245,58 +1242,6 @@ function App() {
                 </button>
               </div>
             </div>
-            <Show when={chatView() === "chat" && permissions().length > 0}>
-              <section
-                class="permission-prompt"
-                data-testid="permission-prompt"
-                ref={(element) => (permissionPrompt = element)}
-                role="alert"
-                aria-live="assertive"
-                aria-label="待处理权限"
-              >
-                <div class="permission-prompt-head">
-                  <div>
-                    <span class="section-kicker">需要你的确认</span>
-                    <strong>Agent 暂停在这里，允许后才会继续执行</strong>
-                  </div>
-                  <span class="permission-prompt-count">{permissions().length} 项</span>
-                </div>
-                <div class="permission-prompt-list">
-                  <For each={permissions()}>
-                    {(request) => (
-                      <div class="permission-prompt-card">
-                        <div class="permission-prompt-copy">
-                          <span class="permission-action">{request.action}</span>
-                          <strong>{request.resource}</strong>
-                          <span>{request.reason || "此工具调用需要权限审批"}</span>
-                        </div>
-                        <div class="permission-actions">
-                          <button
-                            disabled={Boolean(pendingDecisionID())}
-                            onClick={() => decide(request.id, "allow_once")}
-                          >
-                            {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
-                          </button>
-                          <button
-                            disabled={Boolean(pendingDecisionID())}
-                            onClick={() => decide(request.id, "allow_always")}
-                          >
-                            始终允许
-                          </button>
-                          <button
-                            class="deny"
-                            disabled={Boolean(pendingDecisionID())}
-                            onClick={() => decide(request.id, "deny")}
-                          >
-                            拒绝
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </section>
-            </Show>
             <div
               class="conversation-body"
               ref={(element) => (conversationBody = element)}
@@ -1344,67 +1289,92 @@ function App() {
                   <For each={chatItems()}>
                     {(item) => (
                       <article class={`chat-message ${item.kind} chat-status-${item.status}`}>
-                        <span class="chat-avatar">
-                          {item.kind === "user" ? "你" : item.kind === "assistant" ? "A" : "C"}
-                        </span>
-                        <div class="chat-message-body">
-                          <div class="chat-message-head">
-                            <strong>{item.title}</strong>
-                            <span>
-                              {item.localTime} · {chatStatusLabel(item.status)}
-                            </span>
-                          </div>
-                          <Switch>
-                            <Match when={item.kind === "user" || item.kind === "assistant"}>
-                              <Show
-                                when={item.thinking}
-                                fallback={
-                                  <>
-                                    <MarkdownView
-                                      class="chat-copy"
-                                      content={item.content || (item.status === "streaming" ? "Agent 正在输出…" : "")}
-                                    />
-                                    <Show when={item.kind === "assistant" && item.status === "streaming"}>
-                                      <span class="stream-cursor" aria-hidden="true">
-                                        ▍
-                                      </span>
-                                    </Show>
-                                  </>
-                                }
-                              >
-                                <div class="thinking-card" role="status" aria-label="正在思考">
-                                  <span class="thinking-orb" aria-hidden="true" />
-                                  <strong>正在思考</strong>
-                                  <span class="thinking-dots" aria-hidden="true">
-                                    <i>·</i>
-                                    <i>·</i>
-                                    <i>·</i>
-                                  </span>
-                                </div>
+                        <Switch>
+                          <Match when={item.kind === "user" || item.kind === "assistant"}>
+                            <div class="turn-label">
+                              <span class={`who ${item.kind === "user" ? "is-user" : ""}`}>{item.title}</span>
+                              <span class="turn-meta">
+                                {item.localTime} · {chatStatusLabel(item.status)}
+                              </span>
+                              <Show when={item.kind === "assistant" && item.status === "streaming"}>
+                                <span class="stream-cursor" aria-hidden="true">
+                                  ▍
+                                </span>
                               </Show>
-                            </Match>
-                            <Match when={item.kind === "execution"}>
-                              <div class="execution-card">
-                                <div class="execution-card-head">
-                                  <strong>{item.title}</strong>
-                                  <span>{chatStatusLabel(item.status)}</span>
-                                </div>
-                                <p>{item.content}</p>
-                                <Show when={item.detail}>
-                                  <details>
-                                    <summary>查看结构化详情</summary>
-                                    <pre>{item.detail}</pre>
-                                  </details>
-                                </Show>
+                            </div>
+                            <Show
+                              when={item.thinking}
+                              fallback={
+                                <>
+                                  <MarkdownView
+                                    class="chat-copy"
+                                    content={item.content || (item.status === "streaming" ? "Agent 正在输出…" : "")}
+                                  />
+                                  <Show when={item.kind === "user" && (item.skillIDs?.length ?? 0) > 0}>
+                                    <div class="turn-chips">
+                                      <For each={item.skillIDs}>
+                                        {(id) => <span class="skill-chip">@{id}</span>}
+                                      </For>
+                                    </div>
+                                  </Show>
+                                </>
+                              }
+                            >
+                              <div class="thinking-card" role="status" aria-label="正在思考">
+                                <span class="thinking-orb" aria-hidden="true" />
+                                <strong>正在思考</strong>
+                                <span class="thinking-dots" aria-hidden="true">
+                                  <i>·</i>
+                                  <i>·</i>
+                                  <i>·</i>
+                                </span>
                               </div>
-                            </Match>
-                            <Match when={item.kind === "status"}>
-                              <div class="status-card">
-                                <strong>{item.content}</strong>
-                              </div>
-                            </Match>
-                          </Switch>
-                        </div>
+                            </Show>
+                          </Match>
+                          <Match when={item.kind === "execution"}>
+                            <div
+                              class={`act-row ${
+                                item.status === "waiting"
+                                  ? "warn"
+                                  : item.status === "failed"
+                                    ? "bad"
+                                    : item.status === "cancelled"
+                                      ? "mut"
+                                      : ""
+                              }`}
+                            >
+                              <span class="act-icon" aria-hidden="true">
+                                {item.status === "waiting" ? "⚡" : item.status === "failed" ? "!" : "·"}
+                              </span>
+                              <strong class="act-name">{item.title}</strong>
+                              <span class="act-desc" title={item.content}>
+                                {item.content}
+                              </span>
+                              <span
+                                class={`act-status ${
+                                  item.status === "completed"
+                                    ? "ok"
+                                    : item.status === "running"
+                                      ? "run"
+                                      : item.status === "failed"
+                                        ? "bad"
+                                        : ""
+                                }`}
+                              >
+                                {chatStatusLabel(item.status)}
+                              </span>
+                              <Show when={item.detail}>
+                                <details>
+                                  <summary>查看结构化详情</summary>
+                                  <pre>{item.detail}</pre>
+                                </details>
+                              </Show>
+                            </div>
+                          </Match>
+                          <Match when={item.kind === "status"}>
+                            <div class="turn-end">{item.content}</div>
+                          </Match>
+                        </Switch>
                       </article>
                     )}
                   </For>
@@ -1535,9 +1505,27 @@ function App() {
                             <strong>{request.resource}</strong>
                             <small>{request.reason}</small>
                           </div>
-                          <button class="permission-jump" onClick={() => scrollRailSection(permissionPrompt)}>
-                            回到对话处理 →
-                          </button>
+                          <div class="permission-actions" data-testid="permission-actions">
+                            <button
+                              disabled={Boolean(pendingDecisionID())}
+                              onClick={() => decide(request.id, "allow_once")}
+                            >
+                              {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
+                            </button>
+                            <button
+                              disabled={Boolean(pendingDecisionID())}
+                              onClick={() => decide(request.id, "allow_always")}
+                            >
+                              始终允许
+                            </button>
+                            <button
+                              class="deny"
+                              disabled={Boolean(pendingDecisionID())}
+                              onClick={() => decide(request.id, "deny")}
+                            >
+                              拒绝
+                            </button>
+                          </div>
                         </div>
                       )}
                     </For>
@@ -1761,7 +1749,7 @@ function projectChatEvent(items: ChatItem[], event: ExperimentalHeadlessSessionE
         id: `tool:${value("toolCallID")}`,
         kind: "execution",
         title: `工具结果 · ${value("toolName") || value("toolCallID").slice(0, 12) || "工具"}`,
-        content: data.ok === false ? "工具执行失败，展开详情查看原因" : "工具执行完成，展开详情查看输出",
+        content: data.ok === false ? "工具执行失败" : compactSummary(value("output")) || "工具执行完成",
         detail,
         status: data.ok === false ? "failed" : "completed",
         localTime,
@@ -1907,6 +1895,10 @@ function projectChatEvent(items: ChatItem[], event: ExperimentalHeadlessSessionE
     default:
       return items
   }
+}
+
+function compactSummary(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 120)
 }
 
 /**
