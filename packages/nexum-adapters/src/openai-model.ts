@@ -12,6 +12,7 @@ import type {
   ModelPrompt,
   ModelToolCall,
   NexumModelConfigStore,
+  NexumModelErrorCode,
 } from "@nexum/core"
 import { NexumModelError } from "@nexum/core"
 
@@ -67,18 +68,25 @@ export function createOpenAICompatibleModelPort(options: OpenAICompatibleModelPo
           signal: input.signal,
         })
       } catch {
-        throw new NexumModelError("unavailable", "模型服务不可达")
+        throw new NexumModelError("network_error", "模型服务不可达")
       }
 
       if (response.status === 401 || response.status === 403) {
-        throw new NexumModelError("authentication_failed", "模型认证失败")
+        throw new NexumModelError("authentication_failed", "模型认证失败", { status: response.status })
       }
       if (!response.ok) {
-        const detail = await readResponseErrorDetail(response, credential)
-        const code = isContextOverflowResponse(response.status, detail) ? "context_overflow" : "unavailable"
+        const error = await readResponseError(response, credential)
+        const retryAfterMs = readRetryAfterMs(response)
         throw new NexumModelError(
-          code,
-          detail ? `模型服务请求失败（HTTP ${response.status}）：${detail}` : `模型服务请求失败（HTTP ${response.status}）`,
+          classifyResponseError(response.status, error.detail),
+          error.detail
+            ? `模型服务请求失败（HTTP ${response.status}）：${error.detail}`
+            : `模型服务请求失败（HTTP ${response.status}）`,
+          {
+            status: response.status,
+            ...(error.providerCode ? { providerCode: error.providerCode } : {}),
+            ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+          },
         )
       }
 
@@ -101,15 +109,70 @@ export function createOpenAICompatibleModelPort(options: OpenAICompatibleModelPo
   }
 }
 
-async function readResponseErrorDetail(response: Response, credential: string | undefined): Promise<string> {
+interface ResponseError {
+  readonly detail: string
+  readonly providerCode?: string
+}
+
+async function readResponseError(response: Response, credential: string | undefined): Promise<ResponseError> {
   const body = await response.text().catch(() => "")
-  if (!body) return ""
-  return body
-    .replaceAll(credential ?? "", "[redacted]")
+  if (!body) return { detail: "" }
+  const sanitizedBody = credential ? body.replaceAll(credential, "[redacted]") : body
+  const detail = sanitizedBody
     .replaceAll(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]")
     .replaceAll(/\s+/g, " ")
     .trim()
     .slice(0, 240)
+  const providerCode = readProviderCode(body)
+  return { detail, ...(providerCode ? { providerCode } : {}) }
+}
+
+/**
+ * 从 OpenAI-compatible 错误 JSON 中读取不含凭据的供应商错误码。
+ *
+ * @param body - 上游原始错误体
+ * @returns 供应商错误码，无法解析时返回 undefined
+ */
+function readProviderCode(body: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(body)
+    if (!isRecord(parsed)) return undefined
+    const error = isRecord(parsed.error) ? parsed.error : parsed
+    return typeof error.code === "string" ? error.code.slice(0, 100) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 把 HTTP 错误映射为 Core 可执行重试策略的稳定错误码。
+ *
+ * @param status - 上游 HTTP 状态码
+ * @param detail - 已脱敏的错误摘要
+ * @returns 稳定模型错误码
+ */
+function classifyResponseError(status: number, detail: string): NexumModelErrorCode {
+  if (isContextOverflowResponse(status, detail)) return "context_overflow"
+  if (status === 408 || status === 504) return "timeout"
+  if (status === 429) return "rate_limited"
+  if (status >= 500) return "upstream_error"
+  return "invalid_request"
+}
+
+/**
+ * 解析 Retry-After 的秒数或 HTTP 日期格式。
+ *
+ * @param response - 上游 HTTP 响应
+ * @returns 等待毫秒数，缺失或无效时返回 undefined
+ */
+function readRetryAfterMs(response: Response): number | undefined {
+  const value = response.headers.get("retry-after")?.trim()
+  if (!value) return undefined
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000)
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return undefined
+  return Math.max(0, timestamp - Date.now())
 }
 
 /**
