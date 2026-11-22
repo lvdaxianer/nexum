@@ -8,7 +8,7 @@
 
 ## 2. Core 事件回归
 
-- [ ] 2.1 补充 Core 测试，验证 reasoning 增量按模型返回顺序发布、工具事件或最终文本之后不再追加到旧 reasoning 段，并验证不生成虚假 reasoning；运行 `packages/nexum-core` 的目标测试。
+- [x] 2.1 补充 Core 测试，验证 reasoning 增量按模型返回顺序发布、工具事件或最终文本之后不再追加到旧 reasoning 段，并验证不生成虚假 reasoning；运行 `packages/nexum-core` 的目标测试。
 
 ## 3. UI 连续 transcript
 
