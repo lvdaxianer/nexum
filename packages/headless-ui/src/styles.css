@@ -845,14 +845,18 @@ input[aria-invalid="true"]:focus {
   color: #142a45;
   font-size: 22px;
   letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
 .topbar-sep {
   color: #b3bfcc;
+  flex: 0 0 auto;
 }
 
 .topbar-session {
   overflow: hidden;
+  min-width: 0;
+  max-width: min(30vw, 320px);
   color: #33465c;
   font-size: 15px;
   text-overflow: ellipsis;
@@ -865,9 +869,11 @@ input[aria-invalid="true"]:focus {
   gap: 10px;
   margin-top: 5px;
   min-width: 0;
+  overflow: hidden;
   color: #718197;
   font-family: "IBM Plex Mono", monospace;
   font-size: 11px;
+  white-space: nowrap;
 }
 
 .current-session-directory {
@@ -878,8 +884,11 @@ input[aria-invalid="true"]:focus {
 }
 
 .session-id {
+  overflow: hidden;
   color: #a3afbc;
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attention-badge {
@@ -2118,6 +2127,33 @@ footer {
 
   .main-grid {
     grid-template-columns: minmax(0, 1fr) 280px;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .topbar-meta {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    margin-left: auto;
+  }
+
+  .topbar-title h1 {
+    font-size: 20px;
+  }
+
+  .topbar-session {
+    max-width: 20vw;
+  }
+
+  .session-id {
+    display: none;
+  }
+
+  .current-session-directory {
+    max-width: 52vw;
   }
 }
 
