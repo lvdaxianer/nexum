@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@nexum/core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "smoke:real": "bun run script/real-model-smoke.ts",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tsc": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@nexum/adapters": "workspace:*",
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:"
+  }
+}

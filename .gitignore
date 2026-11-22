@@ -36,6 +36,7 @@ target
 # Local dev files
 opencode-dev
 .headless/
+packages/nexum-test/.nexum-test/
 RELEASE_REVIEW.md
 logs/
 *.bun-build
