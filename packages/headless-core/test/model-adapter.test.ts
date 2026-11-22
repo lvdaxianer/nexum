@@ -30,6 +30,31 @@ test("sends the active model configuration to one OpenAI-compatible endpoint", a
   expect(request?.init?.body).toContain('"stream":true')
 })
 
+test("preserves the provider finish reason so the loop can continue truncated output", async () => {
+  const config = createHeadlessModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () => Response.json({ choices: [{ finish_reason: "length", message: { content: "半截回答" } }] }),
+  })
+
+  expect(await collect(model)).toEqual([
+    { type: "text", content: "半截回答" },
+    { type: "completed", finishReason: "length" },
+  ])
+})
+
+test("classifies provider context-window errors for automatic compaction", async () => {
+  const config = createHeadlessModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () => new Response("maximum context length exceeded", { status: 400 }),
+  })
+
+  await expect(collect(model)).rejects.toMatchObject({ code: "context_overflow" })
+})
+
 test("requests streaming and yields each SSE text delta as it arrives", async () => {
   const config = createHeadlessModelConfigStore()
   await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
@@ -40,6 +65,7 @@ test("requests streaming and yields each SSE text delta as it arrives", async ()
         `data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: "assistant", content } }] })}\n\n`,
     )
     .join("")
+    .concat(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`)
   const model = createOpenAICompatibleModelPort({
     config,
     fetch: async () => new Response(`${sseBody}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } }),
@@ -49,7 +75,7 @@ test("requests streaming and yields each SSE text delta as it arrives", async ()
     { type: "text", content: "你好" },
     { type: "text", content: "，" },
     { type: "text", content: "世界" },
-    { type: "completed" },
+    { type: "completed", finishReason: "stop" },
   ])
 })
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   createHeadlessCodingLoop,
+  createFileInteractionStore,
   createFileSessionStore,
   createHeadlessModelConfigStore,
   createHeadlessPermissionBroker,
@@ -695,6 +696,57 @@ async function readSseUntil(
   return text
 }
 
+test("replays persisted events from a fresh server and resumes after Last-Event-ID", async () => {
+  const root = await mkdtemp(join(tmpdir(), "headless-server-event-restart-"))
+  temporaryDirectories.push(root)
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-event-restart-project-"))
+  temporaryDirectories.push(directory)
+  const eventFile = join(root, "events.json")
+  const sessionService = createHeadlessSessionService()
+  const session = await sessionService.create({ directory })
+
+  const firstHub = createHeadlessEventHub({ filePath: eventFile })
+  await firstHub.ready?.()
+  const firstServer = await startHeadlessServer({ port: 0, sessionService, eventHub: firstHub })
+  await firstHub.publish({
+    type: "session.started",
+    sessionID: session.sessionID,
+    sequence: 1,
+    eventID: "restart-e1",
+    data: { status: "running" },
+  })
+  await firstHub.publish({
+    type: "assistant.text",
+    sessionID: session.sessionID,
+    sequence: 2,
+    eventID: "restart-e2",
+    data: { text: "重启后仍可回放" },
+  })
+  await firstServer.stop(true)
+
+  const secondHub = createHeadlessEventHub({ filePath: eventFile })
+  await secondHub.ready?.()
+  const secondServer = await startHeadlessServer({ port: 0, sessionService, eventHub: secondHub })
+  servers.push(secondServer)
+  const eventsUrl = new URL(`/api/experimental/headless/session/${session.sessionID}/events`, secondServer.url)
+
+  const fullResponse = await fetch(eventsUrl)
+  const fullReader = fullResponse.body?.getReader()
+  if (!fullReader) throw new Error("SSE 响应缺少可读流")
+  const fullText = await readSseUntil(fullReader, '"sequence":2')
+  expect(fullText).toContain('"eventID":"restart-e1"')
+  expect(fullText).toContain("重启后仍可回放")
+  await fullReader.cancel()
+
+  const resumedResponse = await fetch(eventsUrl, { headers: { "last-event-id": "restart-e1" } })
+  const resumedReader = resumedResponse.body?.getReader()
+  if (!resumedReader) throw new Error("SSE 响应缺少可读流")
+  const resumedText = await readSseUntil(resumedReader, '"sequence":2')
+  expect(resumedText).toContain('"eventID":"restart-e2"')
+  expect(resumedText).not.toContain('"eventID":"restart-e1"')
+  await resumedReader.cancel()
+})
+
 test("serves Question replies and streams tool plus context compaction completion", async () => {
   const directory = await mkdtemp(join(tmpdir(), "headless-server-question-chain-"))
   temporaryDirectories.push(directory)
@@ -922,4 +974,42 @@ test("headless-server package stays independent from UI packages", async () => {
   const dependencies = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
 
   expect(dependencies).not.toEqual(expect.arrayContaining(FORBIDDEN_UI_PACKAGES))
+})
+
+test("recovers persisted interaction requests as orphaned and rejects their old reply IDs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "headless-server-interaction-recovery-"))
+  const directory = await mkdtemp(join(tmpdir(), "headless-server-interaction-project-"))
+  temporaryDirectories.push(root, directory)
+  const interactionStore = createFileInteractionStore({ filePath: join(root, "interactions.json") })
+  await interactionStore.save({
+    requestID: "orphaned-permission-001",
+    sessionID: "session-recovery",
+    status: "pending",
+    createdAt: "2026-11-22T00:00:00.000Z",
+    updatedAt: "2026-11-22T00:00:00.000Z",
+    kind: "permission",
+    action: "shell",
+    resource: "pwd",
+  })
+  const sessionService = createHeadlessSessionService()
+  const session = await sessionService.create({ directory })
+  const restartedInteractionStore = createFileInteractionStore({ filePath: join(root, "interactions.json") })
+  const server = await startHeadlessServer({ port: 0, sessionService, interactionStore: restartedInteractionStore })
+  servers.push(server)
+
+  const state = await fetch(new URL(`/api/experimental/headless/session/${session.sessionID}/state`, server.url))
+  expect((await state.json()) as { data: { pendingPermissions: unknown[] } }).toMatchObject({
+    data: { pendingPermissions: [] },
+  })
+
+  const reply = await fetch(
+    new URL(`/api/experimental/headless/session/${session.sessionID}/permission/orphaned-permission-001/reply`, server.url),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: "allow_once" }),
+    },
+  )
+  expect(reply.status).toBe(404)
+  expect(await restartedInteractionStore.get("orphaned-permission-001")).toMatchObject({ status: "orphaned" })
 })

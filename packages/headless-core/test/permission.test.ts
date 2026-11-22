@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   createHeadlessCodingLoop,
+  createFileInteractionStore,
   createHeadlessPermissionBroker,
   createHeadlessSessionService,
   type EventSink,
@@ -54,7 +55,7 @@ test("blocks a tool until allow_once approval and then resumes", async () => {
   })
 
   const run = loop.run({ sessionID: session.sessionID, text: "读取文件" })
-  await Bun.sleep(0)
+  await Bun.sleep(10)
   const pending = await permission.list(session.sessionID)
 
   expect(pending).toHaveLength(1)
@@ -207,4 +208,36 @@ test("redacts credential-shaped values from permission requests", async () => {
   expect(pending.resource).not.toContain("sk-live-value")
   await broker.reply({ sessionID: request.sessionID, requestID: pending.id, decision: "deny" })
   expect(await evaluation).toBe("deny")
+})
+
+test("persists pending permissions and marks them orphaned after a new store is opened", async () => {
+  const root = await mkdtemp(join(tmpdir(), "headless-permission-recovery-"))
+  const filePath = join(root, "interactions.json")
+  const store = createFileInteractionStore({ filePath })
+  const broker = createHeadlessPermissionBroker({ interactionStore: store })
+  const evaluation = broker.evaluate({
+    sessionID: "session-recovery",
+    toolName: "shell",
+    action: "shell",
+    resource: "pwd",
+    input: { command: "pwd" },
+  })
+
+  await Bun.sleep(10)
+  const pending = (await broker.list("session-recovery"))[0]!
+  expect((await store.list())[0]).toMatchObject({ requestID: pending.id, status: "pending" })
+
+  const restarted = createFileInteractionStore({ filePath })
+  expect((await restarted.list())[0]).toMatchObject({ requestID: pending.id, status: "orphaned" })
+  await expect(
+    createHeadlessPermissionBroker({ interactionStore: restarted }).reply({
+      sessionID: "session-recovery",
+      requestID: pending.id,
+      decision: "allow_once",
+    }),
+  ).rejects.toMatchObject({ code: "not_found" })
+
+  await broker.reply({ sessionID: "session-recovery", requestID: pending.id, decision: "deny" })
+  await evaluation
+  await rm(root, { recursive: true, force: true })
 })

@@ -9,7 +9,12 @@ import type { HeadlessModelConfigStore } from "./model-config.js"
 import type { ModelChunk, ModelMessage, ModelPort, ModelPrompt, ModelToolCall } from "./index.js"
 
 /** 模型请求失败的稳定错误码。 */
-export type HeadlessModelErrorCode = "not_configured" | "authentication_failed" | "unavailable" | "invalid_response"
+export type HeadlessModelErrorCode =
+  | "not_configured"
+  | "authentication_failed"
+  | "unavailable"
+  | "context_overflow"
+  | "invalid_response"
 
 /** 不泄露凭据值的模型运行时错误。 */
 export class HeadlessModelError extends Error {
@@ -80,7 +85,12 @@ export function createOpenAICompatibleModelPort(options: OpenAICompatibleModelPo
         throw new HeadlessModelError("authentication_failed", "模型认证失败")
       }
       if (!response.ok) {
-        throw new HeadlessModelError("unavailable", "模型服务请求失败")
+        const detail = await readResponseErrorDetail(response, credential)
+        const code = isContextOverflowResponse(response.status, detail) ? "context_overflow" : "unavailable"
+        throw new HeadlessModelError(
+          code,
+          detail ? `模型服务请求失败（HTTP ${response.status}）：${detail}` : `模型服务请求失败（HTTP ${response.status}）`,
+        )
       }
 
       if (isEventStream(response)) {
@@ -94,9 +104,33 @@ export function createOpenAICompatibleModelPort(options: OpenAICompatibleModelPo
         yield toolCallChunk(result.toolCalls, result.reasoningContent)
         return
       }
-      yield { type: "completed" }
+      yield { type: "completed", ...(result.finishReason ? { finishReason: result.finishReason } : {}) }
     },
   }
+}
+
+async function readResponseErrorDetail(response: Response, credential: string | undefined): Promise<string> {
+  const body = await response.text().catch(() => "")
+  if (!body) return ""
+  return body
+    .replaceAll(credential ?? "", "[redacted]")
+    .replaceAll(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]")
+    .replaceAll(/\s+/g, " ")
+    .trim()
+    .slice(0, 240)
+}
+
+/**
+ * 判断上游错误是否明确表示上下文窗口不足。
+ *
+ * @param status - 上游 HTTP 状态码
+ * @param detail - 已脱敏的上游错误摘要
+ * @returns 是否属于上下文窗口错误
+ */
+function isContextOverflowResponse(status: number, detail: string): boolean {
+  if (status === 413) return true
+  if (status !== 400 && status !== 422) return false
+  return /context|token|maximum.{0,12}(length|limit)|too long/i.test(detail)
 }
 
 function createChatCompletionBody(model: string, input: ModelPrompt): Record<string, unknown> {
@@ -122,7 +156,7 @@ function createChatCompletionBody(model: string, input: ModelPrompt): Record<str
               parameters: tool.parameters,
             },
           })),
-          tool_choice: "auto",
+          tool_choice: input.toolChoice ?? "auto",
         }
       : {}),
   }
@@ -159,7 +193,7 @@ function toolCallChunk(toolCalls: readonly ModelToolCall[], reasoningContent?: s
   return {
     type: "tool-call",
     toolCalls,
-    ...(reasoningContent ? { reasoningContent } : {}),
+    ...(reasoningContent !== undefined ? { reasoningContent } : {}),
     ...(toolCalls.length === 1 ? { toolCallID: first.id, toolName: first.name, toolInput: first.input } : {}),
   }
 }
@@ -184,6 +218,7 @@ async function* readStreamedModelResult(response: Response): AsyncGenerator<Mode
   let buffer = ""
   let sawPayload = false
   let finished = false
+  let finishReason: string | undefined
   try {
     while (!finished) {
       const read = await reader.read()
@@ -204,7 +239,10 @@ async function* readStreamedModelResult(response: Response): AsyncGenerator<Mode
             finished = true
             break
           }
-          const delta = streamDelta(parseStreamPayload(payload))
+          const parsed = parseStreamPayload(payload)
+          const streamedFinishReason = streamFinishReason(parsed)
+          if (streamedFinishReason !== undefined) finishReason = streamedFinishReason
+          const delta = streamDelta(parsed)
           const text = deltaText(delta)
           if (text) yield { type: "text", content: text }
           const reasoning = delta?.reasoning_content
@@ -218,11 +256,11 @@ async function* readStreamedModelResult(response: Response): AsyncGenerator<Mode
   }
   const toolCalls = resolvePendingToolCalls(pending)
   if (toolCalls.length > 0) {
-    yield toolCallChunk(toolCalls, reasoningContent || undefined)
+    yield toolCallChunk(toolCalls, reasoningContent)
     return
   }
   if (!sawPayload) throw new HeadlessModelError("invalid_response", "模型响应格式无效")
-  yield { type: "completed" }
+  yield { type: "completed", ...(finishReason ? { finishReason } : {}) }
 }
 
 /** 提取一个 SSE 事件块中的全部 data 负载。 */
@@ -249,6 +287,19 @@ function streamDelta(chunk: Record<string, unknown>): Record<string, unknown> | 
   if (!Array.isArray(chunk.choices) || chunk.choices.length === 0) return undefined
   const first = chunk.choices[0]
   return isRecord(first) && isRecord(first.delta) ? first.delta : undefined
+}
+
+/**
+ * 提取一个 SSE 事件块中的完成原因，用于识别输出被模型截断。
+ *
+ * @param chunk - 解析后的 SSE 事件
+ * @returns 模型完成原因
+ */
+function streamFinishReason(chunk: Record<string, unknown>): string | undefined {
+  if (!Array.isArray(chunk.choices) || chunk.choices.length === 0) return undefined
+  const first = chunk.choices[0]
+  if (!isRecord(first)) return undefined
+  return typeof first.finish_reason === "string" ? first.finish_reason : undefined
 }
 
 function deltaText(delta: Record<string, unknown> | undefined): string {
@@ -294,6 +345,7 @@ function parsePendingToolCall(value: PendingToolCall): ModelToolCall {
 interface ModelResult {
   readonly content?: string
   readonly reasoningContent?: string
+  readonly finishReason?: string
   readonly toolCalls: readonly ModelToolCall[]
 }
 
@@ -314,12 +366,13 @@ async function readModelResult(response: Response): Promise<ModelResult> {
   const content = typeof first.message.content === "string" ? first.message.content : undefined
   const reasoningContent =
     typeof first.message.reasoning_content === "string" ? first.message.reasoning_content : undefined
+  const finishReason = typeof first.finish_reason === "string" ? first.finish_reason : undefined
   const rawToolCalls = first.message.tool_calls
-  if (rawToolCalls === undefined) return { content, reasoningContent, toolCalls: [] }
+  if (rawToolCalls === undefined) return { content, reasoningContent, finishReason, toolCalls: [] }
   if (!Array.isArray(rawToolCalls)) throw new HeadlessModelError("invalid_response", "模型工具调用格式无效")
 
   const toolCalls = rawToolCalls.map(parseToolCall)
-  return { content, reasoningContent, toolCalls }
+  return { content, reasoningContent, finishReason, toolCalls }
 }
 
 function parseToolCall(rawToolCall: unknown): ModelToolCall {

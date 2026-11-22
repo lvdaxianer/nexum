@@ -33,6 +33,8 @@ import {
   type SessionStore,
   type HeadlessSkillInvocationPort,
   type HeadlessSkillRegistry,
+  type MessageStore,
+  type HeadlessInteractionStore,
 } from "@opencode/headless-core"
 import { resolve } from "node:path"
 import { createHeadlessEventHub, type HeadlessEventHub } from "./events.ts"
@@ -67,6 +69,8 @@ const HEADLESS_EVENT_TYPES = [
   "context.project.loaded",
   "skill.activated",
   "skill.failed",
+  "model.retry",
+  "coding-loop.limit.reached",
   "session.completed",
   "session.failed",
   "session.cancelled",
@@ -78,6 +82,8 @@ export interface HeadlessServerOptions {
   readonly port?: number
   readonly sessionService?: HeadlessSessionService
   readonly sessionStore?: SessionStore
+  readonly messageStore?: MessageStore
+  readonly interactionStore?: HeadlessInteractionStore
   readonly codingLoop?: HeadlessCodingLoop
   readonly permissionBroker?: HeadlessPermissionBroker
   readonly questionPort?: HeadlessQuestionPort
@@ -115,8 +121,9 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
     options.modelProbe ??
     createHeadlessModelProbePort({ model: createOpenAICompatibleModelPort({ config: modelConfigStore }) })
   const eventHub = options.eventHub ?? createHeadlessEventHub()
-  const permissionBroker = options.permissionBroker ?? createHeadlessPermissionBroker()
-  const questionPort = options.questionPort ?? createHeadlessQuestionPort()
+  const interactionStore = options.interactionStore
+  const permissionBroker = options.permissionBroker ?? createHeadlessPermissionBroker({ interactionStore })
+  const questionPort = options.questionPort ?? createHeadlessQuestionPort({ interactionStore })
   const skillRegistry =
     options.skillRegistry ??
     createHeadlessSkillRegistry({ roots: options.skillRoots ?? [resolve(process.cwd(), "skills")] })
@@ -137,9 +144,11 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
       tools: toolRegistry.definitions,
       question: questionPort,
       skills: skillInvocation,
+      ...(options.messageStore ? { messageStore: options.messageStore } : {}),
     })
   assertPort(port)
   if (options.sessionStore) await options.sessionStore.list()
+  if (interactionStore) await interactionStore.list()
 
   const server = Bun.serve({
     hostname,

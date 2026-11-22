@@ -22,7 +22,7 @@ test("exposes capabilities and v1 response metadata", async () => {
     headers: { "x-trace-id": "capability_trace" },
   })
   const body = (await response.json()) as {
-    data: { protocolVersion: string; transport: { events: string }; features: string[] }
+    data: { protocolVersion: string; transport: { events: string }; features: string[]; eventTypes: string[] }
     meta: { protocolVersion: string; traceId: string }
   }
 
@@ -31,6 +31,7 @@ test("exposes capabilities and v1 response metadata", async () => {
   expect(body.data.protocolVersion).toBe("headless.v1")
   expect(body.data.transport.events).toBe("sse")
   expect(body.data.features).toContain("permission")
+  expect(body.data.eventTypes).toEqual(expect.arrayContaining(["model.retry", "coding-loop.limit.reached"]))
 })
 
 test("returns a session snapshot with pending collections and last sequence", async () => {

@@ -75,3 +75,55 @@ test("gives events a run identity and keeps sequence monotonic across prompts", 
   expect(events.map((event) => event.sequence)).toEqual([1, 2])
   expect(events.every((event) => event.eventID.length > 0 && !Number.isNaN(Date.parse(event.occurredAt)))).toBe(true)
 })
+
+test("continues event sequence after loading the persisted session cursor", async () => {
+  const session: SessionRecord = {
+    sessionID: "session_cursor_001",
+    name: "cursor",
+    directory: "/workspace/cursor",
+    status: "idle",
+    createdAt: "2026-11-22T00:00:00.000Z",
+    updatedAt: "2026-11-22T00:00:00.000Z",
+  }
+  const events: Array<{ type: string; sequence: number }> = []
+  const sessions: HeadlessSessionService = {
+    async create() {
+      return session
+    },
+    async list() {
+      return [session]
+    },
+    async get() {
+      return session
+    },
+    async update(_sessionID: string, input) {
+      return { ...session, name: input.name }
+    },
+    async setStatus(_sessionID: string, status: SessionRecord["status"]) {
+      return { ...session, status }
+    },
+  }
+  const loop = createHeadlessCodingLoop({
+    model: {
+      async *prompt() {
+        yield { type: "text" as const, content: "ok" }
+        yield { type: "completed" as const }
+      },
+    },
+    tool: { async execute() { return { ok: true, output: "" } } },
+    permission: { async evaluate() { return "allow" as const } },
+    sessions,
+    events: {
+      lastSequence() {
+        return 7
+      },
+      async publish(event) {
+        events.push({ type: event.type, sequence: event.sequence })
+      },
+    },
+  })
+
+  await loop.run({ sessionID: session.sessionID, text: "继续" })
+
+  expect(events.map((event) => event.sequence)).toEqual([8, 9])
+})

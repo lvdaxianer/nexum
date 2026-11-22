@@ -1,6 +1,7 @@
 /** Headless Core 的上下文、压缩和用户补充信息端口。 */
 
 import type { ModelMessage, ToolResult } from "./index.js"
+import type { HeadlessInteractionStore } from "./interaction-store.js"
 import { readFile as readFileFromDisk } from "node:fs/promises"
 
 /** 一条可注入模型上下文的项目来源。 */
@@ -102,6 +103,10 @@ export interface HeadlessQuestionPort extends QuestionPort {
   readonly ask: (request: HeadlessQuestionRequest) => Promise<ToolResult>
 }
 
+export interface HeadlessQuestionPortOptions {
+  readonly interactionStore?: HeadlessInteractionStore
+}
+
 /** Question Broker 领域错误码。 */
 export type HeadlessQuestionErrorCode = "invalid_answers" | "not_found" | "session_mismatch"
 
@@ -117,7 +122,7 @@ export class HeadlessQuestionError extends Error {
 }
 
 /** 创建可被 UI 查询、回答和取消的内存 Question Broker。 */
-export function createHeadlessQuestionPort(): HeadlessQuestionPort {
+export function createHeadlessQuestionPort(options: HeadlessQuestionPortOptions = {}): HeadlessQuestionPort {
   const pending = new Map<string, PendingQuestion>()
   const resolved = new Map<string, { sessionID: string; result: ToolResult }>()
 
@@ -126,8 +131,25 @@ export function createHeadlessQuestionPort(): HeadlessQuestionPort {
       if (pending.has(request.id) || resolved.has(request.id)) {
         throw new HeadlessQuestionError("not_found", "Question ID 已被使用")
       }
-      const result = await new Promise<ToolResult>((resolve) => pending.set(request.id, { request, resolve }))
+      const resultPromise = new Promise<ToolResult>((resolve) => pending.set(request.id, { request, resolve }))
+      try {
+        await options.interactionStore?.save({
+          requestID: request.id,
+          sessionID: request.sessionID,
+          status: "pending",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          kind: "question",
+          toolCallID: request.toolCallID,
+          questions: request.questions,
+        })
+      } catch (error) {
+        pending.delete(request.id)
+        throw error
+      }
+      const result = await resultPromise
       pending.delete(request.id)
+      await options.interactionStore?.delete(request.id)
       if (result.ok) resolved.set(request.id, { sessionID: request.sessionID, result })
       return result
     },
@@ -161,6 +183,7 @@ export function createHeadlessQuestionPort(): HeadlessQuestionPort {
       const result = { ok: false, output: "问题已取消" }
       active.settled = result
       pending.delete(requestID)
+      void options.interactionStore?.delete(requestID)
       active.resolve(result)
     },
   }

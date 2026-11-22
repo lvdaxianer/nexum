@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
   createHeadlessCodingLoop,
+  createFileInteractionStore,
   createHeadlessQuestionPort,
   createHeadlessSessionService,
   type EventSink,
@@ -206,4 +207,29 @@ test("cancelling a pending question fails the run without executing a tool", asy
   await expect(questions.reply(session.sessionID, "question_002", [["是"]])).rejects.toMatchObject({
     code: "not_found",
   })
+})
+
+test("persists pending Questions and recovers them as non-actionable orphaned records", async () => {
+  const root = await mkdtemp(join(tmpdir(), "headless-question-recovery-"))
+  temporaryDirectories.push(root)
+  const filePath = join(root, "interactions.json")
+  const store = createFileInteractionStore({ filePath })
+  const questions = createHeadlessQuestionPort({ interactionStore: store })
+  const pending = questions.ask({
+    id: "question_recovery_001",
+    sessionID: "session-recovery",
+    toolCallID: "call-recovery",
+    questions: [{ header: "确认", question: "继续吗", options: [{ label: "是", description: "继续" }] }],
+  })
+
+  await Bun.sleep(10)
+  expect((await store.list())[0]).toMatchObject({ requestID: "question_recovery_001", status: "pending" })
+  const restarted = createFileInteractionStore({ filePath })
+  expect((await restarted.list())[0]).toMatchObject({ requestID: "question_recovery_001", status: "orphaned" })
+  await expect(
+    createHeadlessQuestionPort({ interactionStore: restarted }).reply("session-recovery", "question_recovery_001", [["是"]]),
+  ).rejects.toMatchObject({ code: "not_found" })
+
+  await questions.cancel("session-recovery", "question_recovery_001")
+  await pending
 })

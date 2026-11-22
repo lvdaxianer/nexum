@@ -6,6 +6,7 @@
  */
 
 import type { PermissionEffect, PermissionPort, ToolRequest } from "./index.js"
+import type { HeadlessInteractionStore } from "./interaction-store.js"
 
 /** Headless 权限审批决策。 */
 export type HeadlessPermissionDecision = "allow_once" | "allow_always" | "deny"
@@ -47,6 +48,10 @@ export interface HeadlessPermissionBroker extends PermissionPort {
   readonly cancel: (sessionID: string, requestID?: string) => Promise<void>
 }
 
+export interface HeadlessPermissionBrokerOptions {
+  readonly interactionStore?: HeadlessInteractionStore
+}
+
 interface PendingPermission {
   readonly request: HeadlessPermissionRequest
   readonly resolve: (decision: HeadlessPermissionDecision) => void
@@ -60,7 +65,7 @@ interface PendingPermission {
  * @author lvdaxianer@yeah.net
  * @date 2026-11-19
  */
-export function createHeadlessPermissionBroker(): HeadlessPermissionBroker {
+export function createHeadlessPermissionBroker(options: HeadlessPermissionBrokerOptions = {}): HeadlessPermissionBroker {
   const pending = new Map<string, PendingPermission>()
   const resolved = new Map<string, { sessionID: string; decision: HeadlessPermissionDecision }>()
   const allowAlways = new Set<string>()
@@ -71,11 +76,28 @@ export function createHeadlessPermissionBroker(): HeadlessPermissionBroker {
       if (allowAlways.has(policyKey)) return "allow"
 
       const permission = createPendingPermission(request)
-      pending.set(permission.request.id, permission)
-      const decision = await new Promise<HeadlessPermissionDecision>((resolve) => {
+      const decisionPromise = new Promise<HeadlessPermissionDecision>((resolve) => {
         pending.set(permission.request.id, { ...permission, resolve })
       })
+      try {
+        await options.interactionStore?.save({
+          requestID: permission.request.id,
+          sessionID: permission.request.sessionID,
+          status: "pending",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          kind: "permission",
+          action: permission.request.action,
+          resource: permission.request.resource,
+          reason: permission.request.reason,
+        })
+      } catch (error) {
+        pending.delete(permission.request.id)
+        throw error
+      }
+      const decision = await decisionPromise
       pending.delete(permission.request.id)
+      await options.interactionStore?.delete(permission.request.id)
       resolved.set(permission.request.id, { sessionID: request.sessionID, decision })
       if (decision === "allow_always") allowAlways.add(policyKey)
       return decision === "deny" ? "deny" : "allow"
@@ -107,6 +129,7 @@ export function createHeadlessPermissionBroker(): HeadlessPermissionBroker {
         if (active.request.sessionID !== sessionID || (requestID !== undefined && requestID !== id)) continue
         active.settled = "deny"
         active.resolve("deny")
+        void options.interactionStore?.delete(id)
         cancelled = true
         if (requestID !== undefined) break
       }
@@ -131,7 +154,7 @@ function createPendingPermission(request: ToolRequest): PendingPermission {
 }
 
 /** 对权限展示和运行事件中的文本做凭据值脱敏。 */
-function redactHeadlessSensitiveText(value: string): string {
+export function redactHeadlessSensitiveText(value: string): string {
   return value.replace(
     /((?:authorization|api[_-]?key|token|password|secret)\s*[:=]\s*(?:bearer\s+)?)([^\s'",;]+)/gi,
     "$1[REDACTED]",

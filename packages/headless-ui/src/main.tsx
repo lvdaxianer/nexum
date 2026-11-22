@@ -426,6 +426,7 @@ function App() {
     setContextSources([])
     seenEventKeys.clear()
     sessionStorage.setItem("headless.sessionID", session.id)
+    eventCursors.delete(session.id)
     connectEvents(session.id)
     if (announce) setNotice(`已选择 Session：${snapshot.data.session.name}`)
   }

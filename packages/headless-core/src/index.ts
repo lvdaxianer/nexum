@@ -7,7 +7,7 @@
 
 import { access, constants, stat } from "node:fs/promises"
 import { basename, isAbsolute, normalize } from "node:path"
-import { createOpenAICompatibleModelPort } from "./model.js"
+import { createOpenAICompatibleModelPort, HeadlessModelError } from "./model.js"
 import type { HeadlessModelConfigStore } from "./model-config.js"
 import type {
   ContextCompactionPort,
@@ -26,6 +26,8 @@ export {
   type HeadlessSkillStatus,
   type HeadlessSkillSummary,
 } from "./skill-registry.js"
+import { createInMemoryMessageStore } from "./message-store.js"
+import type { MessageStore } from "./message-store.js"
 import { normalizeHeadlessToolRequest } from "./tools.js"
 import { HeadlessSkillInvocationError } from "./skill-invocation.js"
 import type { HeadlessSkillInvocationPort } from "./skill-invocation.js"
@@ -63,6 +65,7 @@ export interface ModelPrompt {
   readonly toolResults?: readonly ToolResult[]
   readonly messages?: readonly ModelMessage[]
   readonly tools?: readonly ModelToolDefinition[]
+  readonly toolChoice?: "auto" | "none"
   readonly signal?: AbortSignal
 }
 
@@ -77,6 +80,7 @@ export interface ModelChunk {
   readonly toolCalls?: readonly ModelToolCall[]
   readonly questionID?: string
   readonly questions?: readonly HeadlessQuestionItem[]
+  readonly finishReason?: string
 }
 
 /** 模型端口负责产生 Agent 下一步所需的增量结果。 */
@@ -352,6 +356,7 @@ export interface HeadlessCodingLoopOptions {
   readonly permission: PermissionPort
   readonly sessions: HeadlessSessionService
   readonly events: EventSink
+  readonly messageStore?: MessageStore
   readonly tools?: readonly ModelToolDefinition[]
   readonly contextCompaction?: ContextCompactionPort
   readonly projectContext?: ProjectContextPort
@@ -360,6 +365,9 @@ export interface HeadlessCodingLoopOptions {
   readonly compactionThreshold?: number
   readonly compactionKeepRecent?: number
   readonly maxSteps?: number
+  readonly maxModelRetries?: number
+  readonly retryDelayMs?: number
+  readonly maxOutputContinuations?: number
 }
 
 /** 使用活动模型配置创建 Coding Loop 的参数。 */
@@ -391,9 +399,33 @@ export type HeadlessCodingLoopStart =
  * @date 2026-11-19
  */
 export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): HeadlessCodingLoop {
-  const maxSteps = options.maxSteps ?? 16
+  const maxSteps = options.maxSteps
+  const maxOutputContinuations = Math.max(1, options.maxOutputContinuations ?? 8)
+  const messageStore = options.messageStore ?? createInMemoryMessageStore()
   const activeRuns = new Map<string, ActiveRun>()
   const sessionSequences = new Map<string, number>()
+  const sessionSequenceSeeds = new Map<string, Promise<void>>()
+
+  /**
+   * 首次为 Session 发布事件前读取 EventSink 已有的最后序号，跨服务重启延续编号。
+   *
+   * 同一 Session 只读取一次，并发调用共享同一 Promise 并保持同步递增的原子性。
+   *
+   * @param sessionID - 目标 Session
+   * @returns 读取完成的 Promise
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-22
+   */
+  const seedSessionSequence = (sessionID: string): Promise<void> => {
+    const seeded = sessionSequenceSeeds.get(sessionID)
+    if (seeded) return seeded
+    const seed = Promise.resolve(options.events.lastSequence?.(sessionID)).then((lastSequence) => {
+      if (typeof lastSequence !== "number" || !Number.isFinite(lastSequence)) return
+      if (lastSequence > (sessionSequences.get(sessionID) ?? 0)) sessionSequences.set(sessionID, lastSequence)
+    })
+    sessionSequenceSeeds.set(sessionID, seed)
+    return seed
+  }
 
   const execute = async (input: HeadlessCodingLoopInput, runState: ActiveRun) => {
     const session = await options.sessions.get(input.sessionID).catch((error) => {
@@ -407,6 +439,7 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
 
     const runID = crypto.randomUUID()
     const publish = async (type: string, data?: Record<string, unknown>) => {
+      await seedSessionSequence(input.sessionID)
       const sequence = (sessionSequences.get(input.sessionID) ?? 0) + 1
       sessionSequences.set(input.sessionID, sequence)
       await options.events.publish({
@@ -419,11 +452,32 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
         data,
       })
     }
-    let messages: ModelMessage[] = [{ role: "user", content: input.text }]
-    let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text, messages }
+    // canonicalHistory 只保存需要跨 Prompt 恢复的消息；modelMessages 在其基础上临时注入 skill 与项目上下文。
+    let canonicalHistory: ModelMessage[] = [{ role: "user", content: input.text }]
+    let modelMessages: ModelMessage[] = [...canonicalHistory]
+    let skillSystemMessages: readonly ModelMessage[] = []
+    const temporarySourceIDs = new Set<string>()
+    let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text, messages: modelMessages }
+    const persist = () => messageStore.save(input.sessionID, canonicalHistory)
+    const appendCanonical = (added: readonly ModelMessage[]) => {
+      canonicalHistory = [...canonicalHistory, ...added]
+      modelMessages = [...modelMessages, ...added]
+    }
+    /** 只用于本轮模型请求：临时注入 skill 与项目上下文，不影响落盘历史。 */
+    const injectTemporaryContext = async (history: readonly ModelMessage[]): Promise<ModelMessage[]> => {
+      for (const message of skillSystemMessages) {
+        if (message.role === "system" && message.sourceID) temporarySourceIDs.add(message.sourceID)
+      }
+      const withSkills = insertSkillSystemMessages(skillSystemMessages, history)
+      return restoreProjectContext(input.sessionID, withSkills, options.projectContext, publish, temporarySourceIDs)
+    }
 
     try {
       await options.sessions.setStatus(input.sessionID, "running")
+      const history = await messageStore.load(input.sessionID)
+      // 用户输入先进入 canonical 历史并立即落盘，避免后续临时注入污染历史。
+      canonicalHistory = [...history, { role: "user", content: input.text }]
+      await persist()
       const skillPrompt = options.skills
         ? await options.skills.resolve({ sessionID: input.sessionID, text: input.text })
         : { skills: [], systemMessages: [] }
@@ -434,126 +488,200 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
           mention: skill.mention,
         })
       }
-      messages = [...skillPrompt.systemMessages, { role: "user", content: input.text }]
-      messages = await restoreProjectContext(input.sessionID, messages, options.projectContext, publish)
+      skillSystemMessages = skillPrompt.systemMessages
+      modelMessages = await injectTemporaryContext(canonicalHistory)
       prompt = {
         sessionID: input.sessionID,
         text: input.text,
-        messages,
+        messages: modelMessages,
         ...(options.tools ? { tools: options.tools } : {}),
       }
-      for (let step = 0; step < maxSteps; step++) {
+      let step = 0
+      let outputContinuations = 0
+      while (true) {
         throwIfCancelled(runState)
-        messages = await compactMessagesIfNeeded(messages, options, publish)
-        messages = await restoreProjectContext(input.sessionID, messages, options.projectContext, publish)
-        prompt = { ...prompt, messages }
+        const finalizing = maxSteps !== undefined && step >= maxSteps
+        if (finalizing) await publish("coding-loop.limit.reached", { maxSteps })
+        const compaction = await compactMessagesIfNeeded(modelMessages, options, publish)
+        if (compaction.compacted) {
+          // 压缩产生的 summary 属于需要保留的 canonical system 消息，临时注入的 skill/项目上下文不落盘。
+          canonicalHistory = canonicalizeCompactedHistory(compaction.messages, temporarySourceIDs)
+          await persist()
+          modelMessages = await injectTemporaryContext(canonicalHistory)
+        }
+        prompt = {
+          ...prompt,
+          text: finalizing ? MAX_STEPS_PROMPT : input.text,
+          messages: finalizing
+            ? [...modelMessages, { role: "user", content: MAX_STEPS_PROMPT }]
+            : modelMessages,
+          ...(finalizing
+            ? { tools: [], toolChoice: "none" as const }
+            : options.tools
+              ? { tools: options.tools, toolChoice: "auto" as const }
+              : {}),
+        }
         let continued = false
-        for await (const chunk of options.model.prompt({ ...prompt, signal: runState.controller.signal })) {
-          throwIfCancelled(runState)
-          if (chunk.type === "text") {
-            await publish("assistant.text", { content: chunk.content ?? "" })
-            continue
-          }
-          if (chunk.type === "completed") {
-            const completed = await options.sessions.setStatus(input.sessionID, "completed")
-            await publish("session.completed")
-            return completed
-          }
-
-          const questionChunk = toQuestionChunk(chunk)
-          if (questionChunk) {
-            const request = createQuestionRequest(input.sessionID, questionChunk)
-            await publish("question.request", {
-              requestID: request.id,
-              toolCallID: request.toolCallID,
-              questions: request.questions,
-            })
-            if (!options.question) throw new Error("Question 端口未配置")
-            const result = await options.question.ask(request)
-            if (!result.ok) {
-              await publish("question.cancelled", { requestID: request.id, toolCallID: request.toolCallID })
-              throw new Error(result.output)
-            }
-            await publish("question.result", { requestID: request.id, toolCallID: request.toolCallID })
-            messages = appendQuestionResult(messages, request, result)
-            prompt = {
-              sessionID: input.sessionID,
-              text: input.text,
-              toolResults: [result],
-              messages,
-              ...(options.tools ? { tools: options.tools } : {}),
-            }
-            continued = true
-            break
-          }
-
-          const toolCalls = chunk.toolCalls ?? [legacyToolCall(chunk)]
-          messages = [
-            ...messages,
-            {
-              role: "assistant",
-              ...(chunk.reasoningContent ? { reasoningContent: chunk.reasoningContent } : {}),
-              toolCalls,
-            },
-          ]
-          const toolResults: ToolResult[] = []
-          for (const toolCall of toolCalls) {
-            const request = makeToolRequest(input.sessionID, toolCall)
-            const toolCallID = toolCall.id
-            await publish("tool.request", {
-              toolCallID,
-              action: request.action,
-              resource: redactHeadlessSensitiveValue(request.resource) as string,
-              toolName: request.toolName,
-              input: redactHeadlessSensitiveValue(request.input) as Record<string, unknown>,
-            })
-            const permissionEvaluation = options.permission.evaluate(request)
-            if ("list" in options.permission && typeof options.permission.list === "function") {
-              const pending = (await options.permission.list(input.sessionID)).find(
-                (item: { action: string; resource: string; id: string; reason?: string }) =>
-                  item.action === request.action,
-              )
-              if (pending) {
-                await publish("permission.requested", {
-                  requestID: pending.id,
-                  action: pending.action,
-                  resource: pending.resource,
-                  reason: pending.reason,
-                })
+        let assistantText = ""
+        let assistantReasoning: string | undefined
+        let overflowCompacted = false
+        let modelFinished = false
+        while (!modelFinished) {
+          try {
+            for await (const chunk of promptWithRetry(options.model, prompt, runState, options, publish)) {
+              throwIfCancelled(runState)
+              if (chunk.reasoningContent !== undefined) assistantReasoning = chunk.reasoningContent
+              if (chunk.type === "text") {
+                assistantText += chunk.content ?? ""
+                await publish("assistant.text", { content: chunk.content ?? "" })
+                continue
               }
+              if (chunk.type === "completed") {
+                if (chunk.finishReason === "length" && !finalizing && outputContinuations < maxOutputContinuations) {
+                  outputContinuations += 1
+                  appendCanonical(appendAssistantMessage([], assistantText, assistantReasoning))
+                  appendCanonical([{ role: "user", content: OUTPUT_CONTINUATION_PROMPT }])
+                  await persist()
+                  prompt = {
+                    sessionID: input.sessionID,
+                    text: OUTPUT_CONTINUATION_PROMPT,
+                    messages: modelMessages,
+                    ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
+                  }
+                  continued = true
+                  break
+                }
+                appendCanonical(appendAssistantMessage([], assistantText, assistantReasoning))
+                await persist()
+                const completed = await options.sessions.setStatus(input.sessionID, "completed")
+                await publish("session.completed")
+                return completed
+              }
+
+              if (finalizing) {
+                appendCanonical(appendAssistantMessage([], assistantText, assistantReasoning))
+                await persist()
+                const completed = await options.sessions.setStatus(input.sessionID, "completed")
+                await publish("session.completed")
+                return completed
+              }
+
+              const questionChunk = toQuestionChunk(chunk)
+              if (questionChunk) {
+                const request = createQuestionRequest(input.sessionID, questionChunk)
+                await publish("question.request", {
+                  requestID: request.id,
+                  toolCallID: request.toolCallID,
+                  questions: request.questions,
+                })
+                if (!options.question) throw new Error("Question 端口未配置")
+                const result = await options.question.ask(request)
+                if (!result.ok) {
+                  await publish("question.cancelled", { requestID: request.id, toolCallID: request.toolCallID })
+                  throw new Error(result.output)
+                }
+                await publish("question.result", { requestID: request.id, toolCallID: request.toolCallID })
+                appendCanonical(appendQuestionResult([], request, result, assistantText, assistantReasoning))
+                await persist()
+                prompt = {
+                  sessionID: input.sessionID,
+                  text: input.text,
+                  toolResults: [result],
+                  messages: modelMessages,
+                  ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
+                }
+                continued = true
+                break
+              }
+
+              const toolCalls = chunk.toolCalls ?? [legacyToolCall(chunk)]
+              appendCanonical([
+                {
+                  role: "assistant",
+                  ...(assistantText ? { content: assistantText } : {}),
+                  ...(assistantReasoning !== undefined ? { reasoningContent: assistantReasoning } : {}),
+                  toolCalls,
+                },
+              ])
+              const toolResults: ToolResult[] = []
+              for (const toolCall of toolCalls) {
+                const request = makeToolRequest(input.sessionID, toolCall)
+                const toolCallID = toolCall.id
+                await publish("tool.request", {
+                  toolCallID,
+                  action: request.action,
+                  resource: redactHeadlessSensitiveValue(request.resource) as string,
+                  toolName: request.toolName,
+                  input: redactHeadlessSensitiveValue(request.input) as Record<string, unknown>,
+                })
+                const permissionEvaluation = options.permission.evaluate(request)
+                if ("list" in options.permission && typeof options.permission.list === "function") {
+                  const pending = (await options.permission.list(input.sessionID)).find(
+                    (item: { action: string; resource: string; id: string; reason?: string }) =>
+                      item.action === request.action,
+                  )
+                  if (pending) {
+                    await publish("permission.requested", {
+                      requestID: pending.id,
+                      action: pending.action,
+                      resource: pending.resource,
+                      reason: pending.reason,
+                    })
+                  }
+                }
+                const effect = await permissionEvaluation
+                if (effect !== "allow") {
+                  throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
+                }
+                const result = await options.tool.execute(request)
+                const toolResult = { ...result, toolCallID }
+                toolResults.push(toolResult)
+                await publish("tool.result", {
+                  toolCallID,
+                  ok: result.ok,
+                  output: redactHeadlessSensitiveValue(result.output) as string,
+                })
+                appendCanonical([{ role: "tool", toolCallID, content: result.output }])
+              }
+              await persist()
+              prompt = {
+                sessionID: input.sessionID,
+                text: input.text,
+                toolResults,
+                messages: modelMessages,
+                ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
+              }
+              continued = true
+              break
             }
-            const effect = await permissionEvaluation
-            if (effect !== "allow") {
-              throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
+            modelFinished = true
+          } catch (error) {
+            if (!isContextOverflowError(error) || overflowCompacted || !options.contextCompaction) throw error
+            overflowCompacted = true
+            const recovered = await compactMessagesIfNeeded(modelMessages, options, publish, true)
+            if (!recovered.compacted) throw error
+            canonicalHistory = canonicalizeCompactedHistory(recovered.messages, temporarySourceIDs)
+            await persist()
+            modelMessages = await injectTemporaryContext(canonicalHistory)
+            prompt = {
+              ...prompt,
+              messages: finalizing
+                ? [...modelMessages, { role: "user", content: MAX_STEPS_PROMPT }]
+                : modelMessages,
             }
-            const result = await options.tool.execute(request)
-            const toolResult = { ...result, toolCallID }
-            toolResults.push(toolResult)
-            await publish("tool.result", {
-              toolCallID,
-              ok: result.ok,
-              output: redactHeadlessSensitiveValue(result.output) as string,
-            })
-            messages = [...messages, { role: "tool", toolCallID, content: result.output }]
+            assistantText = ""
+            assistantReasoning = undefined
           }
-          prompt = {
-            sessionID: input.sessionID,
-            text: input.text,
-            toolResults,
-            messages,
-            ...(options.tools ? { tools: options.tools } : {}),
-          }
-          continued = true
-          break
         }
 
+        step += 1
         if (continued) continue
+        appendCanonical(appendAssistantMessage([], assistantText, assistantReasoning))
+        await persist()
         const completed = await options.sessions.setStatus(input.sessionID, "completed")
         await publish("session.completed")
         return completed
       }
-
-      throw new Error("Coding Loop 超过最大模型步骤数")
     } catch (error) {
       if (error instanceof HeadlessSkillInvocationError) {
         await publish("skill.failed", { skillID: error.skillID, code: error.code })
@@ -635,6 +763,82 @@ class HeadlessCancellationError extends Error {
   }
 }
 
+const MAX_STEPS_PROMPT =
+  "工具步骤预算已用尽。请基于当前上下文直接给出清晰、完整的阶段性结果和下一步建议，不要再调用工具。"
+const OUTPUT_CONTINUATION_PROMPT = "上一条回答因输出长度限制被截断，请从中断处继续，不要重复已经输出的内容。"
+
+/**
+ * 在没有可见输出时重试短暂的模型传输失败。
+ *
+ * @param model - 模型端口
+ * @param prompt - 本次模型请求
+ * @param runState - 当前 Session 的取消状态
+ * @param options - 重试策略配置
+ * @param publish - 运行事件发布器
+ * @returns 可继续消费的模型增量
+ */
+async function* promptWithRetry(
+  model: ModelPort,
+  prompt: ModelPrompt,
+  runState: ActiveRun,
+  options: HeadlessCodingLoopOptions,
+  publish: (type: string, data?: Record<string, unknown>) => Promise<void>,
+): AsyncGenerator<ModelChunk, void> {
+  const maxRetries = Math.max(0, options.maxModelRetries ?? 2)
+  const baseDelay = Math.max(0, options.retryDelayMs ?? 250)
+  let retryCount = 0
+  while (true) {
+    let yielded = false
+    try {
+      for await (const chunk of model.prompt({ ...prompt, signal: runState.controller.signal })) {
+        yielded = true
+        yield chunk
+      }
+      return
+    } catch (error) {
+      if (yielded || !isRetryableModelError(error) || retryCount >= maxRetries) throw error
+      retryCount += 1
+      const delayMs = calculateRetryDelay(baseDelay, retryCount)
+      await publish("model.retry", { attempt: retryCount, maxRetries, delayMs })
+      if (delayMs > 0) await Bun.sleep(delayMs)
+      throwIfCancelled(runState)
+    }
+  }
+}
+
+/**
+ * 只对可恢复的模型服务不可用重试，认证和协议错误直接交给上层处理。
+ *
+ * @param error - 模型端口抛出的错误
+ * @returns 是否允许自动重试
+ */
+function isRetryableModelError(error: unknown): boolean {
+  return error instanceof HeadlessModelError && error.code === "unavailable"
+}
+
+/**
+ * 判断模型是否拒绝了当前消息上下文的大小。
+ *
+ * @param error - 模型端口抛出的错误
+ * @returns 是否需要先压缩上下文
+ */
+function isContextOverflowError(error: unknown): boolean {
+  return error instanceof HeadlessModelError && error.code === "context_overflow"
+}
+
+/**
+ * 使用指数退避和抖动避免多个请求同时重试。
+ *
+ * @param baseDelay - 基础等待时间
+ * @param attempt - 当前重试次数
+ * @returns 本次等待时间
+ */
+function calculateRetryDelay(baseDelay: number, attempt: number): number {
+  if (baseDelay === 0) return 0
+  const exponential = Math.min(4000, baseDelay * 2 ** (attempt - 1))
+  return Math.floor(exponential * (0.75 + Math.random() * 0.5))
+}
+
 /** 在模型或工具边界检查取消信号。 */
 function throwIfCancelled(run: ActiveRun): void {
   if (run.cancelled || run.controller.signal.aborted) throw new HeadlessCancellationError()
@@ -699,14 +903,35 @@ function appendQuestionResult(
   messages: readonly ModelMessage[],
   request: HeadlessQuestionRequest,
   result: ToolResult,
+  text?: string,
+  reasoningContent?: string,
 ): ModelMessage[] {
   return [
     ...messages,
     {
       role: "assistant",
+      ...(text ? { content: text } : {}),
+      ...(reasoningContent !== undefined ? { reasoningContent } : {}),
       toolCalls: [{ id: request.toolCallID, name: "question", input: { questions: request.questions } }],
     },
     { role: "tool", toolCallID: request.toolCallID, content: result.output },
+  ]
+}
+
+/** 把本轮 assistant 文本增量固化为一条 canonical assistant 消息。 */
+function appendAssistantMessage(
+  messages: readonly ModelMessage[],
+  text: string,
+  reasoningContent?: string,
+): ModelMessage[] {
+  if (!text && reasoningContent === undefined) return [...messages]
+  return [
+    ...messages,
+    {
+      role: "assistant",
+      ...(text ? { content: text } : {}),
+      ...(reasoningContent !== undefined ? { reasoningContent } : {}),
+    },
   ]
 }
 
@@ -715,14 +940,18 @@ async function compactMessagesIfNeeded(
   messages: readonly ModelMessage[],
   options: HeadlessCodingLoopOptions,
   publish: (type: string, data?: Record<string, unknown>) => Promise<void>,
-): Promise<ModelMessage[]> {
+  force = false,
+): Promise<{ messages: ModelMessage[]; compacted: boolean }> {
   const compaction = options.contextCompaction
   const threshold = options.compactionThreshold
-  if (!compaction || threshold === undefined) return [...messages]
+  if (!compaction || (!force && threshold === undefined)) return { messages: [...messages], compacted: false }
   const estimatedTokens = compaction.estimate(messages)
-  if (estimatedTokens < threshold) return [...messages]
-  await publish("context.compaction.started", { estimatedTokens })
-  return compactWithEvents(compaction, messages, options.compactionKeepRecent ?? 4, publish)
+  if (!force && threshold !== undefined && estimatedTokens < threshold) {
+    return { messages: [...messages], compacted: false }
+  }
+  await publish("context.compaction.started", { estimatedTokens, ...(force ? { reason: "context_overflow" } : {}) })
+  const compacted = await compactWithEvents(compaction, messages, options.compactionKeepRecent ?? 4, publish)
+  return { messages: compacted, compacted: true }
 }
 
 /** 执行摘要并把失败转换为可观察的压缩失败事件。 */
@@ -758,15 +987,57 @@ function compactedMessages(result: ContextCompactionResult): ModelMessage[] {
   ]
 }
 
-/** 恢复当前项目来源，并按 sourceID 去重。 */
+/** 把本轮激活的 Skill 系统消息临时放到历史之前，并按 sourceID 去重。 */
+function insertSkillSystemMessages(
+  systemMessages: readonly ModelMessage[],
+  messages: readonly ModelMessage[],
+): ModelMessage[] {
+  if (systemMessages.length === 0) return [...messages]
+  const existingSourceIDs = new Set(
+    messages.flatMap((message) => (message.role === "system" && message.sourceID ? [message.sourceID] : [])),
+  )
+  const additions = systemMessages.filter(
+    (message) => !(message.role === "system" && message.sourceID && existingSourceIDs.has(message.sourceID)),
+  )
+  if (additions.length === 0) return [...messages]
+  return [...additions, ...messages]
+}
+
+/**
+ * 从压缩结果中提取 canonical 历史。
+ *
+ * 临时注入的 Skill/项目上下文不落盘；同一 sourceID 的 canonical system 消息
+ * 只保留第一次出现，避免每轮压缩重复新增 summary。
+ */
+function canonicalizeCompactedHistory(
+  messages: readonly ModelMessage[],
+  temporarySourceIDs: ReadonlySet<string>,
+): ModelMessage[] {
+  const seenSourceIDs = new Set<string>()
+  const canonical: ModelMessage[] = []
+  for (const message of messages) {
+    if (message.role !== "system" || !message.sourceID) {
+      canonical.push(message)
+      continue
+    }
+    if (temporarySourceIDs.has(message.sourceID) || seenSourceIDs.has(message.sourceID)) continue
+    seenSourceIDs.add(message.sourceID)
+    canonical.push(message)
+  }
+  return canonical
+}
+
+/** 恢复当前项目来源，并按 sourceID 去重；injectedSourceIDs 记录本轮临时注入的来源。 */
 async function restoreProjectContext(
   sessionID: string,
   messages: readonly ModelMessage[],
   projectContext?: ProjectContextPort,
   publish?: (type: string, data?: Record<string, unknown>) => Promise<void>,
+  injectedSourceIDs?: Set<string>,
 ): Promise<ModelMessage[]> {
   if (!projectContext) return [...messages]
   const entries = await projectContext.load(sessionID)
+  for (const entry of entries) injectedSourceIDs?.add(entry.sourceID)
   const existingSourceIDs = new Set(
     messages.flatMap((message) => (message.role === "system" && message.sourceID ? [message.sourceID] : [])),
   )
@@ -817,6 +1088,13 @@ export interface RuntimeEvent {
 /** 运行事件端口。 */
 export interface EventSink {
   readonly publish: (event: RuntimeEvent) => Promise<void>
+  /**
+   * 可选能力：返回该 Session 已发布的最后序号。
+   *
+   * 持久化实现提供后，Coding Loop 重启时会从 `lastSequence + 1` 继续编号；
+   * 未提供该能力的旧 sink 仍从 1 开始。
+   */
+  readonly lastSequence?: (sessionID: string) => number | Promise<number>
 }
 
 /** Headless Core 的全部外部依赖端口。 */
@@ -855,17 +1133,37 @@ export function createHeadlessCore(options: HeadlessCoreOptions): HeadlessCore {
   return { ports: options.ports }
 }
 
+export {
+  createFileMessageStore,
+  createInMemoryMessageStore,
+  HeadlessMessageStoreError,
+} from "./message-store.js"
+export type { FileMessageStoreOptions, InMemoryMessageStore, MessageStore } from "./message-store.js"
 export { createHeadlessToolRegistry, normalizeHeadlessToolRequest } from "./tools.js"
 export type { HeadlessToolRegistry, HeadlessToolRegistryOptions, HeadlessBuiltinToolName } from "./tools.js"
-export { createHeadlessPermissionBroker, HeadlessPermissionError } from "./permission.js"
+export { createHeadlessPermissionBroker, HeadlessPermissionError, redactHeadlessSensitiveText } from "./permission.js"
 export { redactHeadlessSensitiveValue } from "./permission.js"
+export type { HeadlessMessageStoreErrorCode } from "./message-store.js"
 export type {
   HeadlessPermissionBroker,
   HeadlessPermissionDecision,
   HeadlessPermissionErrorCode,
   HeadlessPermissionReply,
   HeadlessPermissionRequest,
+  HeadlessPermissionBrokerOptions,
 } from "./permission.js"
+export {
+  createFileInteractionStore,
+  HeadlessInteractionStoreError,
+} from "./interaction-store.js"
+export type {
+  FileInteractionStoreOptions,
+  HeadlessInteractionKind,
+  HeadlessInteractionRecord,
+  HeadlessInteractionStatus,
+  HeadlessInteractionStore,
+  HeadlessInteractionStoreErrorCode,
+} from "./interaction-store.js"
 export {
   createFileModelConfigStore,
   createHeadlessModelConfigStore,
@@ -887,6 +1185,7 @@ export type {
   HeadlessQuestionErrorCode,
   HeadlessQuestionItem,
   HeadlessQuestionPort,
+  HeadlessQuestionPortOptions,
   HeadlessQuestionRequest,
   QuestionPort,
   ContextCompactionPort,
