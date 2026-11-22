@@ -1081,14 +1081,14 @@ input[aria-invalid="true"]:focus {
 .chat-stream {
   display: grid;
   min-height: 320px;
-  gap: 8px;
+  gap: 4px;
   padding: 22px 8px 20px;
   align-content: start;
 }
 
 /* 轮次之间保持呼吸感；连续执行条聚成一组贴附上方轮次 */
 .chat-message {
-  margin-top: 18px;
+  margin-top: 22px;
 }
 
 .chat-message:first-child {
@@ -1357,8 +1357,8 @@ input[aria-invalid="true"]:focus {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin-top: 12px;
-  padding: 8px 12px;
+  margin-top: 0;
+  padding: 5px 12px;
   border-left: 2px solid #9fd4d0;
   border-radius: 0 8px 8px 0;
   background: #f6faf9;
@@ -1394,10 +1394,13 @@ input[aria-invalid="true"]:focus {
 }
 
 .act-name {
+  overflow: hidden;
   color: #2b4a45;
   font-family: "IBM Plex Mono", monospace;
   font-size: 11.5px;
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .act-row.warn .act-name {
@@ -1409,6 +1412,8 @@ input[aria-invalid="true"]:focus {
 }
 
 .act-desc {
+  flex: 1 1 0;
+  min-width: 0;
   overflow: hidden;
   color: #7d8b9a;
   font-size: 12px;
@@ -1466,9 +1471,19 @@ input[aria-invalid="true"]:focus {
   background: #fdf1f0;
 }
 
+/* 默认单行：关闭状态的详情入口内联在行尾，展开时才占满整行 */
 .act-row details {
-  flex: 1 1 100%;
-  margin-top: 2px;
+  flex: 0 0 auto;
+  margin-top: 0;
+  margin-left: auto;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.act-row details[open] {
+  flex-basis: 100%;
+  margin-top: 6px;
+  margin-left: 0;
   border-top: 1px solid rgba(16, 42, 67, 0.06);
   padding-top: 6px;
 }
@@ -2252,6 +2267,10 @@ footer {
   .topbar-meta {
     flex-wrap: wrap;
     justify-content: flex-start;
+  }
+
+  .act-desc {
+    display: none;
   }
 
   .status-rail {
