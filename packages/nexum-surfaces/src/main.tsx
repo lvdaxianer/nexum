@@ -1,0 +1,2267 @@
+import { For, Match, Show, Switch, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { render } from "solid-js/web"
+import { Nexum } from "@nexum/client"
+import { Drawer } from "./drawer"
+import { ConfirmDialog } from "./confirm-dialog"
+import { MarkdownView } from "./markdown"
+import { Popover } from "@kobalte/core/popover"
+import type {
+  NexumEvent,
+  NexumModelProbe,
+  NexumPermission,
+  NexumQuestion,
+  NexumSession,
+  NexumSkill,
+} from "@nexum/client"
+import "./styles.css"
+
+type TimelineEvent = NexumEvent & { localTime: string }
+type PermissionRequest = NexumPermission
+type QuestionRequest = NexumQuestion
+type SessionSummary = NexumSession
+type ModelProbeResult = NexumModelProbe
+type SkillSummary = NexumSkill
+type ContextSource = { sourceID: string; kind: string; path: string }
+type PermissionPolicyEffect = "allow" | "ask" | "deny"
+type PermissionPolicyScope = "global" | "session"
+type PermissionPolicyRule = {
+  id: string
+  action: string
+  resource: string
+  effect: PermissionPolicyEffect
+  scope: PermissionPolicyScope
+  sessionID?: string
+  createdAt: string
+  updatedAt: string
+}
+type PermissionMode = "ask" | "balanced" | "full"
+/** 智能审批模式下仍要逐次询问的风险命令模式。 */
+const dangerousAskResources: readonly string[] = ["rm *", "sudo *", "mv *", "dd *", "chmod *", "chown *"]
+const permissionModeOptions: ReadonlyArray<{
+  value: PermissionMode
+  icon: string
+  label: string
+  description: string
+}> = [
+  { value: "ask", icon: "✋", label: "每次询问", description: "所有工具调用都逐次请求批准" },
+  { value: "balanced", icon: "🛡", label: "智能审批", description: "常规操作直接执行，仅风险操作请求批准" },
+  { value: "full", icon: "⚡", label: "完全访问", description: "不再弹审批，危险操作仍由 Core 拦截询问" },
+]
+type ChatItemKind = "user" | "assistant" | "execution" | "status"
+type ChatStatus = "streaming" | "running" | "waiting" | "completed" | "failed" | "cancelled"
+type ChatItem = {
+  id: string
+  kind: ChatItemKind
+  title: string
+  content?: string
+  detail?: string
+  thinking?: boolean
+  thinkingStatus?: string
+  skillIDs?: readonly string[]
+  status: ChatStatus
+  localTime: string
+  eventType?: string
+}
+type ModelField = "baseUrl" | "model" | "credential"
+type ModelFieldErrors = Partial<Record<ModelField, string>>
+type ActionState = "idle" | "pending" | "success" | "error"
+
+const maxChatItems = 160
+
+/** 策略不再有 Action 维度：新建规则以 `*` 表示按资源匹配所有工具调用。 */
+const anyToolAction = "*"
+
+const apiBaseUrl =
+  import.meta.env.VITE_NEXUM_API_URL ?? `${window.location.protocol}//${window.location.hostname}:4097`
+const client = Nexum.make({ baseUrl: apiBaseUrl })
+
+function App() {
+  const [baseUrl, setBaseUrl] = createSignal("")
+  const [model, setModel] = createSignal("")
+  const [credentialRef, setCredentialRef] = createSignal("")
+  const [credential, setCredential] = createSignal("")
+  const [sessionName, setSessionName] = createSignal("")
+  const [sessionCreateName, setSessionCreateName] = createSignal("")
+  const [directory, setDirectory] = createSignal("")
+  const [prompt, setPrompt] = createSignal("")
+  const [sessionID, setSessionID] = createSignal("")
+  const [sessionStatus, setSessionStatus] = createSignal("no session")
+  const [sessions, setSessions] = createSignal<SessionSummary[]>([])
+  const [events, setEvents] = createSignal<TimelineEvent[]>([])
+  const [chatItems, setChatItems] = createSignal<ChatItem[]>([])
+  const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
+  const [questions, setQuestions] = createSignal<QuestionRequest[]>([])
+  const [questionAnswers, setQuestionAnswers] = createSignal<Record<string, string[][]>>({})
+  const [compactionStatus, setCompactionStatus] = createSignal("idle")
+  const [contextSources, setContextSources] = createSignal<ContextSource[]>([])
+  const [busy, setBusy] = createSignal(false)
+  const [modelSaveBusy, setModelSaveBusy] = createSignal(false)
+  const [sessionBusy, setSessionBusy] = createSignal(false)
+  const [probeBusy, setProbeBusy] = createSignal(false)
+  const [probeResult, setProbeResult] = createSignal<ModelProbeResult | undefined>()
+  const [modelErrors, setModelErrors] = createSignal<ModelFieldErrors>({})
+  const [modelSaveState, setModelSaveState] = createSignal<ActionState>("idle")
+  const [modelSaveMessage, setModelSaveMessage] = createSignal("")
+  const [directoryError, setDirectoryError] = createSignal("")
+  const [sessionNameError, setSessionNameError] = createSignal("")
+  const [sessionCreateState, setSessionCreateState] = createSignal<ActionState>("idle")
+  const [sessionCreateMessage, setSessionCreateMessage] = createSignal("")
+  const [refreshBusy, setRefreshBusy] = createSignal(false)
+  const [modelDrawerOpen, setModelDrawerOpen] = createSignal(false)
+  const [sessionDrawerOpen, setSessionDrawerOpen] = createSignal(false)
+  const [sessionEditDrawerOpen, setSessionEditDrawerOpen] = createSignal(false)
+  const [chatView, setChatView] = createSignal<"chat" | "events">("chat")
+  const [sessionEditName, setSessionEditName] = createSignal("")
+  const [skillsDrawerOpen, setSkillsDrawerOpen] = createSignal(false)
+  const [skills, setSkills] = createSignal<SkillSummary[]>([])
+  const [skillBusy, setSkillBusy] = createSignal(false)
+  const [skillValidation, setSkillValidation] = createSignal<Record<string, string>>({})
+  const [activeSkillIDs, setActiveSkillIDs] = createSignal<string[]>([])
+  const [policyPopoverOpen, setPolicyPopoverOpen] = createSignal(false)
+  const [policyRules, setPolicyRules] = createSignal<PermissionPolicyRule[]>([])
+  const [policyBusy, setPolicyBusy] = createSignal(false)
+  const [policyError, setPolicyError] = createSignal("")
+  const [notice, setNotice] = createSignal("准备开始一次 Nexum 运行")
+  const [connected, setConnected] = createSignal(false)
+  const [modelConfigured, setModelConfigured] = createSignal(false)
+  const [pendingDecisionID, setPendingDecisionID] = createSignal("")
+  const [pendingQuestionID, setPendingQuestionID] = createSignal("")
+  const [cancelBusy, setCancelBusy] = createSignal(false)
+  const [renameBusy, setRenameBusy] = createSignal(false)
+  const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
+  let streamController: AbortController | undefined
+  let conversationBody: HTMLDivElement | undefined
+  let permissionsSection: HTMLElement | undefined
+  let questionsSection: HTMLElement | undefined
+  let promptSequence = 0
+  let sessionSelectSequence = 0
+  const eventCursors = new Map<string, string>()
+  const seenEventKeys = new Set<string>()
+
+  /** Agent 回答期间（运行中/等待权限/等待回答）锁定输入，避免打断本轮执行。 */
+  const inputLocked = () => ["running", "awaiting permission", "awaiting question"].includes(sessionStatus())
+
+  function scrollRailSection(element: HTMLElement | undefined) {
+    element?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+  }
+
+  onMount(async () => {
+    const active = await client.experimental.nexum.model.get().catch(() => undefined)
+    if (active?.data) {
+      setBaseUrl(active.data.baseUrl)
+      setModel(active.data.model)
+      setCredentialRef(active.data.credentialRef ?? "")
+      setModelConfigured(true)
+      setNotice(active.data.credentialConfigured ? "模型配置已加载" : "模型服务地址已加载")
+    }
+    await Promise.all([restoreSession().catch(() => undefined), loadSkills()])
+    if (!active) setNotice("Nexum API 尚未连接")
+  })
+
+  onCleanup(() => streamController?.abort())
+
+  /**
+   * 新消息或事件到达时把会话区贴到底部；用户向上翻阅超过阈值时停止跟随，回到底部后恢复。
+   */
+  let followTail = true
+  createEffect(() => {
+    const items = chatItems()
+    const eventCount = events().length
+    const body = conversationBody
+    if (!body || items.length + eventCount === 0) return
+    if (followTail) body.scrollTop = body.scrollHeight
+  })
+
+  function handleConversationScroll(element: HTMLDivElement) {
+    followTail = element.scrollHeight - element.scrollTop - element.clientHeight < 96
+  }
+
+  /**
+   * 校验模型配置表单，并返回字段级错误。
+   * @returns 模型配置错误集合
+   * @author lvdaxianer@yeah.net
+   */
+  function validateModelInputs(): ModelFieldErrors {
+    const errors: ModelFieldErrors = {}
+    const candidate = baseUrl().trim()
+    try {
+      const url = new URL(candidate)
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error()
+      if (url.username || url.password || url.search || url.hash) throw new Error()
+    } catch {
+      errors.baseUrl = candidate ? "请输入有效的 HTTP 或 HTTPS 服务地址" : "请输入模型服务地址"
+    }
+    if (!model().trim()) errors.model = "请输入模型名称"
+    const hasCredential = credential().trim() || credentialRef().trim()
+    if (!hasCredential) errors.credential = "请填写凭据引用或凭据值"
+    else if (credential().trim() && credentialRef().trim()) errors.credential = "凭据引用和凭据值只能填写一个"
+    return errors
+  }
+
+  /**
+   * 校验工作目录的本地格式。
+   * @param value - 用户输入的工作目录
+   * @returns 可直接展示的错误消息，空字符串表示通过
+   * @author lvdaxianer@yeah.net
+   */
+  function validateDirectoryInput(value: string): string {
+    const candidate = value.trim()
+    if (!candidate) return "请输入工作目录"
+    if (!candidate.startsWith("/")) return "请输入服务器上的绝对路径，例如 /workspace/project"
+    return ""
+  }
+
+  /**
+   * 清理用户正在修正的模型字段错误。
+   * @param field - 待清理的字段
+   * @author lvdaxianer@yeah.net
+   */
+  function clearModelError(field: ModelField) {
+    if (!modelErrors()[field]) return
+    const next = { ...modelErrors() }
+    delete next[field]
+    setModelErrors(next)
+  }
+
+  /**
+   * 标记模型配置已被编辑，避免继续显示旧的成功状态。
+   * @param field - 正在编辑的模型字段
+   * @author lvdaxianer@yeah.net
+   */
+  function markModelEdited(field: ModelField) {
+    setModelConfigured(false)
+    setModelSaveState("idle")
+    setModelSaveMessage("")
+    setProbeResult(undefined)
+    clearModelError(field)
+  }
+
+  /**
+   * 将焦点移动到首个需要修正的输入框。
+   * @param id - 输入框 DOM id
+   * @author lvdaxianer@yeah.net
+   */
+  function focusField(id: string) {
+    queueMicrotask(() => document.getElementById(id)?.focus())
+  }
+
+  /**
+   * 将 Core 返回的模型配置错误映射到对应字段。
+   * @param message - Core 返回的安全错误消息
+   * @author lvdaxianer@yeah.net
+   */
+  function applyModelError(message: string) {
+    const next: ModelFieldErrors = {}
+    if (message.includes("Base URL") || message.includes("服务地址")) next.baseUrl = message
+    else if (message.includes("模型名称")) next.model = message
+    else if (message.includes("credential") || message.includes("凭据")) next.credential = message
+    setModelErrors(next)
+  }
+
+  /**
+   * 校验模型配置并在失败时聚焦首个错误字段。
+   * @returns 配置是否可以提交
+   * @author lvdaxianer@yeah.net
+   */
+  function canSubmitModel(): boolean {
+    const errors = validateModelInputs()
+    setModelErrors(errors)
+    if (Object.keys(errors).length > 0) {
+      setModelSaveState("error")
+      setModelSaveMessage("请先修正标记的配置项")
+      setNotice("模型配置未提交，请先修正输入")
+      focusField(errors.baseUrl ? "model-base-url" : errors.model ? "model-name" : "model-credential")
+      return false
+    }
+    return true
+  }
+
+  /**
+   * 保存当前模型配置到 Nexum Core。
+   * @author lvdaxianer@yeah.net
+   */
+  async function saveModel() {
+    if (modelSaveBusy() || !canSubmitModel()) return
+    setModelSaveBusy(true)
+    setModelSaveState("pending")
+    setModelSaveMessage("正在保存模型配置…")
+    try {
+      await persistModelConfiguration()
+    } catch (error) {
+      handleModelSaveFailure(error)
+    } finally {
+      setModelSaveBusy(false)
+    }
+  }
+
+  /**
+   * 调用 Core 保存模型配置并更新成功状态。
+   * @author lvdaxianer@yeah.net
+   */
+  async function persistModelConfiguration() {
+    const saved = await client.experimental.nexum.model.update({
+      baseUrl: baseUrl().trim(),
+      model: model().trim(),
+      credential: credential().trim() || undefined,
+      credentialRef: credentialRef().trim() || undefined,
+    })
+    setCredential("")
+    setModelConfigured(true)
+    setProbeResult(undefined)
+    setModelSaveState("success")
+    setModelSaveMessage("模型配置已保存，可以继续探测能力")
+    setNotice(`模型 ${saved.data.model} 已就绪：${saved.data.baseUrl}`)
+  }
+
+  /**
+   * 展示模型配置保存失败，并保留用户输入用于重试。
+   * @param error - 保存失败原因
+   * @author lvdaxianer@yeah.net
+   */
+  function handleModelSaveFailure(error: unknown) {
+    const message = messageFrom(error, "模型配置未通过，请检查地址和凭据")
+    applyModelError(message)
+    setModelSaveState("error")
+    setModelSaveMessage(message)
+    setNotice(message)
+  }
+
+  async function probeModel() {
+    if (probeBusy()) return
+    const errors = validateModelInputs()
+    setModelErrors(errors)
+    if (Object.keys(errors).length > 0) {
+      setNotice("模型能力探测未开始，请先修正输入")
+      focusField(errors.baseUrl ? "model-base-url" : errors.model ? "model-name" : "model-credential")
+      return
+    }
+    setProbeBusy(true)
+    try {
+      const result = await client.experimental.nexum.model.probe({ mode: "both" })
+      setProbeResult(result.data)
+      setNotice("模型能力探测完成")
+    } catch (error) {
+      setProbeResult(undefined)
+      setNotice(messageFrom(error, "模型能力探测失败，请稍后重试"))
+    } finally {
+      setProbeBusy(false)
+    }
+  }
+
+  async function restoreSession() {
+    const savedID = sessionStorage.getItem("nexum.sessionID")
+    const available = (await client.experimental.nexum.session.list()).data
+      setSessions([...available])
+    const saved = savedID ? available.find((item) => item.id === savedID) : undefined
+    const initial = saved ?? available[0]
+    if (!initial) {
+      if (savedID) sessionStorage.removeItem("nexum.sessionID")
+      return
+    }
+    await selectSession(initial, false)
+    setNotice(saved ? `已恢复 Session：${saved.name}` : `已选择最近的 Session：${initial.name}`)
+  }
+
+  async function refreshRuntime() {
+    if (refreshBusy()) return
+    setRefreshBusy(true)
+    try {
+      const available = (await client.experimental.nexum.session.list()).data
+      setSessions([...available])
+      const current = available.find((item) => item.id === sessionID())
+      if (current) {
+        const snapshot = await client.experimental.nexum.session.state({ sessionID: current.id })
+        setSessionStatus(snapshot.data.session.status)
+        setPermissions([...snapshot.data.pendingPermissions])
+        setQuestions([...snapshot.data.pendingQuestions])
+      }
+      await loadSkills()
+      setNotice("运行状态已刷新")
+    } catch (error) {
+      setNotice(messageFrom(error, "运行状态刷新失败，请稍后重试"))
+    } finally {
+      setRefreshBusy(false)
+    }
+  }
+
+  /**
+   * 读取当前受控 Skill root 的安全摘要。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-20
+   */
+  async function loadSkills() {
+    try {
+      setSkills([...(await client.experimental.nexum.skill.list()).data])
+    } catch (error) {
+      setNotice(messageFrom(error, "Skill 目录暂时不可用"))
+    }
+  }
+
+  /**
+   * 重新扫描 Skill root 并清理旧校验状态。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-20
+   */
+  async function refreshSkills() {
+    if (skillBusy()) return
+    setSkillBusy(true)
+    try {
+      setSkills([...(await client.experimental.nexum.skill.refresh()).data])
+      setSkillValidation({})
+      setNotice("Skill 目录已刷新")
+    } catch (error) {
+      setNotice(messageFrom(error, "Skill 刷新失败，请稍后重试"))
+    } finally {
+      setSkillBusy(false)
+    }
+  }
+
+  /**
+   * 请求 Core 校验单个 Skill，并把结果绑定到对应卡片。
+   * @param skillID - 目标 Skill ID
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-20
+   */
+  async function validateSkill(skillID: string) {
+    if (skillBusy()) return
+    setSkillBusy(true)
+    try {
+      const result = await client.experimental.nexum.skill.validate({ id: skillID })
+      const skill = result.data.data.find((item) => item.id === skillID)
+      setSkillValidation({
+        ...skillValidation(),
+        [skillID]: skill?.status === "ready" ? "validated / ready" : "needs attention",
+      })
+    } catch (error) {
+      setSkillValidation({ ...skillValidation(), [skillID]: messageFrom(error, "validation failed") })
+    } finally {
+      setSkillBusy(false)
+    }
+  }
+
+  /**
+   * 打开权限模式浮层，并刷新当前策略规则。
+   */
+  function openPolicyPopover() {
+    setPolicyPopoverOpen(true)
+    setPolicyError("")
+    void loadPermissionPolicy()
+  }
+
+  /**
+   * 读取全局策略与当前 Session 的覆盖策略。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-22
+   */
+  async function loadPermissionPolicy() {
+    const query = sessionID() ? `?sessionID=${encodeURIComponent(sessionID())}` : ""
+    try {
+      const data = await requestPermissionPolicy<{ rules: PermissionPolicyRule[] }>(
+        `/api/nexum/permission/policy${query}`,
+      )
+      setPolicyRules(data.rules)
+      setPolicyError("")
+    } catch (error) {
+      setPolicyRules([])
+      setPolicyError(messageFrom(error, "权限策略加载失败，请检查 Nexum Service"))
+    }
+  }
+
+  /** 从全局规则推导当前权限模式：allow `*` 之外带 ask 规则为智能，仅 allow `*` 为完全访问，其余回落到每次询问。 */
+  function currentPermissionMode(): PermissionMode {
+    const global = policyRules().filter((rule) => rule.scope === "global")
+    if (!global.some((rule) => rule.resource === anyToolAction && rule.effect === "allow")) return "ask"
+    return global.some((rule) => rule.effect === "ask") ? "balanced" : "full"
+  }
+
+  /** 不属于当前模式形状的全局放行规则数量，来自逐次审批的「始终允许」。 */
+  function extraPermissionGrantCount(): number {
+    const mode = currentPermissionMode()
+    return policyRules().filter((rule) => {
+      if (rule.scope !== "global") return false
+      if (rule.resource === anyToolAction && rule.effect === "allow") return false
+      return !(mode === "balanced" && rule.effect === "ask" && dangerousAskResources.includes(rule.resource))
+    }).length
+  }
+
+  /** 切换权限模式：重置全局规则后按模式写入对应规则。 */
+  async function applyPermissionMode(mode: PermissionMode) {
+    if (policyBusy() || mode === currentPermissionMode()) return
+    setPolicyBusy(true)
+    setPolicyError("")
+    try {
+      const global = policyRules().filter((rule) => rule.scope === "global")
+      for (const rule of global) {
+        await requestPermissionPolicy<{ id: string; deleted: boolean }>(
+          `/api/nexum/permission/policy/${encodeURIComponent(rule.id)}`,
+          { method: "DELETE" },
+        )
+      }
+      if (mode !== "ask") await createPermissionPolicyRule(anyToolAction, "allow")
+      if (mode === "balanced") {
+        for (const resource of dangerousAskResources) await createPermissionPolicyRule(resource, "ask")
+      }
+      await loadPermissionPolicy()
+      setNotice(`权限模式已切换：${permissionModeOptions.find((option) => option.value === mode)?.label ?? mode}`)
+      setPolicyPopoverOpen(false)
+    } catch (error) {
+      setPolicyError(messageFrom(error, "权限模式保存失败"))
+      await loadPermissionPolicy().catch(() => undefined)
+    } finally {
+      setPolicyBusy(false)
+    }
+  }
+
+  /** 新建一条全局权限规则。 */
+  async function createPermissionPolicyRule(resource: string, effect: PermissionPolicyEffect) {
+    await requestPermissionPolicy<PermissionPolicyRule>("/api/nexum/permission/policy", {
+      method: "POST",
+      body: JSON.stringify({ action: anyToolAction, resource, effect, scope: "global" }),
+    })
+  }
+
+  async function selectSession(session: SessionSummary, announce = true) {
+    const sequence = ++sessionSelectSequence
+    streamController?.abort()
+    const snapshot = await client.experimental.nexum.session.state({ sessionID: session.id })
+    if (sequence !== sessionSelectSequence) return
+    setSessionID(session.id)
+    setSessionName(snapshot.data.session.name)
+    setSessionStatus(snapshot.data.session.status)
+    setDirectory(snapshot.data.session.directory)
+    setEvents([])
+    setChatItems(snapshot.data.session.status === "running" ? [thinkingChatItem(session.id)] : [])
+    setPermissions([...snapshot.data.pendingPermissions])
+    setQuestions([...snapshot.data.pendingQuestions])
+    setQuestionAnswers({})
+    setCompactionStatus("idle")
+    setContextSources([])
+    seenEventKeys.clear()
+    sessionStorage.setItem("nexum.sessionID", session.id)
+    eventCursors.delete(session.id)
+    connectEvents(session.id)
+    if (announce) setNotice(`已选择 Session：${snapshot.data.session.name}`)
+    if (policyPopoverOpen()) void loadPermissionPolicy()
+  }
+
+  /**
+   * 校验工作目录并在失败时保留输入。
+   * @returns 目录是否可以提交
+   * @author lvdaxianer@yeah.net
+   */
+  function canCreateSession(): boolean {
+    const error = validateDirectoryInput(directory())
+    setDirectoryError(error)
+    if (error) {
+      setNotice("Session 未创建，请先修正工作目录")
+      focusField("session-directory")
+      return false
+    }
+    setSessionNameError("")
+    return true
+  }
+
+  /**
+   * 校验目录并请求 Core 创建 Session。
+   * @author lvdaxianer@yeah.net
+   */
+  async function createSession() {
+    if (sessionBusy() || !canCreateSession()) return
+    setSessionBusy(true)
+    setSessionCreateState("pending")
+    setSessionCreateMessage("正在检查目录并创建 Session…")
+    try {
+      const created = await client.experimental.nexum.session.create({
+        directory: directory().trim(),
+        ...(sessionCreateName().trim() ? { name: sessionCreateName().trim() } : {}),
+      })
+      applyCreatedSession(created.data)
+    } catch (error) {
+      handleSessionCreateFailure(error)
+    } finally {
+      setSessionBusy(false)
+    }
+  }
+
+  /**
+   * 将新建 Session 的数据同步到页面状态。
+   * @param created - Core 返回的 Session 摘要
+   * @author lvdaxianer@yeah.net
+   */
+  function applyCreatedSession(created: SessionSummary) {
+    setSessionID(created.id)
+    setSessionName(created.name)
+    setSessionStatus(created.status)
+    setDirectory(created.directory)
+    sessionStorage.setItem("nexum.sessionID", created.id)
+    setSessions((current) => [...current.filter((item) => item.id !== created.id), created])
+    setEvents([])
+    setChatItems([])
+    setPermissions([])
+    setQuestions([])
+    setQuestionAnswers({})
+    setCompactionStatus("idle")
+    setContextSources([])
+    seenEventKeys.clear()
+    connectEvents(created.id)
+    setSessionDrawerOpen(false)
+    setSessionNameError("")
+    setSessionCreateState("success")
+    setSessionCreateMessage("目录已校验，Session 创建成功")
+    setNotice(`Session「${created.name}」已创建，等待 Prompt`)
+  }
+
+  /**
+   * 展示 Session 创建失败，并保留目录用于重试。
+   * @param error - 创建失败原因
+   * @author lvdaxianer@yeah.net
+   */
+  function handleSessionCreateFailure(error: unknown) {
+    const message = messageFrom(error, "Session 创建失败，请检查工作目录")
+    if (message.includes("名称")) setSessionNameError(message)
+    else setDirectoryError(message)
+    setSessionCreateState("error")
+    setSessionCreateMessage(message)
+    setNotice(message)
+  }
+
+  function openRenameSession() {
+    const current = sessions().find((session) => session.id === sessionID())
+    if (!current) return
+    setSessionEditName(current.name)
+    setSessionEditDrawerOpen(true)
+  }
+
+  function openCreateSession() {
+    setSessionCreateName("")
+    setDirectory("")
+    setDirectoryError("")
+    setSessionNameError("")
+    setSessionCreateState("idle")
+    setSessionCreateMessage("")
+    setSessionDrawerOpen(true)
+  }
+
+  async function renameSession() {
+    const name = sessionEditName().trim()
+    if (renameBusy() || !sessionID() || !name) {
+      setSessionNameError("请输入 Session 名称")
+      return
+    }
+    setRenameBusy(true)
+    try {
+      const updated = await client.experimental.nexum.session.update({ sessionID: sessionID(), name })
+      setSessions((current) => current.map((session) => (session.id === updated.data.id ? updated.data : session)))
+      setSessionName(updated.data.name)
+      setSessionEditDrawerOpen(false)
+      setSessionNameError("")
+      setNotice(`Session 已重命名为「${updated.data.name}」`)
+    } catch (error) {
+      setSessionNameError(messageFrom(error, "Session 名称更新失败，请重试"))
+    } finally {
+      setRenameBusy(false)
+    }
+  }
+
+  async function connectEvents(id: string) {
+    streamController?.abort()
+    const controller = new AbortController()
+    streamController = controller
+    setConnected(true)
+    try {
+      const lastEventID = eventCursors.get(id)
+      for await (const event of client.experimental.nexum.session.events(
+        { sessionID: id },
+        {
+          signal: controller.signal,
+          headers: lastEventID ? { "Last-Event-ID": lastEventID } : undefined,
+        },
+      )) {
+        const eventKey = event.eventID
+        if (seenEventKeys.has(eventKey)) continue
+        seenEventKeys.add(eventKey)
+        eventCursors.set(id, event.eventID)
+        setEvents((current) => [
+          ...[
+            ...current,
+            { ...event, localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
+          ].slice(-200),
+        ])
+        setChatItems((current) => projectChatEvent(current, event))
+        if (event.type === "session.completed") setSessionStatus("completed")
+        if (event.type === "session.failed") setSessionStatus("failed")
+        if (event.type === "session.cancelled") setSessionStatus("cancelled")
+        if (event.type === "tool.request" || event.type === "permission.requested")
+          setSessionStatus("awaiting permission")
+        if (event.type === "question.request") {
+          setSessionStatus("awaiting question")
+          void refreshQuestions(id)
+        }
+        if (event.type === "question.result" || event.type === "question.cancelled") void refreshQuestions(id)
+        if (event.type === "tool.result" || event.type === "assistant.thinking" || event.type === "assistant.reasoning" || event.type === "assistant.text") setSessionStatus("running")
+        if (event.type === "context.compaction.started") setCompactionStatus("compressing")
+        if (event.type === "context.compaction.completed") setCompactionStatus("completed")
+        if (event.type === "context.compaction.failed") setCompactionStatus("failed")
+        if (event.type === "context.project.loaded") setContextSources(sourcesFromEvent(event.data))
+        if (event.type === "skill.activated") {
+          const id = skillIDFromEvent(event.data)
+          if (id) setActiveSkillIDs((current) => (current.includes(id) ? current : [...current, id]))
+        }
+        if (event.type === "skill.failed") setNotice("Skill 激活失败，请检查状态和权限")
+        void refreshPermissions(id)
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setNotice(messageFrom(error, "事件流已断开，请重新连接"))
+    } finally {
+      if (!controller.signal.aborted) setConnected(false)
+    }
+  }
+
+  async function refreshPermissions(id = sessionID()) {
+    if (!id) return
+    try {
+      setPermissions([...(await client.experimental.nexum.session.permission.list({ sessionID: id })).data])
+    } catch {
+      // A missing permission endpoint should not break the event timeline.
+    }
+  }
+
+  async function refreshQuestions(id = sessionID()) {
+    if (!id) return
+    try {
+      setQuestions([...(await client.experimental.nexum.session.question.list({ sessionID: id })).data])
+    } catch {
+      // A missing Question endpoint should not break the event timeline.
+    }
+  }
+
+  function chooseAnswer(request: QuestionRequest, questionIndex: number, label: string) {
+    const answers = questionAnswers()[request.id] ?? request.questions.map(() => [])
+    const current = answers[questionIndex] ?? []
+    const question = request.questions[questionIndex]
+    const next = question?.multiple
+      ? current.includes(label)
+        ? current.filter((value) => value !== label)
+        : [...current, label]
+      : [label]
+    setQuestionAnswers({
+      ...questionAnswers(),
+      [request.id]: answers.map((value, index) => (index === questionIndex ? next : value)),
+    })
+  }
+
+  function answerSelected(requestID: string, questionIndex: number, label: string) {
+    return questionAnswers()[requestID]?.[questionIndex]?.includes(label) ?? false
+  }
+
+  /**
+   * 根据输入末尾的 @token 计算可选 Skill。
+   * @returns 当前输入匹配的 ready Skill
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-20
+   */
+  function skillSuggestions(): SkillSummary[] {
+    const match = prompt().match(/(?:^|\s)@([a-z0-9-]*)$/i)
+    if (!match) return []
+    const query = match[1]?.toLowerCase() ?? ""
+    return skills()
+      .filter((skill) => skill.status === "ready" && skill.id.toLowerCase().includes(query))
+      .slice(0, 5)
+  }
+
+  /**
+   * 将下拉选择替换回输入框中的 mention token。
+   * @param skill - 用户选中的 Skill 摘要
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-20
+   */
+  function selectSkill(skill: SkillSummary) {
+    const value = prompt()
+    const match = value.match(/(?:^|\s)@([a-z0-9-]*)$/i)
+    if (!match || match.index === undefined) return
+    const tokenStart = match.index + (match[0].startsWith(" ") ? 1 : 0)
+    setPrompt(`${value.slice(0, tokenStart)}@${skill.id} `)
+    setActiveSkillIDs((current) => (current.includes(skill.id) ? current : [...current, skill.id]))
+  }
+
+  async function replyQuestion(request: QuestionRequest) {
+    if (!sessionID()) return
+    setBusy(true)
+    try {
+      const answers = questionAnswers()[request.id] ?? request.questions.map(() => [])
+      await client.experimental.nexum.session.question.reply({
+        sessionID: sessionID(),
+        requestID: request.id,
+        answers,
+      })
+      setChatItems((current) =>
+        updateChatItem(current, `question:${request.id}`, { status: "completed", content: "补充信息已提交" }),
+      )
+      await refreshQuestions()
+      setNotice("补充信息已提交，运行继续")
+    } catch (error) {
+      setNotice(messageFrom(error, "补充信息提交失败，请重试"))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function cancelQuestion(requestID: string) {
+    if (!sessionID() || pendingQuestionID()) return
+    setPendingQuestionID(requestID)
+    try {
+      await client.experimental.nexum.session.question.cancel({ sessionID: sessionID(), requestID })
+      setChatItems((current) =>
+        updateChatItem(current, `question:${requestID}`, { status: "cancelled", content: "补充信息已取消" }),
+      )
+      await refreshQuestions()
+      setNotice("已取消补充信息，Core 不会伪造答案")
+    } catch (error) {
+      setNotice(messageFrom(error, "取消补充信息失败，请重试"))
+    } finally {
+      setPendingQuestionID("")
+    }
+  }
+
+  async function sendPrompt() {
+    if (!sessionID() || !prompt().trim() || inputLocked()) return
+    setBusy(true)
+    seenEventKeys.clear()
+    const text = prompt().trim()
+    const thinkingID = `thinking:${sessionID()}:${Date.now()}:${promptSequence++}`
+    setChatItems((current) =>
+      appendChatItem(
+        appendChatItem(current, {
+          id: `user:${Date.now()}:${promptSequence++}`,
+          kind: "user",
+          title: "你",
+          content: text,
+          skillIDs: skillIDsFromText(text),
+          status: "completed",
+          localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }),
+        thinkingChatItem(sessionID(), thinkingID),
+      ),
+    )
+    const previousStatus = sessionStatus()
+    setSessionStatus("running")
+    try {
+      setActiveSkillIDs(skillIDsFromText(text))
+      await client.experimental.nexum.session.prompt({ sessionID: sessionID(), text })
+      await refreshPermissions()
+      setPrompt("")
+      setNotice("Prompt 已提交，等待下一条运行事件")
+    } catch (error) {
+      setSessionStatus(previousStatus)
+      setChatItems((current) =>
+        appendChatItem(
+          current.filter((item) => item.id !== thinkingID),
+          {
+            id: `status:prompt:${Date.now()}`,
+            kind: "status",
+            title: "Prompt 提交失败",
+            content: messageFrom(error, "请检查连接后重试"),
+            status: "failed",
+            localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          },
+        ),
+      )
+      setNotice(messageFrom(error, "Prompt 未提交成功，请重试"))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 打开取消确认对话框；取消运行不可恢复，必须先让用户看到后果再提交。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-20
+   */
+  function requestCancel() {
+    if (!sessionID() || cancelBusy()) return
+    setCancelConfirmOpen(true)
+  }
+
+  /**
+   * 确认后请求 Core 取消当前运行；请求结束前确认按钮保持 busy，结果通过 notice 可发现。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-20
+   */
+  async function confirmCancelSession() {
+    if (!sessionID() || cancelBusy()) return
+    setCancelBusy(true)
+    try {
+      await client.experimental.nexum.session.cancel({ sessionID: sessionID() })
+      setSessionStatus("cancelled")
+      setNotice("已请求取消运行")
+    } catch (error) {
+      setNotice(messageFrom(error, "取消运行失败，请重试"))
+    } finally {
+      setCancelBusy(false)
+      setCancelConfirmOpen(false)
+    }
+  }
+
+  async function reconnectEvents() {
+    if (!sessionID()) return
+    connectEvents(sessionID())
+    setNotice("事件流正在重新连接")
+  }
+
+  async function decide(requestID: string, decision: "allow_once" | "allow_always" | "deny") {
+    if (pendingDecisionID()) return
+    setPendingDecisionID(requestID)
+    try {
+      await client.experimental.nexum.session.permission.reply({ sessionID: sessionID(), requestID, decision })
+      setChatItems((current) =>
+        updateChatItem(current, `permission:${requestID}`, {
+          status: decision === "deny" ? "failed" : "completed",
+          content: decision === "deny" ? "权限已拒绝" : "权限已通过",
+        }),
+      )
+      await refreshPermissions()
+      if (decision === "allow_always") {
+        await loadPermissionPolicy()
+        setNotice("已保存全局「始终允许」策略：按该资源匹配所有工具，可在「权限策略」中修改或删除")
+        return
+      }
+      setNotice(decision === "deny" ? "权限已拒绝" : "权限已通过")
+    } catch (error) {
+      setNotice(messageFrom(error, "权限处理失败，请重试"))
+    } finally {
+      setPendingDecisionID("")
+    }
+  }
+
+  return (
+    <Popover
+      open={policyPopoverOpen()}
+      onOpenChange={(open) => (open ? openPolicyPopover() : setPolicyPopoverOpen(false))}
+      placement="right-start"
+      gutter={8}
+    >
+      <main class="app-shell">
+        <Popover.Portal>
+          <Popover.Content class="policy-popover">
+            <div class="policy-pop-head">
+              <strong>应如何批准 Agent 操作？</strong>
+              <Popover.CloseButton class="drawer-close policy-pop-close" aria-label="关闭权限策略">
+                ✕
+              </Popover.CloseButton>
+            </div>
+            <div class="policy-mode-list" role="radiogroup" aria-label="权限模式">
+              <For each={permissionModeOptions}>
+                {(option) => (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={currentPermissionMode() === option.value}
+                    class="policy-mode-option"
+                    classList={{ "is-active": currentPermissionMode() === option.value }}
+                    disabled={policyBusy()}
+                    onClick={() => void applyPermissionMode(option.value)}
+                  >
+                    <span class="policy-mode-icon" aria-hidden="true">
+                      {option.icon}
+                    </span>
+                    <span class="policy-mode-copy">
+                      <strong>{option.label}</strong>
+                      <small>{option.description}</small>
+                    </span>
+                    <Show when={currentPermissionMode() === option.value}>
+                      <span class="policy-mode-check" aria-hidden="true">
+                        ✓
+                      </span>
+                    </Show>
+                  </button>
+                )}
+              </For>
+            </div>
+            <Show when={extraPermissionGrantCount() > 0}>
+              <p class="policy-pop-extra">另有 {extraPermissionGrantCount()} 条来自逐次审批「始终允许」的具体放行规则。</p>
+            </Show>
+            <Show when={policyError()}>
+              <p class="field-error" role="alert">
+                {policyError()}
+              </p>
+            </Show>
+          </Popover.Content>
+        </Popover.Portal>
+      <aside class="app-sidebar">
+        <div class="sidebar-brand">
+          <span class="brand-mark">H</span>
+          <div>
+            <p class="eyebrow">NEXUM / RUNTIME</p>
+            <strong>内部演示工作台</strong>
+          </div>
+        </div>
+
+        <nav class="side-nav" aria-label="主导航">
+          <a class="nav-item is-active" href="#workspace">
+            <span>⌂</span>工作台
+          </a>
+          <a class="nav-item" href="#session">
+            <span>◌</span>Session
+          </a>
+          <Drawer
+            title="新建 Session"
+            description="为一个独立的工作目录创建可恢复的 Session。模型配置是全局的，不需要在这里重复填写。"
+            open={sessionDrawerOpen()}
+            onOpenChange={(open) => (open ? openCreateSession() : setSessionDrawerOpen(false))}
+            triggerClass="nav-item"
+            trigger={
+              <>
+                <span>＋</span>新建 Session
+              </>
+            }
+          >
+            <label class={`form-field ${sessionNameError() ? "field-invalid" : ""}`}>
+              <span>
+                Session 名称 <span class="label-note">可选</span>
+              </span>
+              <input
+                id="session-create-name"
+                aria-label="Session 名称"
+                aria-invalid={Boolean(sessionNameError())}
+                value={sessionCreateName()}
+                onInput={(event) => {
+                  setSessionCreateName(event.currentTarget.value)
+                  setSessionNameError("")
+                }}
+                placeholder="默认使用目录名称"
+              />
+              <span class="field-help">名称只用于识别 Session，不会改变工作目录。</span>
+              <Show when={sessionNameError()}>
+                <span class="field-error" role="alert">
+                  {sessionNameError()}
+                </span>
+              </Show>
+            </label>
+            <label class={`form-field ${directoryError() ? "field-invalid" : ""}`}>
+              <span>
+                工作目录 <span class="required-mark">必填</span>
+              </span>
+              <input
+                id="session-directory"
+                aria-label="工作目录"
+                aria-invalid={Boolean(directoryError())}
+                aria-describedby={directoryError() ? "session-directory-error" : "session-directory-help"}
+                value={directory()}
+                onInput={(event) => {
+                  setDirectory(event.currentTarget.value)
+                  setDirectoryError("")
+                  setSessionCreateState("idle")
+                  setSessionCreateMessage("")
+                }}
+                placeholder="/workspace/project"
+              />
+              <span id="session-directory-help" class="field-help">
+                填写运行服务器上的绝对路径，目录必须已存在且可读写。
+              </span>
+              <Show when={directoryError()}>
+                <span id="session-directory-error" class="field-error" role="alert">
+                  {directoryError()}
+                </span>
+              </Show>
+            </label>
+            <button class="button button-primary" disabled={sessionBusy()} onClick={createSession}>
+              {sessionBusy() ? "创建中…" : "保存并创建 Session"} <span>→</span>
+            </button>
+            <Show when={sessionCreateMessage()}>
+              <p class={`form-feedback form-feedback-${sessionCreateState()}`} role="status" aria-live="polite">
+                {sessionCreateMessage()}
+              </p>
+            </Show>
+          </Drawer>
+          <Drawer
+            title="Skills"
+            description="Skill 先注册、校验，再进入模型上下文。"
+            open={skillsDrawerOpen()}
+            onOpenChange={(open) => {
+              setSkillsDrawerOpen(open)
+              if (open) void loadSkills()
+            }}
+            triggerClass="nav-item"
+            trigger={
+              <>
+                <span>✦</span>Skills
+                <Show when={skills().length > 0}>
+                  <span class="nav-badge">{skills().length}</span>
+                </Show>
+              </>
+            }
+          >
+            <div class="drawer-toolbar">
+              <p class="helper-text">在 Prompt 中输入 @ 可以引用 ready 状态的 Skill。</p>
+              <button class="text-button" disabled={skillBusy()} onClick={refreshSkills}>
+                {skillBusy() ? "刷新中…" : "刷新"}
+              </button>
+            </div>
+            <div class="skill-list" aria-live="polite">
+              <Show when={skills().length > 0} fallback={<p class="empty-copy">暂无已发现的项目 Skill</p>}>
+                <For each={skills()}>
+                  {(skill) => (
+                    <article class={`skill-row skill-row-${skill.status}`}>
+                      <div class="skill-row-copy">
+                        <div class="skill-row-title">
+                          <strong>{skill.id}</strong>
+                          <span class="skill-status">{skill.status}</span>
+                        </div>
+                        <p>{skill.description || "暂无描述"}</p>
+                        <small>
+                          {skill.fileCount} 个文件 · {skill.digest.slice(0, 10)}
+                        </small>
+                      </div>
+                      <button class="skill-validate" onClick={() => validateSkill(skill.id)} disabled={skillBusy()}>
+                        校验
+                      </button>
+                      <Show when={skillValidation()[skill.id]}>
+                        <span class="skill-validation">{skillValidation()[skill.id]}</span>
+                      </Show>
+                    </article>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </Drawer>
+            <Popover.Trigger class="nav-item" aria-label="权限策略">
+              <span>⚙</span>权限策略
+              <Show when={policyRules().length > 0}>
+                <span class="nav-badge">{policyRules().length}</span>
+              </Show>
+            </Popover.Trigger>
+          <Drawer
+            title="模型服务"
+            description="保存模型服务配置后，Core 才能发起模型调用。"
+            open={modelDrawerOpen()}
+            onOpenChange={setModelDrawerOpen}
+            triggerClass="nav-item"
+            trigger={
+              <>
+                <span>◈</span>模型配置
+                <span class={`nav-badge ${modelConfigured() ? "is-ready" : ""}`}>
+                  {modelConfigured() ? "已配置" : "待配置"}
+                </span>
+              </>
+            }
+          >
+            <label class={`form-field ${modelErrors().baseUrl ? "field-invalid" : ""}`}>
+              <span>
+                服务地址 <span class="required-mark">必填</span>
+              </span>
+              <input
+                id="model-base-url"
+                aria-label="服务地址"
+                aria-invalid={Boolean(modelErrors().baseUrl)}
+                aria-describedby={modelErrors().baseUrl ? "model-base-url-error" : undefined}
+                value={baseUrl()}
+                onInput={(event) => {
+                  setBaseUrl(event.currentTarget.value)
+                  markModelEdited("baseUrl")
+                }}
+                placeholder="https://…/v1"
+              />
+              <Show when={modelErrors().baseUrl}>
+                <span id="model-base-url-error" class="field-error" role="alert">
+                  {modelErrors().baseUrl}
+                </span>
+              </Show>
+            </label>
+            <label class={`form-field ${modelErrors().model ? "field-invalid" : ""}`}>
+              <span>
+                模型名称 <span class="required-mark">必填</span>
+              </span>
+              <input
+                id="model-name"
+                aria-label="模型名称"
+                aria-invalid={Boolean(modelErrors().model)}
+                aria-describedby={modelErrors().model ? "model-name-error" : undefined}
+                value={model()}
+                onInput={(event) => {
+                  setModel(event.currentTarget.value)
+                  markModelEdited("model")
+                }}
+                placeholder="coding-model"
+              />
+              <Show when={modelErrors().model}>
+                <span id="model-name-error" class="field-error" role="alert">
+                  {modelErrors().model}
+                </span>
+              </Show>
+            </label>
+            <label class={`form-field ${modelErrors().credential ? "field-invalid" : ""}`}>
+              凭据引用 <span class="required-mark">二选一必填</span>
+              <input
+                aria-label="凭据引用"
+                value={credentialRef()}
+                aria-invalid={Boolean(modelErrors().credential)}
+                aria-describedby={modelErrors().credential ? "model-credential-error" : undefined}
+                onInput={(event) => {
+                  setCredentialRef(event.currentTarget.value)
+                  markModelEdited("credential")
+                }}
+                placeholder="MODEL_API_KEY"
+              />
+            </label>
+            <label class={`form-field ${modelErrors().credential ? "field-invalid" : ""}`}>
+              凭据值 <span class="label-note">仅写入运行时</span>
+              <input
+                id="model-credential"
+                aria-label="凭据值"
+                type="password"
+                value={credential()}
+                aria-invalid={Boolean(modelErrors().credential)}
+                aria-describedby={modelErrors().credential ? "model-credential-error" : undefined}
+                onInput={(event) => {
+                  setCredential(event.currentTarget.value)
+                  markModelEdited("credential")
+                }}
+                placeholder="输入后不会回显"
+              />
+              <span class="field-help">凭据引用与凭据值二选一，至少填写一项。</span>
+              <Show when={modelErrors().credential}>
+                <span id="model-credential-error" class="field-error" role="alert">
+                  {modelErrors().credential}
+                </span>
+              </Show>
+            </label>
+            <div class="button-stack">
+              <button class="button button-primary" disabled={modelSaveBusy()} onClick={saveModel}>
+                {modelSaveBusy() ? "保存中…" : "保存模型配置"}
+              </button>
+              <button class="button button-secondary" disabled={probeBusy()} onClick={probeModel}>
+                {probeBusy() ? "探测中…" : "探测模型能力"}
+                <span>↗</span>
+              </button>
+            </div>
+            <Show when={probeResult()}>
+              {(result) => (
+                <div class="probe-result" aria-live="polite">
+                  <span>文本响应：{result().text}</span>
+                  <span>Function Calling：{result().functionCalling}</span>
+                </div>
+              )}
+            </Show>
+            <Show when={modelSaveMessage()}>
+              <p class={`form-feedback form-feedback-${modelSaveState()}`} role="status" aria-live="polite">
+                {modelSaveMessage()}
+              </p>
+            </Show>
+          </Drawer>
+        </nav>
+
+        <section class="sidebar-card" id="session">
+          <div class="card-heading">
+            <div>
+              <span class="section-kicker">可恢复工作区</span>
+              <h2>Session</h2>
+            </div>
+            <span class="status-badge">{sessions().length} 个</span>
+          </div>
+          <Show
+            when={sessions().length > 0}
+            fallback={<p class="empty-copy session-empty">还没有 Session，点击上方“新建 Session”开始。</p>}
+          >
+            <div class="session-list" aria-label="可用 Session">
+              <For each={sessions()}>
+                {(session) => (
+                  <button
+                    class={`session-item ${session.id === sessionID() ? "is-active" : ""}`}
+                    aria-pressed={session.id === sessionID()}
+                    title={session.directory}
+                    onClick={() => void selectSession(session)}
+                  >
+                    <span class="session-item-top">
+                      <strong class="session-item-name">{session.name}</strong>
+                      <span class={`session-status-pill session-status-${session.status}`}>{session.status}</span>
+                    </span>
+                    <small class="session-item-directory">{session.directory}</small>
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </section>
+
+        <div class="notice" aria-live="polite">
+          <span class={`notice-light ${connected() ? "is-live" : ""}`} />
+          {notice()}
+        </div>
+      </aside>
+
+      <section class="app-main" id="workspace">
+        <header class="topbar">
+          <div class="topbar-copy">
+            <p class="breadcrumb">内部演示 / Nexum Core</p>
+            <div class="topbar-title">
+              <h1>Agent 工作台</h1>
+              <Show when={sessionID()}>
+                <span class="topbar-sep">·</span>
+                <strong class="topbar-session">{sessionName()}</strong>
+                <span class={`pill pill-${sessionStatus()}`}>{sessionStatus()}</span>
+              </Show>
+            </div>
+            <Show when={sessionID()}>
+              <p class="topbar-sub">
+                <span class="current-session-directory" title={directory()}>
+                  {directory()}
+                </span>
+                <span class="session-id">{sessionID()}</span>
+              </p>
+            </Show>
+          </div>
+          <div class="topbar-meta">
+            <Show when={permissions().length > 0}>
+              <button type="button" class="attention-badge" onClick={() => scrollRailSection(permissionsSection)}>
+                ⚡ 权限 <span class="attention-count">{permissions().length}</span>
+              </button>
+            </Show>
+            <Show when={questions().length > 0}>
+              <button type="button" class="attention-badge" onClick={() => scrollRailSection(questionsSection)}>
+                ? 待答 <span class="attention-count">{questions().length}</span>
+              </button>
+            </Show>
+            <span class={`connection-chip ${connected() ? "is-live" : ""}`}>
+              <span class="status-dot" />
+              {connected() ? "事件流已连接" : "等待连接"}
+            </span>
+            <span class="model-chip">{model() ? `全局模型 · ${model()}` : "未配置全局模型"}</span>
+            <button
+              class="toolbar-button toolbar-danger"
+              disabled={!sessionID() || cancelBusy()}
+              onClick={requestCancel}
+            >
+              取消运行
+            </button>
+            <Drawer
+              title="会话操作"
+              description="重命名当前 Session，或重新建立事件流、刷新运行状态。"
+              open={sessionEditDrawerOpen()}
+              onOpenChange={(open) => (open ? openRenameSession() : setSessionEditDrawerOpen(false))}
+              triggerClass="toolbar-button"
+              trigger={
+                <>
+                  <span aria-hidden="true">⋯</span>
+                  <span class="sr-only">会话操作</span>
+                </>
+              }
+            >
+              <label class={`form-field ${sessionNameError() ? "field-invalid" : ""}`}>
+                <span>
+                  Session 名称 <span class="required-mark">必填</span>
+                </span>
+                <input
+                  id="session-edit-name"
+                  aria-label="Session 名称"
+                  aria-invalid={Boolean(sessionNameError())}
+                  value={sessionEditName()}
+                  onInput={(event) => {
+                    setSessionEditName(event.currentTarget.value)
+                    setSessionNameError("")
+                  }}
+                />
+                <Show when={sessionNameError()}>
+                  <span class="field-error" role="alert">
+                    {sessionNameError()}
+                  </span>
+                </Show>
+              </label>
+              <button
+                class="button button-primary"
+                disabled={!sessionID() || renameBusy()}
+                onClick={() => void renameSession()}
+              >
+                {renameBusy() ? "保存中…" : "保存名称"}
+              </button>
+              <div class="drawer-toolbar">
+                <p class="helper-text">事件流断开或状态停滞时，可以在这里手动恢复。</p>
+              </div>
+              <div class="button-stack">
+                <button class="button button-secondary" disabled={!sessionID()} onClick={reconnectEvents}>
+                  重新连接
+                </button>
+                <button
+                  class="button button-secondary"
+                  disabled={!sessionID() || refreshBusy()}
+                  onClick={refreshRuntime}
+                >
+                  {refreshBusy() ? "刷新中…" : "刷新状态"}
+                </button>
+              </div>
+            </Drawer>
+          </div>
+        </header>
+
+        <section class="main-grid">
+          <section class="conversation-panel panel-surface">
+            <div class="panel-header">
+              <div>
+                <span class="section-kicker">实时执行</span>
+                <h2>Coding Loop</h2>
+              </div>
+              <div class="view-tabs" role="tablist" aria-label="对话区视图">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={chatView() === "chat"}
+                  class="view-tab"
+                  classList={{ "is-active": chatView() === "chat" }}
+                  onClick={() => setChatView("chat")}
+                >
+                  对话
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={chatView() === "events"}
+                  class="view-tab"
+                  classList={{ "is-active": chatView() === "events" }}
+                  onClick={() => setChatView("events")}
+                >
+                  事件<span class="view-count">{events().length}</span>
+                </button>
+              </div>
+            </div>
+            <div
+              class="conversation-body"
+              ref={(element) => (conversationBody = element)}
+              onScroll={(event) => handleConversationScroll(event.currentTarget)}
+            >
+              <div class="chat-stream" role="log" aria-live="polite" classList={{ "is-hidden": chatView() !== "chat" }}>
+                <Show
+                  when={chatItems().length > 0}
+                  fallback={
+                    <Show
+                      when={sessionID()}
+                      fallback={
+                        <div class="empty-state">
+                          <span>◌</span>
+                          <strong>等待一次 Prompt</strong>
+                          <p>按下面的顺序准备好运行环境，Agent 的执行过程会实时出现在这里。</p>
+                          <div class="empty-steps">
+                            <div class={`empty-step ${modelConfigured() ? "is-done" : ""}`}>
+                              <span class="step-mark">{modelConfigured() ? "✓" : "1"}</span>
+                              打开「模型配置」抽屉保存模型服务配置
+                              <small>{modelConfigured() ? "已配置" : "待完成"}</small>
+                            </div>
+                            <div class="empty-step">
+                              <span class="step-mark">2</span>
+                              创建或选择一个 Session
+                              <small>待完成</small>
+                            </div>
+                            <div class="empty-step">
+                              <span class="step-mark">3</span>
+                              在下方输入第一个 Coding 任务
+                              <small>待开始</small>
+                            </div>
+                          </div>
+                        </div>
+                      }
+                    >
+                      <div class="empty-state">
+                        <span>◌</span>
+                        <strong>Session 已就绪</strong>
+                        <p>在下方输入你的第一个 Coding 任务，Agent 的流式输出、工具调用和权限请求都会出现在这里。</p>
+                      </div>
+                    </Show>
+                  }
+                >
+                  <For each={chatItems()}>
+                    {(item) => (
+                      <article
+                        class={`chat-message ${item.kind} chat-status-${item.status} ${item.thinking ? "thinking" : ""}`}
+                      >
+                        <Switch>
+                          <Match when={item.kind === "user" || item.kind === "assistant"}>
+                            <div class="turn-label">
+                              <span class={`who ${item.kind === "user" ? "is-user" : ""}`}>{item.title}</span>
+                              <span class="turn-meta">
+                                {item.localTime} · {chatStatusLabel(item.status)}
+                              </span>
+                              <Show when={item.kind === "assistant" && item.status === "streaming"}>
+                                <span class="stream-cursor" aria-hidden="true">
+                                  ▍
+                                </span>
+                              </Show>
+                            </div>
+                            <Show
+                              when={item.thinking}
+                              fallback={
+                                <>
+                                  <MarkdownView
+                                    class="chat-copy"
+                                    content={item.content || (item.status === "streaming" ? "Agent 正在输出…" : "")}
+                                  />
+                                  <Show when={item.kind === "user" && (item.skillIDs?.length ?? 0) > 0}>
+                                    <div class="turn-chips">
+                                      <For each={item.skillIDs}>
+                                        {(id) => <span class="skill-chip">@{id}</span>}
+                                      </For>
+                                    </div>
+                                  </Show>
+                                </>
+                              }
+                            >
+                              <div class="thinking-card" role="status" aria-label="正在思考">
+                                <span class="thinking-orb" aria-hidden="true" />
+                                <strong>{item.content || item.thinkingStatus || "正在思考"}</strong>
+                                <span class="thinking-dots" aria-hidden="true">
+                                  <i>·</i>
+                                  <i>·</i>
+                                  <i>·</i>
+                                </span>
+                              </div>
+                            </Show>
+                          </Match>
+                          <Match when={item.kind === "execution"}>
+                            <div
+                              class={`act-row ${
+                                item.status === "waiting"
+                                  ? "warn"
+                                  : item.status === "failed"
+                                    ? "bad"
+                                    : item.status === "cancelled"
+                                      ? "mut"
+                                      : ""
+                              }`}
+                            >
+                              <span class="act-icon" aria-hidden="true">
+                                {item.status === "waiting" ? "⚡" : item.status === "failed" ? "!" : "·"}
+                              </span>
+                              <strong class="act-name">{item.title}</strong>
+                              <span class="act-desc" title={item.content}>
+                                {item.content}
+                              </span>
+                              <span
+                                class={`act-status ${
+                                  item.status === "completed"
+                                    ? "ok"
+                                    : item.status === "running"
+                                      ? "run"
+                                      : item.status === "failed"
+                                        ? "bad"
+                                        : ""
+                                }`}
+                              >
+                                {chatStatusLabel(item.status)}
+                              </span>
+                              <Show when={item.detail}>
+                                <details>
+                                  <summary>查看结构化详情</summary>
+                                  <pre>{item.detail}</pre>
+                                </details>
+                              </Show>
+                            </div>
+                          </Match>
+                          <Match when={item.kind === "status"}>
+                            <div class="turn-end">{item.content}</div>
+                          </Match>
+                        </Switch>
+                      </article>
+                    )}
+                  </For>
+                </Show>
+              </div>
+              <div class="event-trace" classList={{ "is-hidden": chatView() !== "events" }}>
+                <div class="event-trace-head">事件明细 · {events().length.toString().padStart(2, "0")} 条</div>
+                <Show when={events().length > 0} fallback={<p class="empty-copy">本轮还没有收到运行事件</p>}>
+                  <div class="timeline">
+                    <For each={events()}>
+                      {(event) => (
+                        <article class="event-row">
+                          <span class="event-seq">{String(event.sequence).padStart(2, "0")}</span>
+                          <div class="event-body">
+                            <strong>{event.type}</strong>
+                            <small>
+                              {event.localTime} · {event.sessionID.slice(0, 8)}
+                            </small>
+                            <Show when={event.data}>
+                              <pre>{JSON.stringify(event.data, null, 2)}</pre>
+                            </Show>
+                          </div>
+                        </article>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+            </div>
+            <Show when={permissions().length > 0}>
+              <section class="permission-prompt" data-testid="prompt-permission" aria-live="assertive">
+                <div class="permission-prompt-head">
+                  <div>
+                    <strong>需要你的权限确认</strong>
+                    <span class="section-kicker">同类请求可选择始终允许，后续将直接执行</span>
+                  </div>
+                  <span class="permission-prompt-count">{permissions().length} 条</span>
+                </div>
+                <div class="permission-prompt-list">
+                  <For each={permissions()}>
+                    {(request) => (
+                      <div class="permission-prompt-card">
+                        <div class="permission-prompt-copy">
+                          <strong title={request.resource}>
+                            {request.action} · {request.resource}
+                          </strong>
+                          <span>{request.reason}</span>
+                        </div>
+                        <div class="permission-actions">
+                          <button
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "allow_once")}
+                          >
+                            {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
+                          </button>
+                          <button
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "allow_always")}
+                          >
+                            始终允许
+                          </button>
+                          <button
+                            class="deny"
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "deny")}
+                          >
+                            拒绝
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </section>
+            </Show>
+            <div class="prompt-shell">
+              <textarea
+                class="prompt-input"
+                aria-label="Coding Prompt"
+                rows={1}
+                value={prompt()}
+                onInput={(event) => setPrompt(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendPrompt()
+                }}
+                placeholder={inputLocked() ? "Agent 正在回复，本轮完成后可继续输入…" : "描述下一步 Coding 任务…"}
+                disabled={!sessionID() || busy() || inputLocked()}
+              />
+              <Show when={skillSuggestions().length > 0}>
+                <div class="skill-suggestions" role="listbox" aria-label="Skill 建议">
+                  <For each={skillSuggestions()}>
+                    {(skill) => (
+                      <button
+                        class="skill-suggestion"
+                        role="option"
+                        aria-label={`@${skill.id}`}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectSkill(skill)}
+                      >
+                        <span>@{skill.id}</span>
+                        <small>{skill.description}</small>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={activeSkillIDs().length > 0}>
+                <div class="active-skill-row" aria-label="已附加 Skill">
+                  <span class="section-kicker">已附加</span>
+                  <For each={activeSkillIDs()}>{(id) => <span class="skill-chip">@{id}</span>}</For>
+                </div>
+              </Show>
+              <div class="prompt-bar">
+                <span class={`prompt-hint ${inputLocked() ? "is-locked" : ""}`}>
+                  {inputLocked() ? (
+                    <>
+                      <span class="prompt-hint-dot" aria-hidden="true" />
+                      Agent 正在回复，完成后可继续输入
+                    </>
+                  ) : (
+                    "⌘ ↵ 发送 · @ 引用 Skill"
+                  )}
+                </span>
+                <Popover.Trigger class="text-button" aria-label="权限策略">
+                  ⚙ 权限策略
+                </Popover.Trigger>
+                <button
+                  class="send-fab"
+                  disabled={!sessionID() || !prompt().trim() || busy() || inputLocked()}
+                  onClick={sendPrompt}
+                  aria-label="发送 Prompt"
+                >
+                  {busy() ? "…" : "↑"}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <aside class="status-rail">
+            <section class="rail-panel panel-surface">
+              <div class="panel-header">
+                <div>
+                  <span class="section-kicker">运行监控</span>
+                  <h2>运行状态</h2>
+                </div>
+                <span class={`status-badge ${connected() ? "success" : "muted"}`}>{connected() ? "在线" : "离线"}</span>
+              </div>
+              <div class="rail-kv">
+                <div>
+                  <span>Session</span>
+                  <strong>{sessionStatus()}</strong>
+                </div>
+                <div>
+                  <span>事件流</span>
+                  <strong>{connected() ? "实时" : "未连接"}</strong>
+                </div>
+                <div>
+                  <span>上下文</span>
+                  <strong class={`context-value ${capabilityStateClass(compactionStatus())}`}>
+                    {compactionStatus()}
+                  </strong>
+                </div>
+              </div>
+
+              <Show when={permissions().length > 0}>
+                <div class="rail-section" ref={(element) => (permissionsSection = element)}>
+                  <div class="rail-section-head">
+                    <strong>权限队列</strong>
+                    <span class="rail-count">{permissions().length}</span>
+                  </div>
+                  <div class="permission-list">
+                    <For each={permissions()}>
+                      {(request) => (
+                        <div class="permission-card">
+                          <div>
+                            <span class="permission-action">{request.action}</span>
+                            <strong>{request.resource}</strong>
+                            <small>{request.reason}</small>
+                          </div>
+                          <div class="permission-actions" data-testid="permission-actions">
+                            <button
+                              disabled={Boolean(pendingDecisionID())}
+                              onClick={() => decide(request.id, "allow_once")}
+                            >
+                              {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
+                            </button>
+                            <button
+                              disabled={Boolean(pendingDecisionID())}
+                              onClick={() => decide(request.id, "allow_always")}
+                            >
+                              始终允许
+                            </button>
+                            <button
+                              class="deny"
+                              disabled={Boolean(pendingDecisionID())}
+                              onClick={() => decide(request.id, "deny")}
+                            >
+                              拒绝
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={questions().length > 0}>
+                <div class="rail-section" ref={(element) => (questionsSection = element)}>
+                  <div class="rail-section-head">
+                    <strong>补充信息</strong>
+                    <span class="rail-count">{questions().length}</span>
+                  </div>
+                  <div class="question-list">
+                    <For each={questions()}>
+                      {(request) => (
+                        <article class="question-card">
+                          <div class="question-card-head">
+                            <span class="permission-action">{request.id}</span>
+                            <button
+                              class="text-button"
+                              disabled={Boolean(pendingQuestionID())}
+                              onClick={() => cancelQuestion(request.id)}
+                            >
+                              {pendingQuestionID() === request.id ? "取消中…" : "取消"}
+                            </button>
+                          </div>
+                          <For each={request.questions}>
+                            {(question, questionIndex) => (
+                              <div class="question-block">
+                                <strong>{question.question}</strong>
+                                <div class="answer-options">
+                                  <For each={question.options}>
+                                    {(option) => (
+                                      <button
+                                        class={`answer-option ${answerSelected(request.id, questionIndex(), option.label) ? "is-selected" : ""}`}
+                                        aria-pressed={answerSelected(request.id, questionIndex(), option.label)}
+                                        onClick={() => chooseAnswer(request, questionIndex(), option.label)}
+                                      >
+                                        <span>{option.label}</span>
+                                        <small>{option.description}</small>
+                                      </button>
+                                    )}
+                                  </For>
+                                </div>
+                              </div>
+                            )}
+                          </For>
+                          <button
+                            class="button button-primary"
+                            disabled={busy() || Boolean(pendingQuestionID())}
+                            onClick={() => replyQuestion(request)}
+                          >
+                            {busy() ? "提交中…" : "提交回答"}
+                          </button>
+                        </article>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={contextSources().length > 0}>
+                <div class="rail-section">
+                  <div class="rail-section-head">
+                    <strong>上下文来源</strong>
+                    <span class="rail-count">{contextSources().length}</span>
+                  </div>
+                  <div class="rail-kv">
+                    <For each={contextSources().slice(0, 3)}>
+                      {(source) => (
+                        <div>
+                          <span>{source.kind}</span>
+                          <strong class="rail-source-path" title={source.path}>
+                            {source.path}
+                          </strong>
+                        </div>
+                      )}
+                    </For>
+                    <Show when={contextSources().length > 3}>
+                      <div>
+                        <span>…</span>
+                        <strong>共 {contextSources().length} 项</strong>
+                      </div>
+                    </Show>
+                  </div>
+                </div>
+              </Show>
+            </section>
+          </aside>
+        </section>
+
+        <footer>
+          <span>NEXUM CORE / INTERNAL DEMO</span>
+          <span>UI 是控制面，Runtime 在 Core</span>
+        </footer>
+
+        <ConfirmDialog
+          title="取消当前运行？"
+          description="取消后正在执行的 Agent 任务会立即停止，本轮进度不可恢复。确认要继续吗？"
+          confirmLabel="确认取消运行"
+          open={cancelConfirmOpen()}
+          onOpenChange={setCancelConfirmOpen}
+          busy={cancelBusy()}
+          onConfirm={confirmCancelSession}
+        />
+      </section>
+      </main>
+    </Popover>
+  )
+}
+
+/**
+ * 调用 Nexum Server 的权限策略接口。
+ *
+ * 策略路由属于 Nexum Server 的接口，不进入生成的 SDK，因此页面直接用 fetch，
+ * 并把服务端返回的稳定错误消息原样交给调用方展示。
+ *
+ * @param path - 以 /api 开头的策略路径
+ * @param init - 可选的 fetch 配置
+ * @returns 响应中的 data 字段
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-22
+ */
+async function requestPermissionPolicy<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+  })
+  const payload = (await response.json().catch(() => undefined)) as { data?: T; message?: string } | undefined
+  if (!response.ok) throw new Error(payload?.message ?? "权限策略请求失败")
+  if (payload?.data === undefined) throw new Error("权限策略响应缺少数据")
+  return payload.data
+}
+
+function messageFrom(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
+
+function sourcesFromEvent(data: unknown): ContextSource[] {
+  if (!data || typeof data !== "object" || !Array.isArray((data as { sources?: unknown }).sources)) return []
+  return (data as { sources: unknown[] }).sources.filter(isContextSource)
+}
+
+function isContextSource(value: unknown): value is ContextSource {
+  if (!value || typeof value !== "object") return false
+  const source = value as Record<string, unknown>
+  return typeof source.sourceID === "string" && typeof source.kind === "string" && typeof source.path === "string"
+}
+
+/**
+ * 将一条聊天条目追加到有界的前端运行记录中。
+ * @param items 当前聊天条目
+ * @param item 待追加条目
+ * @returns 保留最近窗口后的聊天条目
+ */
+function appendChatItem(items: ChatItem[], item: ChatItem): ChatItem[] {
+  return [...items, item].slice(-maxChatItems)
+}
+
+function thinkingChatItem(sessionID: string, id = `thinking:${sessionID}`): ChatItem {
+  return {
+    id,
+    kind: "assistant",
+    title: "Agent",
+    thinking: true,
+    status: "running",
+    localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+  }
+}
+
+/**
+ * 按稳定条目 ID 更新聊天卡片，避免重连时重建整条消息流。
+ * @param items 当前聊天条目
+ * @param id 卡片 ID
+ * @param patch 要更新的字段
+ * @returns 更新后的聊天条目
+ */
+function updateChatItem(items: ChatItem[], id: string, patch: Partial<ChatItem>): ChatItem[] {
+  return items.map((item) => (item.id === id ? { ...item, ...patch } : item))
+}
+
+/**
+ * 将 Nexum SSE 事件投影为用户可读的聊天消息或执行卡片。
+ * @param items 当前聊天条目
+ * @param event 已去重的 Nexum 事件
+ * @returns 更新后的聊天条目
+ */
+function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
+  const data = event.data ?? {}
+  const localTime = new Date(event.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  const detail = JSON.stringify(data, null, 2)
+  const value = (key: string) => (typeof data[key] === "string" ? data[key] : "")
+  const upsert = (item: ChatItem) => {
+    const existing = items.find((current) => current.id === item.id)
+    return existing ? updateChatItem(items, item.id, item) : appendChatItem(items, item)
+  }
+
+  switch (event.type) {
+    case "assistant.thinking": {
+      const thinking = items.find((item) => item.kind === "assistant" && item.thinking)
+      const elapsedMs = typeof data.elapsedMs === "number" ? data.elapsedMs : undefined
+      const elapsed = elapsedMs === undefined ? "" : ` · 已等待 ${Math.max(1, Math.round(elapsedMs / 1000))}s`
+      return upsert({
+        id: thinking?.id ?? `thinking:${event.runID}`,
+        kind: "assistant",
+        title: "Agent 思考",
+        content: thinking?.content,
+        thinking: true,
+        thinkingStatus: `${value("message") || "模型正在思考"}${elapsed}`,
+        status: "streaming",
+        localTime,
+        eventType: event.type,
+      })
+    }
+    case "assistant.reasoning": {
+      const thinking = items.find((item) => item.kind === "assistant" && item.thinking)
+      if (thinking) {
+        return updateChatItem(items, thinking.id, {
+          content: `${thinking.content ?? ""}${value("content")}`,
+          thinkingStatus: "模型思考中",
+          status: "streaming",
+          localTime,
+          eventType: event.type,
+        })
+      }
+      return appendChatItem(items, {
+        id: `thinking:${event.runID}`,
+        kind: "assistant",
+        title: "Agent 思考",
+        content: value("content"),
+        thinking: true,
+        thinkingStatus: "模型思考中",
+        status: "streaming",
+        localTime,
+        eventType: event.type,
+      })
+    }
+    case "assistant.text": {
+      const idPrefix = `assistant:${event.runID}:`
+      const last = items.at(-1)
+      if (last?.kind === "assistant" && last.id.startsWith(idPrefix)) {
+        return updateChatItem(items, last.id, {
+          content: `${last.content ?? ""}${value("content")}`,
+          status: "streaming",
+          localTime,
+          eventType: event.type,
+        })
+      }
+      const thinking = items.find((item) => item.kind === "assistant" && item.thinking)
+      if (thinking) {
+        return updateChatItem(items, thinking.id, {
+          id: `${idPrefix}${event.sequence}`,
+          content: value("content"),
+          thinking: false,
+          status: "streaming",
+          localTime,
+          eventType: event.type,
+        })
+      }
+      return appendChatItem(items, {
+        id: `${idPrefix}${event.sequence}`,
+        kind: "assistant",
+        title: "Agent",
+        content: value("content"),
+        status: "streaming",
+        localTime,
+        eventType: event.type,
+      })
+    }
+    case "tool.request":
+      return upsert({
+        id: `tool:${value("toolCallID")}`,
+        kind: "execution",
+        title: `工具调用 · ${value("toolName") || value("action") || "unknown"}`,
+        content: "Core 正在执行工具",
+        detail,
+        status: "running",
+        localTime,
+        eventType: event.type,
+      })
+    case "tool.result":
+      return upsert({
+        id: `tool:${value("toolCallID")}`,
+        kind: "execution",
+        title: `工具结果 · ${value("toolName") || value("toolCallID").slice(0, 12) || "工具"}`,
+        content: data.ok === false ? "工具执行失败" : compactSummary(value("output")) || "工具执行完成",
+        detail,
+        status: data.ok === false ? "failed" : "completed",
+        localTime,
+        eventType: event.type,
+      })
+    case "permission.requested":
+      return upsert({
+        id: `permission:${value("requestID")}`,
+        kind: "execution",
+        title: `权限请求 · ${value("action") || "操作"}`,
+        content: value("reason") || "等待权限处理",
+        detail,
+        status: "waiting",
+        localTime,
+        eventType: event.type,
+      })
+    case "question.request":
+      return upsert({
+        id: `question:${value("requestID")}`,
+        kind: "execution",
+        title: "补充信息 · 等待回答",
+        content: "Core 正在等待你的补充信息",
+        detail,
+        status: "waiting",
+        localTime,
+        eventType: event.type,
+      })
+    case "question.result":
+      return updateChatItem(items, `question:${value("requestID")}`, {
+        title: "补充信息 · 已提交",
+        content: "补充信息已提交，运行继续",
+        status: "completed",
+        localTime,
+      })
+    case "question.cancelled":
+      return updateChatItem(items, `question:${value("requestID")}`, {
+        title: "补充信息 · 已取消",
+        content: "补充信息已取消",
+        status: "cancelled",
+        localTime,
+      })
+    case "context.compaction.started":
+    case "context.compaction.completed":
+    case "context.compaction.failed":
+      return upsert({
+        id: `context:${event.runID}`,
+        kind: "execution",
+        title: "上下文压缩",
+        content:
+          value("message") ||
+          `上下文压缩${event.type.endsWith("started") ? "进行中" : event.type.endsWith("failed") ? "失败" : "完成"}`,
+        detail,
+        status: event.type.endsWith("started") ? "running" : event.type.endsWith("failed") ? "failed" : "completed",
+        localTime,
+        eventType: event.type,
+      })
+    case "context.project.loaded":
+      return appendChatItem(items, {
+        id: `context-source:${event.sequence}`,
+        kind: "execution",
+        title: "项目上下文 · 已加载",
+        content: "Core 已加载项目指令和上下文来源",
+        detail,
+        status: "completed",
+        localTime,
+        eventType: event.type,
+      })
+    case "skill.activated":
+      return upsert({
+        id: `skill:${value("skillID")}`,
+        kind: "execution",
+        title: `Skill · ${value("name") || value("skillID") || "已激活"}`,
+        content: "Skill 已进入模型上下文",
+        detail,
+        status: "completed",
+        localTime,
+        eventType: event.type,
+      })
+    case "skill.failed":
+      return upsert({
+        id: `skill:${value("skillID")}`,
+        kind: "execution",
+        title: `Skill · ${value("skillID") || "激活失败"}`,
+        content: value("code") || "Skill 激活失败",
+        detail,
+        status: "failed",
+        localTime,
+        eventType: event.type,
+      })
+    case "session.completed":
+      return appendChatItem(
+        items.map((item) =>
+          item.id.startsWith(`assistant:${event.runID}:`)
+            ? { ...item, status: "completed" }
+            : item.thinking
+              ? { ...item, thinking: false, content: "本轮任务已完成", status: "completed" }
+              : item,
+        ),
+        {
+          id: `session:${event.runID}:completed`,
+          kind: "status",
+          title: "运行完成",
+          content: "本轮 Coding 任务已完成",
+          status: "completed",
+          localTime,
+          eventType: event.type,
+        },
+      )
+    case "session.failed":
+      return appendChatItem(
+        items.map((item) =>
+          item.thinking
+            ? { ...item, thinking: false, content: value("message") || "Core 返回运行失败", status: "failed" }
+            : item,
+        ),
+        {
+          id: `session:${event.runID}:failed`,
+          kind: "status",
+          title: "运行失败",
+          content: value("message") || "Core 返回运行失败",
+          status: "failed",
+          localTime,
+          eventType: event.type,
+        },
+      )
+    case "session.cancelled":
+      return appendChatItem(
+        items.map((item) =>
+          item.thinking
+            ? { ...item, thinking: false, content: "本轮运行已停止，可以继续输入新的 Prompt", status: "cancelled" }
+            : item,
+        ),
+        {
+          id: `session:${event.runID}:cancelled`,
+          kind: "status",
+          title: "运行已取消",
+          content: "本轮运行已停止，可以继续输入新的 Prompt",
+          status: "cancelled",
+          localTime,
+          eventType: event.type,
+        },
+      )
+    default:
+      return items
+  }
+}
+
+function compactSummary(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 120)
+}
+
+/**
+ * 根据能力卡片当前值计算状态色，让一眼可扫的正异常状态有区分。
+ * @param value 卡片显示值
+ * @returns 状态修饰类名
+ */
+function capabilityStateClass(value: string): string {
+  if (value.includes("待处理") || value.includes("个问题") || value === "compressing") return "is-attention"
+  if (value === "fail" || value === "failed") return "is-danger"
+  if (value === "待探测" || value === "idle" || value === "空闲" || value === "未激活") return "is-idle"
+  return "is-good"
+}
+
+/**
+ * 将聊天状态转换为中文状态标签。
+ * @param status 内部聊天状态
+ * @returns 页面显示文案
+ */
+function chatStatusLabel(status: ChatStatus): string {
+  return {
+    streaming: "输出中…",
+    running: "执行中",
+    waiting: "等待处理",
+    completed: "已完成",
+    failed: "失败",
+    cancelled: "已取消",
+  }[status]
+}
+
+/**
+ * 从 Prompt 中提取去重后的 Skill ID。
+ * @param text - Prompt 文本
+ * @returns mention 中的 Skill ID
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+function skillIDsFromText(text: string): string[] {
+  return [...text.matchAll(/@([a-z0-9]+(?:-[a-z0-9]+)*)/gi)].map((match) => match[1]!).filter(uniqueValue)
+}
+
+/**
+ * 从 Skill 事件安全提取 Skill ID。
+ * @param data - 事件数据
+ * @returns Skill ID 或 undefined
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+function skillIDFromEvent(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") return undefined
+  const value = (data as { skillID?: unknown }).skillID
+  return typeof value === "string" ? value : undefined
+}
+
+/**
+ * 判断字符串是否为数组中的首次出现。
+ * @param value - 当前值
+ * @param index - 当前下标
+ * @param values - 全部值
+ * @returns 是否保留当前值
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-20
+ */
+function uniqueValue(value: string, index: number, values: string[]): boolean {
+  return values.indexOf(value) === index
+}
+
+export default App
+
+const root = document.getElementById("root")
+if (!root) throw new Error("Nexum UI root element is missing")
+render(() => <App />, root)

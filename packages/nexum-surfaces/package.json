@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@nexum/surfaces",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test:smoke": "bun run build && bun test test/permission.smoke.spec.ts",
+    "typecheck:tsc": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kobalte/core": "catalog:",
+    "@nexum/client": "workspace:*",
+    "dompurify": "catalog:",
+    "marked": "catalog:",
+    "solid-js": "catalog:"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "catalog:",
+    "@types/bun": "catalog:",
+    "@playwright/test": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plugin-solid": "2.11.10"
+  }
+}
