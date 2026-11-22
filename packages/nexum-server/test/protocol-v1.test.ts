@@ -32,7 +32,13 @@ test("exposes capabilities and v1 response metadata", async () => {
   expect(body.data.transport.events).toBe("sse")
   expect(body.data.features).toContain("permission")
   expect(body.data.capabilities.find((capability) => capability.id === "memory")?.status).toBe("disabled")
-  expect(body.data.eventTypes).toEqual(expect.arrayContaining(["model.retry", "coding-loop.limit.reached"]))
+  expect(body.data.eventTypes).toEqual(expect.arrayContaining([
+    "assistant.thinking",
+    "assistant.reasoning",
+    "assistant.text",
+    "model.retry",
+    "coding-loop.limit.reached",
+  ]))
 })
 
 test("returns a session snapshot with pending collections and last sequence", async () => {

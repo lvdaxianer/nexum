@@ -3,6 +3,44 @@ export const NEXUM_API_PREFIX = "/api/nexum" as const
 
 export type JsonObject = Record<string, unknown>
 
+export const NEXUM_EVENT_TYPES = [
+  "assistant.thinking",
+  "assistant.reasoning",
+  "assistant.text",
+  "tool.request",
+  "tool.result",
+  "permission.requested",
+  "question.request",
+  "question.result",
+  "question.cancelled",
+  "context.compaction.started",
+  "context.compaction.completed",
+  "context.compaction.failed",
+  "context.project.loaded",
+  "skill.activated",
+  "skill.failed",
+  "model.retry",
+  "coding-loop.limit.reached",
+  "session.completed",
+  "session.failed",
+  "session.cancelled",
+] as const
+
+export type NexumEventType = (typeof NEXUM_EVENT_TYPES)[number]
+
+export type NexumThinkingEventData = {
+  readonly message?: string
+  readonly elapsedMs?: number
+}
+
+export type NexumReasoningEventData = {
+  readonly content: string
+}
+
+export type NexumTextEventData = {
+  readonly content: string
+}
+
 export type NexumEnvelope<T> = {
   readonly data: T
   readonly meta: {
@@ -92,8 +130,6 @@ export type NexumSessionState = {
   readonly pendingQuestions: readonly NexumQuestion[]
   readonly lastSequence: number
 }
-
-export type NexumEventType = string
 
 export type NexumEvent = {
   readonly eventID: string

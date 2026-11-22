@@ -30,6 +30,7 @@ import {
   type MessageStore,
   type NexumInteractionStore,
 } from "@nexum/core"
+import { NEXUM_EVENT_TYPES } from "@nexum/protocol"
 import { resolve } from "node:path"
 import type { NexumEventHub } from "./events.ts"
 
@@ -49,28 +50,6 @@ const NEXUM_FEATURES = [
   "context_compaction",
   "project_context",
   "skill",
-] as const
-const NEXUM_EVENT_TYPES = [
-  "assistant.thinking",
-  "assistant.reasoning",
-  "assistant.text",
-  "tool.request",
-  "tool.result",
-  "permission.requested",
-  "question.request",
-  "question.result",
-  "question.cancelled",
-  "context.compaction.started",
-  "context.compaction.completed",
-  "context.compaction.failed",
-  "context.project.loaded",
-  "skill.activated",
-  "skill.failed",
-  "model.retry",
-  "coding-loop.limit.reached",
-  "session.completed",
-  "session.failed",
-  "session.cancelled",
 ] as const
 const NEXUM_CAPABILITIES = [
   { id: "model", version: "1", status: "enabled", operations: ["prompt"] },
