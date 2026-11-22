@@ -721,6 +721,94 @@ test("retries a temporarily unavailable model before failing the session", async
   expect(eventTypes).toContain("model.retry")
 })
 
+test("caps provider retry-after metadata and exposes the classified error", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-loop-retry-after-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory })
+  let attempts = 0
+  const retryEvents: Array<Record<string, unknown>> = []
+  const model: ModelPort = {
+    async *prompt() {
+      attempts += 1
+      if (attempts === 1) {
+        throw new NexumModelError("rate_limited", "请求过于频繁", { retryAfterMs: 10_000 })
+      }
+      yield { type: "text", content: "限流后成功" }
+      yield { type: "completed" }
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "unused" }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const events: EventSink = {
+    async publish(event) {
+      if (event.type === "model.retry") retryEvents.push(event.data ?? {})
+    },
+  }
+
+  const result = await createNexumCodingLoop({
+    model,
+    tool,
+    permission,
+    sessions,
+    events,
+    maxModelRetries: 1,
+    retryDelayMs: 0,
+    maxRetryDelayMs: 5,
+  }).run({ sessionID: session.sessionID, text: "限流任务" })
+
+  expect(result.status).toBe("completed")
+  expect(attempts).toBe(2)
+  expect(retryEvents).toEqual([{ attempt: 1, maxRetries: 1, delayMs: 5, errorCode: "rate_limited" }])
+})
+
+test("does not retry a permanent model request error", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-loop-no-retry-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory })
+  let attempts = 0
+  const model: ModelPort = {
+    async *prompt() {
+      attempts += 1
+      throw new NexumModelError("invalid_request", "模型请求参数无效")
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return { ok: true, output: "unused" }
+    },
+  }
+  const permission: PermissionPort = {
+    async evaluate() {
+      return "allow"
+    },
+  }
+  const events: EventSink = { async publish() {} }
+
+  await expect(
+    createNexumCodingLoop({
+      model,
+      tool,
+      permission,
+      sessions,
+      events,
+      maxModelRetries: 3,
+      retryDelayMs: 0,
+    }).run({ sessionID: session.sessionID, text: "无效请求" }),
+  ).rejects.toThrow("模型请求参数无效")
+
+  expect(attempts).toBe(1)
+})
+
 test("compacts and resumes when the model reports context overflow", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-loop-overflow-"))
   temporaryDirectories.push(directory)

@@ -371,6 +371,7 @@ export interface NexumCodingLoopOptions {
   readonly maxSteps?: number
   readonly maxModelRetries?: number
   readonly retryDelayMs?: number
+  readonly maxRetryDelayMs?: number
   /** 模型无增量输出时仍向交互层发送思考心跳；设为 0 可关闭。 */
   readonly thinkingHeartbeatMs?: number
   readonly maxOutputContinuations?: number
@@ -761,6 +762,14 @@ class NexumCancellationError extends Error {
 const MAX_STEPS_PROMPT =
   "工具步骤预算已用尽。请基于当前上下文直接给出清晰、完整的阶段性结果和下一步建议，不要再调用工具。"
 const OUTPUT_CONTINUATION_PROMPT = "上一条回答因输出长度限制被截断，请从中断处继续，不要重复已经输出的内容。"
+const DEFAULT_MAX_RETRY_DELAY_MS = 4_000
+const RETRYABLE_MODEL_ERROR_CODES = new Set([
+  "network_error",
+  "timeout",
+  "rate_limited",
+  "upstream_error",
+  "unavailable",
+])
 
 function startThinkingHeartbeat(
   publish: (type: string, data?: Record<string, unknown>) => Promise<void>,
@@ -802,6 +811,7 @@ async function* promptWithRetry(
 ): AsyncGenerator<ModelChunk, void> {
   const maxRetries = Math.max(0, options.maxModelRetries ?? 2)
   const baseDelay = Math.max(0, options.retryDelayMs ?? 250)
+  const maxDelay = Math.max(0, options.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS)
   let retryCount = 0
   while (true) {
     let yielded = false
@@ -814,8 +824,13 @@ async function* promptWithRetry(
     } catch (error) {
       if (yielded || !isRetryableModelError(error) || retryCount >= maxRetries) throw error
       retryCount += 1
-      const delayMs = calculateRetryDelay(baseDelay, retryCount)
-      await publish("model.retry", { attempt: retryCount, maxRetries, delayMs })
+      const delayMs = calculateRetryDelay(baseDelay, retryCount, error, maxDelay)
+      await publish("model.retry", {
+        attempt: retryCount,
+        maxRetries,
+        delayMs,
+        ...(error instanceof NexumModelError ? { errorCode: error.code } : {}),
+      })
       if (delayMs > 0) await Bun.sleep(delayMs)
       throwIfCancelled(runState)
     }
@@ -829,7 +844,8 @@ async function* promptWithRetry(
  * @returns 是否允许自动重试
  */
 function isRetryableModelError(error: unknown): boolean {
-  return error instanceof NexumModelError && error.code === "unavailable"
+  if (!(error instanceof NexumModelError)) return false
+  return RETRYABLE_MODEL_ERROR_CODES.has(error.code)
 }
 
 /**
@@ -849,10 +865,14 @@ function isContextOverflowError(error: unknown): boolean {
  * @param attempt - 当前重试次数
  * @returns 本次等待时间
  */
-function calculateRetryDelay(baseDelay: number, attempt: number): number {
+function calculateRetryDelay(baseDelay: number, attempt: number, error: unknown, maxDelay: number): number {
+  if (maxDelay === 0) return 0
+  if (error instanceof NexumModelError && error.details.retryAfterMs !== undefined) {
+    return Math.min(maxDelay, Math.max(0, error.details.retryAfterMs))
+  }
   if (baseDelay === 0) return 0
-  const exponential = Math.min(4000, baseDelay * 2 ** (attempt - 1))
-  return Math.floor(exponential * (0.75 + Math.random() * 0.5))
+  const exponential = Math.min(maxDelay, baseDelay * 2 ** (attempt - 1))
+  return Math.min(maxDelay, Math.floor(exponential * (0.75 + Math.random() * 0.5)))
 }
 
 /** 在模型或工具边界检查取消信号。 */
@@ -1198,7 +1218,7 @@ export type {
   NexumModelConfigStore,
 } from "./model-config.js"
 export { NexumModelError } from "./model.js"
-export type { NexumFetch, NexumModelErrorCode } from "./model.js"
+export type { NexumFetch, NexumModelErrorCode, NexumModelErrorDetails } from "./model.js"
 export { createNexumModelProbePort, NexumModelProbeError } from "./model-probe.js"
 export type { NexumModelProbeMode, NexumModelProbeResult, NexumModelProbePort } from "./model-probe.js"
 export type {

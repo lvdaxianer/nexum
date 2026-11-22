@@ -55,6 +55,49 @@ test("classifies provider context-window errors for automatic compaction", async
   await expect(collect(model)).rejects.toMatchObject({ code: "context_overflow" })
 })
 
+test("classifies ordinary client errors as non-retryable invalid requests", async () => {
+  const config = createNexumModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () => new Response("invalid parameter", { status: 400 }),
+  })
+
+  await expect(collect(model)).rejects.toMatchObject({ code: "invalid_request" })
+})
+
+test("preserves rate-limit retry metadata from the provider response", async () => {
+  const config = createNexumModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () => new Response("too many requests", { status: 429, headers: { "retry-after": "3" } }),
+  })
+
+  await expect(collect(model)).rejects.toMatchObject({
+    code: "rate_limited",
+    details: { status: 429, retryAfterMs: 3_000 },
+  })
+})
+
+test("classifies upstream server failures as retryable errors", async () => {
+  const config = createNexumModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () =>
+      new Response(JSON.stringify({ error: { code: "overloaded" } }), {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      }),
+  })
+
+  await expect(collect(model)).rejects.toMatchObject({
+    code: "upstream_error",
+    details: { status: 503, providerCode: "overloaded" },
+  })
+})
+
 test("requests streaming and yields each SSE text delta as it arrives", async () => {
   const config = createNexumModelConfigStore()
   await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
