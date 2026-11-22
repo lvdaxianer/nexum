@@ -388,7 +388,10 @@ describe.serial("Headless UI smoke", () => {
       await page.getByRole("button", { name: "保存并创建 Session" }).click()
       await page.getByPlaceholder("描述下一步 Coding 任务…").fill("查看环境")
       await page.getByRole("button", { name: /发送 Prompt/ }).click()
-      await page.getByRole("button", { name: "允许一次" }).click()
+      const permissionPrompt = page.getByTestId("permission-prompt")
+      await expect(permissionPrompt).toContainText("需要你的确认")
+      await expect(permissionPrompt.getByRole("button", { name: "允许一次" })).toBeVisible()
+      await permissionPrompt.getByRole("button", { name: "允许一次" }).click()
 
       await expect(page.locator(".pill-completed")).toBeVisible()
       await expect(page.locator(".chat-message.user")).toContainText("查看环境")

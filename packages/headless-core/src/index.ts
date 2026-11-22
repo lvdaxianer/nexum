@@ -51,6 +51,7 @@ export type ModelMessage =
   | {
       readonly role: "assistant"
       readonly content?: string
+      readonly reasoningContent?: string
       readonly toolCalls?: readonly ModelToolCall[]
     }
   | { readonly role: "tool"; readonly toolCallID: string; readonly content: string }
@@ -69,6 +70,7 @@ export interface ModelPrompt {
 export interface ModelChunk {
   readonly type: "text" | "tool-call" | "question" | "completed"
   readonly content?: string
+  readonly reasoningContent?: string
   readonly toolCallID?: string
   readonly toolName?: string
   readonly toolInput?: Record<string, unknown>
@@ -490,6 +492,7 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
             ...messages,
             {
               role: "assistant",
+              ...(chunk.reasoningContent ? { reasoningContent: chunk.reasoningContent } : {}),
               toolCalls,
             },
           ]

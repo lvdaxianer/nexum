@@ -57,7 +57,17 @@ test("assembles fragmented streaming tool calls into a single chunk", async () =
   const config = createHeadlessModelConfigStore()
   await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
   const sseBody = [
-    { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_stream_1", type: "function", function: { name: "write", arguments: "" } }] } }] },
+    {
+      choices: [
+        {
+          index: 0,
+          delta: {
+            reasoning_content: "先调用写入工具。",
+            tool_calls: [{ index: 0, id: "call_stream_1", type: "function", function: { name: "write", arguments: "" } }],
+          },
+        },
+      ],
+    },
     { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"path":"notes.txt' } }] } }] },
     { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '","content":"hello"}' } }] } }] },
   ]
@@ -71,6 +81,7 @@ test("assembles fragmented streaming tool calls into a single chunk", async () =
   expect(await collect(model)).toEqual([
     {
       type: "tool-call",
+      reasoningContent: "先调用写入工具。",
       toolCalls: [{ id: "call_stream_1", name: "write", input: { path: "notes.txt", content: "hello" } }],
       toolCallID: "call_stream_1",
       toolName: "write",
@@ -182,4 +193,59 @@ test("sends tool definitions and parses an OpenAI-compatible function call", asy
     ],
     tool_choice: "auto",
   })
+})
+
+test("preserves reasoning content when continuing a thinking model tool call", async () => {
+  const config = createHeadlessModelConfigStore()
+  await config.update({
+    baseUrl: "https://model.example.com/v1",
+    model: "thinking-model",
+    credential: "test-credential",
+  })
+  const requestBodies: Record<string, unknown>[] = []
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async (_url, init) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: "",
+              reasoning_content: "先调用工具确认环境。",
+              tool_calls: [
+                {
+                  id: "call_shell_001",
+                  type: "function",
+                  function: { name: "shell", arguments: JSON.stringify({ command: "pwd" }) },
+                },
+              ],
+            },
+          },
+        ],
+      })
+    },
+  })
+
+  const first = []
+  for await (const chunk of model.prompt({ sessionID: "session-model", text: "查看目录" })) first.push(chunk)
+  const firstToolCall = first.find((chunk) => chunk.type === "tool-call")
+  if (firstToolCall?.type !== "tool-call") throw new Error("expected a tool call")
+
+  const messages = [
+    { role: "user" as const, content: "查看目录" },
+    {
+      role: "assistant" as const,
+      reasoningContent: firstToolCall.reasoningContent,
+      toolCalls: firstToolCall.toolCalls,
+    },
+    { role: "tool" as const, toolCallID: "call_shell_001", content: "/workspace" },
+  ]
+  for await (const _chunk of model.prompt({ sessionID: "session-model", text: "查看目录", messages })) {}
+
+  expect(requestBodies[1]?.messages).toMatchObject([
+    { role: "user", content: "查看目录" },
+    { role: "assistant", reasoning_content: "先调用工具确认环境。" },
+    { role: "tool", tool_call_id: "call_shell_001", content: "/workspace" },
+  ])
 })

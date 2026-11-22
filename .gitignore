@@ -35,6 +35,7 @@ target
 
 # Local dev files
 opencode-dev
+.headless/
 RELEASE_REVIEW.md
 logs/
 *.bun-build

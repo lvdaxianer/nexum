@@ -96,6 +96,7 @@ function App() {
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
   let streamController: AbortController | undefined
   let conversationBody: HTMLDivElement | undefined
+  let permissionPrompt: HTMLElement | undefined
   let permissionsSection: HTMLElement | undefined
   let questionsSection: HTMLElement | undefined
   let promptSequence = 0
@@ -1130,7 +1131,11 @@ function App() {
           </div>
           <div class="topbar-meta">
             <Show when={permissions().length > 0}>
-              <button type="button" class="attention-badge" onClick={() => scrollRailSection(permissionsSection)}>
+              <button
+                type="button"
+                class="attention-badge"
+                onClick={() => scrollRailSection(permissionPrompt ?? permissionsSection)}
+              >
                 ⚡ 权限 <span class="attention-count">{permissions().length}</span>
               </button>
             </Show>
@@ -1240,6 +1245,58 @@ function App() {
                 </button>
               </div>
             </div>
+            <Show when={chatView() === "chat" && permissions().length > 0}>
+              <section
+                class="permission-prompt"
+                data-testid="permission-prompt"
+                ref={(element) => (permissionPrompt = element)}
+                role="alert"
+                aria-live="assertive"
+                aria-label="待处理权限"
+              >
+                <div class="permission-prompt-head">
+                  <div>
+                    <span class="section-kicker">需要你的确认</span>
+                    <strong>Agent 暂停在这里，允许后才会继续执行</strong>
+                  </div>
+                  <span class="permission-prompt-count">{permissions().length} 项</span>
+                </div>
+                <div class="permission-prompt-list">
+                  <For each={permissions()}>
+                    {(request) => (
+                      <div class="permission-prompt-card">
+                        <div class="permission-prompt-copy">
+                          <span class="permission-action">{request.action}</span>
+                          <strong>{request.resource}</strong>
+                          <span>{request.reason || "此工具调用需要权限审批"}</span>
+                        </div>
+                        <div class="permission-actions">
+                          <button
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "allow_once")}
+                          >
+                            {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
+                          </button>
+                          <button
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "allow_always")}
+                          >
+                            始终允许
+                          </button>
+                          <button
+                            class="deny"
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "deny")}
+                          >
+                            拒绝
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </section>
+            </Show>
             <div
               class="conversation-body"
               ref={(element) => (conversationBody = element)}
@@ -1478,27 +1535,9 @@ function App() {
                             <strong>{request.resource}</strong>
                             <small>{request.reason}</small>
                           </div>
-                          <div class="permission-actions">
-                            <button
-                              disabled={Boolean(pendingDecisionID())}
-                              onClick={() => decide(request.id, "allow_once")}
-                            >
-                              {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
-                            </button>
-                            <button
-                              disabled={Boolean(pendingDecisionID())}
-                              onClick={() => decide(request.id, "allow_always")}
-                            >
-                              始终允许
-                            </button>
-                            <button
-                              class="deny"
-                              disabled={Boolean(pendingDecisionID())}
-                              onClick={() => decide(request.id, "deny")}
-                            >
-                              拒绝
-                            </button>
-                          </div>
+                          <button class="permission-jump" onClick={() => scrollRailSection(permissionPrompt)}>
+                            回到对话处理 →
+                          </button>
                         </div>
                       )}
                     </For>
@@ -1721,8 +1760,8 @@ function projectChatEvent(items: ChatItem[], event: ExperimentalHeadlessSessionE
       return upsert({
         id: `tool:${value("toolCallID")}`,
         kind: "execution",
-        title: `工具结果 · ${value("toolCallID") || "unknown"}`,
-        content: value("output") || (data.ok === false ? "工具执行失败" : "工具执行完成"),
+        title: `工具结果 · ${value("toolName") || value("toolCallID").slice(0, 12) || "工具"}`,
+        content: data.ok === false ? "工具执行失败，展开详情查看原因" : "工具执行完成，展开详情查看输出",
         detail,
         status: data.ok === false ? "failed" : "completed",
         localTime,

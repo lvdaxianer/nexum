@@ -91,7 +91,7 @@ export function createOpenAICompatibleModelPort(options: OpenAICompatibleModelPo
       const result = await readModelResult(response)
       if (result.content !== undefined) yield { type: "text", content: result.content }
       if (result.toolCalls.length > 0) {
-        yield toolCallChunk(result.toolCalls)
+        yield toolCallChunk(result.toolCalls, result.reasoningContent)
         return
       }
       yield { type: "completed" }
@@ -137,6 +137,7 @@ function serializeMessage(message: ModelMessage): Record<string, unknown> {
   return {
     role: "assistant",
     ...(message.content !== undefined ? { content: message.content } : { content: null }),
+    ...(message.reasoningContent !== undefined ? { reasoning_content: message.reasoningContent } : {}),
     ...(message.toolCalls
       ? {
           tool_calls: message.toolCalls.map((toolCall) => ({
@@ -153,11 +154,12 @@ function isEventStream(response: Response): boolean {
   return response.headers.get("content-type")?.includes("text/event-stream") ?? false
 }
 
-function toolCallChunk(toolCalls: readonly ModelToolCall[]): ModelChunk {
+function toolCallChunk(toolCalls: readonly ModelToolCall[], reasoningContent?: string): ModelChunk {
   const first = toolCalls[0]
   return {
     type: "tool-call",
     toolCalls,
+    ...(reasoningContent ? { reasoningContent } : {}),
     ...(toolCalls.length === 1 ? { toolCallID: first.id, toolName: first.name, toolInput: first.input } : {}),
   }
 }
@@ -178,6 +180,7 @@ async function* readStreamedModelResult(response: Response): AsyncGenerator<Mode
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   const pending = new Map<number, PendingToolCall>()
+  let reasoningContent = ""
   let buffer = ""
   let sawPayload = false
   let finished = false
@@ -204,6 +207,8 @@ async function* readStreamedModelResult(response: Response): AsyncGenerator<Mode
           const delta = streamDelta(parseStreamPayload(payload))
           const text = deltaText(delta)
           if (text) yield { type: "text", content: text }
+          const reasoning = delta?.reasoning_content
+          if (typeof reasoning === "string") reasoningContent += reasoning
           accumulateToolCallDeltas(delta, pending)
         }
       }
@@ -213,7 +218,7 @@ async function* readStreamedModelResult(response: Response): AsyncGenerator<Mode
   }
   const toolCalls = resolvePendingToolCalls(pending)
   if (toolCalls.length > 0) {
-    yield toolCallChunk(toolCalls)
+    yield toolCallChunk(toolCalls, reasoningContent || undefined)
     return
   }
   if (!sawPayload) throw new HeadlessModelError("invalid_response", "模型响应格式无效")
@@ -288,6 +293,7 @@ function parsePendingToolCall(value: PendingToolCall): ModelToolCall {
 
 interface ModelResult {
   readonly content?: string
+  readonly reasoningContent?: string
   readonly toolCalls: readonly ModelToolCall[]
 }
 
@@ -306,12 +312,14 @@ async function readModelResult(response: Response): Promise<ModelResult> {
     throw new HeadlessModelError("invalid_response", "模型响应格式无效")
   }
   const content = typeof first.message.content === "string" ? first.message.content : undefined
+  const reasoningContent =
+    typeof first.message.reasoning_content === "string" ? first.message.reasoning_content : undefined
   const rawToolCalls = first.message.tool_calls
-  if (rawToolCalls === undefined) return { content, toolCalls: [] }
+  if (rawToolCalls === undefined) return { content, reasoningContent, toolCalls: [] }
   if (!Array.isArray(rawToolCalls)) throw new HeadlessModelError("invalid_response", "模型工具调用格式无效")
 
   const toolCalls = rawToolCalls.map(parseToolCall)
-  return { content, toolCalls }
+  return { content, reasoningContent, toolCalls }
 }
 
 function parseToolCall(rawToolCall: unknown): ModelToolCall {
