@@ -159,9 +159,11 @@ test("keeps reasoning ordered across a tool boundary without mixing it into text
   const session = await sessions.create({ directory })
   const events: Array<{ type: string; data?: Record<string, unknown> }> = []
   const messageStore = createInMemoryMessageStore()
+  const prompts: Array<Parameters<ModelPort["prompt"]>[0]> = []
   let modelCalls = 0
   const model: ModelPort = {
     async *prompt(input) {
+      prompts.push(input)
       modelCalls += 1
       if (input.toolResults?.length) {
         yield { type: "reasoning", reasoningContent: "根据读取结果继续判断。" }
@@ -184,6 +186,15 @@ test("keeps reasoning ordered across a tool boundary without mixing it into text
   }).run({ sessionID: session.sessionID, text: "检查 README" })
 
   expect(modelCalls).toBe(2)
+  expect(prompts[1]?.messages).toEqual([
+    { role: "user", content: "检查 README" },
+    {
+      role: "assistant",
+      reasoningContent: "先读取 README。",
+      toolCalls: [{ id: "call_reasoning_order", name: "read", input: { path: "README.md" } }],
+    },
+    { role: "tool", toolCallID: "call_reasoning_order", content: "README 内容" },
+  ])
   expect(events.map((event) => event.type)).toEqual([
     "assistant.reasoning",
     "tool.request",
@@ -193,6 +204,12 @@ test("keeps reasoning ordered across a tool boundary without mixing it into text
     "session.completed",
   ])
   expect(events[0]?.data).toEqual({ content: "先读取 README。" })
+  expect(events[1]?.data).toMatchObject({
+    toolCallID: "call_reasoning_order",
+    toolName: "read",
+    input: { path: "README.md" },
+  })
+  expect(events[2]?.data).toMatchObject({ toolCallID: "call_reasoning_order", ok: true, output: "README 内容" })
   expect(events[3]?.data).toEqual({ content: "根据读取结果继续判断。" })
   expect(events[4]?.data).toEqual({ content: "检查完成。" })
   expect(await messageStore.load(session.sessionID)).toEqual([
