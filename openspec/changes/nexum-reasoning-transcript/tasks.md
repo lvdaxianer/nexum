@@ -2,9 +2,9 @@
 
 ## 1. Protocol 与 Server 事件契约
 
-- [ ] 1.1 在 `packages/nexum-protocol/src/index.ts` 导出完整的 `NEXUM_EVENT_TYPES` 常量和 `NexumEventType` 字面量联合，明确包含 `assistant.thinking`、`assistant.reasoning`、`assistant.text`；先补协议测试并验证测试在实现前失败。
-- [ ] 1.2 为 reasoning、thinking、assistant text 增加公开事件数据类型约束，并验证 `packages/nexum-protocol/test/protocol.test.ts` 能编译并通过。
-- [ ] 1.3 让 `packages/nexum-server/src/index.ts` 复用 Protocol 事件清单，补能力发现回归测试，并在 `packages/nexum-server` 目录运行 `bun test`。
+- [x] 1.1 在 `packages/nexum-protocol/src/index.ts` 导出完整的 `NEXUM_EVENT_TYPES` 常量和 `NexumEventType` 字面量联合，明确包含 `assistant.thinking`、`assistant.reasoning`、`assistant.text`；先补协议测试并验证测试在实现前失败。
+- [x] 1.2 为 reasoning、thinking、assistant text 增加公开事件数据类型约束，并验证 `packages/nexum-protocol/test/protocol.test.ts` 能编译并通过。
+- [x] 1.3 让 `packages/nexum-server/src/index.ts` 复用 Protocol 事件清单，补能力发现回归测试，并在 `packages/nexum-server` 目录运行 `bun test`。
 
 ## 2. Core 事件回归
 
