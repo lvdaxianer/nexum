@@ -548,6 +548,7 @@
       "dependencies": {
         "@nexum/adapters": "workspace:*",
         "@nexum/core": "workspace:*",
+        "@nexum/protocol": "workspace:*",
       },
       "devDependencies": {
         "@tsconfig/bun": "catalog:",
