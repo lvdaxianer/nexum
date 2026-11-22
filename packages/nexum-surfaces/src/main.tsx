@@ -47,7 +47,7 @@ const permissionModeOptions: ReadonlyArray<{
   { value: "balanced", icon: "🛡", label: "智能审批", description: "常规操作直接执行，仅风险操作请求批准" },
   { value: "full", icon: "⚡", label: "完全访问", description: "不再弹审批，危险操作仍由 Core 拦截询问" },
 ]
-type ChatItemKind = "user" | "assistant" | "execution" | "status"
+type ChatItemKind = "user" | "assistant" | "reasoning" | "execution" | "status"
 type ChatStatus = "streaming" | "running" | "waiting" | "completed" | "failed" | "cancelled"
 type ChatItem = {
   id: string
@@ -1484,34 +1484,31 @@ function App() {
                                 </span>
                               </Show>
                             </div>
-                            <Show
-                              when={item.thinking}
-                              fallback={
-                                <>
-                                  <MarkdownView
-                                    class="chat-copy"
-                                    content={item.content || (item.status === "streaming" ? "Agent 正在输出…" : "")}
-                                  />
-                                  <Show when={item.kind === "user" && (item.skillIDs?.length ?? 0) > 0}>
-                                    <div class="turn-chips">
-                                      <For each={item.skillIDs}>
-                                        {(id) => <span class="skill-chip">@{id}</span>}
-                                      </For>
-                                    </div>
-                                  </Show>
-                                </>
-                              }
-                            >
-                              <div class="thinking-card" role="status" aria-label="正在思考">
-                                <span class="thinking-orb" aria-hidden="true" />
-                                <strong>{item.content || item.thinkingStatus || "正在思考"}</strong>
-                                <span class="thinking-dots" aria-hidden="true">
-                                  <i>·</i>
-                                  <i>·</i>
-                                  <i>·</i>
-                                </span>
+                            <MarkdownView
+                              class="chat-copy"
+                              content={item.content || (item.status === "streaming" ? "Agent 正在输出…" : "")}
+                            />
+                            <Show when={item.kind === "user" && (item.skillIDs?.length ?? 0) > 0}>
+                              <div class="turn-chips">
+                                <For each={item.skillIDs}>
+                                  {(id) => <span class="skill-chip">@{id}</span>}
+                                </For>
                               </div>
                             </Show>
+                          </Match>
+                          <Match when={item.kind === "reasoning"}>
+                            <div class="reasoning-stream" aria-label="模型思考过程">
+                              <div class="reasoning-label">
+                                <span>{item.title}</span>
+                                <span class="turn-meta">{item.localTime}</span>
+                                <Show when={item.status === "streaming"}>
+                                  <span class="stream-cursor" aria-hidden="true">
+                                    ▍
+                                  </span>
+                                </Show>
+                              </div>
+                              <div class="reasoning-copy">{item.content}</div>
+                            </div>
                           </Match>
                           <Match when={item.kind === "execution"}>
                             <div
@@ -1554,7 +1551,18 @@ function App() {
                             </div>
                           </Match>
                           <Match when={item.kind === "status"}>
-                            <div class="turn-end">{item.content}</div>
+                            <Show
+                              when={item.thinking}
+                              fallback={<div class="turn-end">{item.content}</div>}
+                            >
+                              <div class="thinking-status" role="status" aria-label="正在思考">
+                                <span class="thinking-status-dot" aria-hidden="true" />
+                                <span>{item.content || item.thinkingStatus || "正在思考"}</span>
+                                <span class="thinking-status-cursor" aria-hidden="true">
+                                  ▍
+                                </span>
+                              </div>
+                            </Show>
                           </Match>
                         </Switch>
                       </article>
@@ -1920,9 +1928,10 @@ function appendChatItem(items: ChatItem[], item: ChatItem): ChatItem[] {
 function thinkingChatItem(sessionID: string, id = `thinking:${sessionID}`): ChatItem {
   return {
     id,
-    kind: "assistant",
-    title: "Agent",
+    kind: "status",
+    title: "Agent 思考",
     thinking: true,
+    content: "正在思考",
     status: "running",
     localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
   }
@@ -1939,6 +1948,17 @@ function updateChatItem(items: ChatItem[], id: string, patch: Partial<ChatItem>)
   return items.map((item) => (item.id === id ? { ...item, ...patch } : item))
 }
 
+function upsertChatItem(items: ChatItem[], item: ChatItem): ChatItem[] {
+  const existing = items.find((current) => current.id === item.id)
+  return existing ? updateChatItem(items, item.id, item) : appendChatItem(items, item)
+}
+
+function closeReasoning(items: ChatItem[], runID: string): ChatItem[] {
+  const last = items.at(-1)
+  if (last?.kind !== "reasoning" || !last.id.startsWith(`reasoning:${runID}:`)) return items
+  return updateChatItem(items, last.id, { status: "completed" })
+}
+
 /**
  * 将 Nexum SSE 事件投影为用户可读的聊天消息或执行卡片。
  * @param items 当前聊天条目
@@ -1951,20 +1971,19 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
   const detail = JSON.stringify(data, null, 2)
   const value = (key: string) => (typeof data[key] === "string" ? data[key] : "")
   const upsert = (item: ChatItem) => {
-    const existing = items.find((current) => current.id === item.id)
-    return existing ? updateChatItem(items, item.id, item) : appendChatItem(items, item)
+    return upsertChatItem(items, item)
   }
 
   switch (event.type) {
     case "assistant.thinking": {
-      const thinking = items.find((item) => item.kind === "assistant" && item.thinking)
+      const thinking = items.find((item) => item.kind === "status" && item.thinking)
       const elapsedMs = typeof data.elapsedMs === "number" ? data.elapsedMs : undefined
       const elapsed = elapsedMs === undefined ? "" : ` · 已等待 ${Math.max(1, Math.round(elapsedMs / 1000))}s`
       return upsert({
         id: thinking?.id ?? `thinking:${event.runID}`,
-        kind: "assistant",
+        kind: "status",
         title: "Agent 思考",
-        content: thinking?.content,
+        content: value("message") || "正在思考",
         thinking: true,
         thinkingStatus: `${value("message") || "模型正在思考"}${elapsed}`,
         status: "streaming",
@@ -1973,51 +1992,40 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
       })
     }
     case "assistant.reasoning": {
-      const thinking = items.find((item) => item.kind === "assistant" && item.thinking)
-      if (thinking) {
-        return updateChatItem(items, thinking.id, {
-          content: `${thinking.content ?? ""}${value("content")}`,
-          thinkingStatus: "模型思考中",
-          status: "streaming",
-          localTime,
-          eventType: event.type,
-        })
-      }
-      return appendChatItem(items, {
-        id: `thinking:${event.runID}`,
-        kind: "assistant",
-        title: "Agent 思考",
-        content: value("content"),
-        thinking: true,
-        thinkingStatus: "模型思考中",
-        status: "streaming",
-        localTime,
-        eventType: event.type,
-      })
-    }
-    case "assistant.text": {
-      const idPrefix = `assistant:${event.runID}:`
-      const last = items.at(-1)
-      if (last?.kind === "assistant" && last.id.startsWith(idPrefix)) {
-        return updateChatItem(items, last.id, {
+      const activeItems = items.filter((item) => !item.thinking)
+      const last = activeItems.at(-1)
+      const reasoningPrefix = `reasoning:${event.runID}:`
+      if (last?.kind === "reasoning" && last.id.startsWith(reasoningPrefix)) {
+        return updateChatItem(activeItems, last.id, {
           content: `${last.content ?? ""}${value("content")}`,
           status: "streaming",
           localTime,
           eventType: event.type,
         })
       }
-      const thinking = items.find((item) => item.kind === "assistant" && item.thinking)
-      if (thinking) {
-        return updateChatItem(items, thinking.id, {
-          id: `${idPrefix}${event.sequence}`,
-          content: value("content"),
-          thinking: false,
+      return appendChatItem(activeItems, {
+        id: `${reasoningPrefix}${event.sequence}`,
+        kind: "reasoning",
+        title: "模型思考",
+        content: value("content"),
+        status: "streaming",
+        localTime,
+        eventType: event.type,
+      })
+    }
+    case "assistant.text": {
+      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
+      const idPrefix = `assistant:${event.runID}:`
+      const last = activeItems.at(-1)
+      if (last?.kind === "assistant" && last.id.startsWith(idPrefix)) {
+        return updateChatItem(activeItems, last.id, {
+          content: `${last.content ?? ""}${value("content")}`,
           status: "streaming",
           localTime,
           eventType: event.type,
         })
       }
-      return appendChatItem(items, {
+      return appendChatItem(activeItems, {
         id: `${idPrefix}${event.sequence}`,
         kind: "assistant",
         title: "Agent",
@@ -2027,8 +2035,9 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
         eventType: event.type,
       })
     }
-    case "tool.request":
-      return upsert({
+    case "tool.request": {
+      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
+      return upsertChatItem(activeItems, {
         id: `tool:${value("toolCallID")}`,
         kind: "execution",
         title: `工具调用 · ${value("toolName") || value("action") || "unknown"}`,
@@ -2038,8 +2047,10 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
         localTime,
         eventType: event.type,
       })
-    case "tool.result":
-      return upsert({
+    }
+    case "tool.result": {
+      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
+      return upsertChatItem(activeItems, {
         id: `tool:${value("toolCallID")}`,
         kind: "execution",
         title: `工具结果 · ${value("toolName") || value("toolCallID").slice(0, 12) || "工具"}`,
@@ -2049,6 +2060,7 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
         localTime,
         eventType: event.type,
       })
+    }
     case "permission.requested":
       return upsert({
         id: `permission:${value("requestID")}`,
@@ -2133,14 +2145,11 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
         localTime,
         eventType: event.type,
       })
-    case "session.completed":
+    case "session.completed": {
+      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
       return appendChatItem(
-        items.map((item) =>
-          item.id.startsWith(`assistant:${event.runID}:`)
-            ? { ...item, status: "completed" }
-            : item.thinking
-              ? { ...item, thinking: false, content: "本轮任务已完成", status: "completed" }
-              : item,
+        activeItems.map((item) =>
+          item.id.startsWith(`assistant:${event.runID}:`) ? { ...item, status: "completed" } : item,
         ),
         {
           id: `session:${event.runID}:completed`,
@@ -2152,40 +2161,31 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
           eventType: event.type,
         },
       )
-    case "session.failed":
-      return appendChatItem(
-        items.map((item) =>
-          item.thinking
-            ? { ...item, thinking: false, content: value("message") || "Core 返回运行失败", status: "failed" }
-            : item,
-        ),
-        {
-          id: `session:${event.runID}:failed`,
-          kind: "status",
-          title: "运行失败",
-          content: value("message") || "Core 返回运行失败",
-          status: "failed",
-          localTime,
-          eventType: event.type,
-        },
-      )
-    case "session.cancelled":
-      return appendChatItem(
-        items.map((item) =>
-          item.thinking
-            ? { ...item, thinking: false, content: "本轮运行已停止，可以继续输入新的 Prompt", status: "cancelled" }
-            : item,
-        ),
-        {
-          id: `session:${event.runID}:cancelled`,
-          kind: "status",
-          title: "运行已取消",
-          content: "本轮运行已停止，可以继续输入新的 Prompt",
-          status: "cancelled",
-          localTime,
-          eventType: event.type,
-        },
-      )
+    }
+    case "session.failed": {
+      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
+      return appendChatItem(activeItems, {
+        id: `session:${event.runID}:failed`,
+        kind: "status",
+        title: "运行失败",
+        content: value("message") || "Core 返回运行失败",
+        status: "failed",
+        localTime,
+        eventType: event.type,
+      })
+    }
+    case "session.cancelled": {
+      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
+      return appendChatItem(activeItems, {
+        id: `session:${event.runID}:cancelled`,
+        kind: "status",
+        title: "运行已取消",
+        content: "本轮运行已停止，可以继续输入新的 Prompt",
+        status: "cancelled",
+        localTime,
+        eventType: event.type,
+      })
+    }
     default:
       return items
   }

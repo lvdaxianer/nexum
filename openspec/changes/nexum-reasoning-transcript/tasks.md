@@ -12,9 +12,9 @@
 
 ## 3. UI 连续 transcript
 
-- [ ] 3.1 先更新 `packages/nexum-surfaces/test/permission.smoke.spec.ts`，把旧的思考卡片断言改为连续 reasoning transcript、工具行与最终回答分离，并验证新断言在实现前失败。
-- [ ] 3.2 重构 `packages/nexum-surfaces/src/main.tsx` 的聊天投影：增加独立 `reasoning` 条目，合并同一 run 的增量，按后续事件关闭段，保持 eventID 去重和底部跟随；验证 reasoning 不会进入最终 assistant 正文。
-- [ ] 3.3 更新 UI 样式为弱化的连续流文本和实时光标，移除卡片式思考动画；运行 `packages/nexum-surfaces` 的 typecheck 与定向 Playwright smoke，并检查窄宽度和滚动时仍可读。
+- [x] 3.1 先更新 `packages/nexum-surfaces/test/permission.smoke.spec.ts`，把旧的思考卡片断言改为连续 reasoning transcript、工具行与最终回答分离，并验证新断言在实现前失败。
+- [x] 3.2 重构 `packages/nexum-surfaces/src/main.tsx` 的聊天投影：增加独立 `reasoning` 条目，合并同一 run 的增量，按后续事件关闭段，保持 eventID 去重和底部跟随；验证 reasoning 不会进入最终 assistant 正文。
+- [x] 3.3 更新 UI 样式为弱化的连续流文本和实时光标，移除卡片式思考动画；运行 `packages/nexum-surfaces` 的 typecheck 与定向 Playwright smoke，并检查窄宽度和滚动时仍可读。
 
 ## 4. 集成验证
 

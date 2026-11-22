@@ -6,16 +6,14 @@ import { tmpdir } from "node:os"
 import {
   createNexumCodingLoop,
   createNexumPermissionBroker,
-  createNexumProjectContextPort,
-  createNexumQuestionPort,
   createNexumSessionService,
   createNexumSkillInvocationPort,
-  createNexumSkillRegistry,
   type ContextCompactionPort,
   type ModelPort,
   type PermissionPort,
   type ToolPort,
 } from "@nexum/core"
+import { createNexumProjectContextPort, createNexumQuestionPort, createNexumSkillRegistry } from "../../nexum-adapters/src/index.ts"
 import { createNexumEventHub } from "../../nexum-server/src/events.ts"
 import { startNexumServer, type NexumServer } from "../../nexum-server/src/index.ts"
 
@@ -181,7 +179,7 @@ describe.serial("Nexum UI smoke", () => {
     await page.getByLabel("工作目录").fill(invalidDirectory)
     await page.getByRole("button", { name: "保存并创建 Session" }).click()
 
-    await expect(page.locator("#session-directory-error")).toHaveText("工作目录不存在或不可访问")
+    await expect(page.locator("#session-directory-error")).toHaveText("工作目录不存在或不可读写")
     await expect(page.getByLabel("工作目录")).toHaveValue(invalidDirectory)
     await expect(page.getByRole("button", { name: "保存并创建 Session" })).toBeEnabled()
   })
@@ -818,7 +816,7 @@ describe.serial("Nexum UI smoke", () => {
     await expect(page.locator(".pill-completed")).toBeVisible()
   })
 
-  test.serial("shows a thinking animation until the first assistant event arrives", { timeout: 15_000 }, async () => {
+  test.serial("streams reasoning as a transcript before the final assistant response", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
     const sessions = createNexumSessionService()
@@ -833,11 +831,27 @@ describe.serial("Nexum UI smoke", () => {
         await runReleased
         const runID = crypto.randomUUID()
         await eventHub.publish({
-          eventID: `thinking-${runID}`,
+          eventID: `reasoning-1-${runID}`,
+          runID,
+          sessionID: input.sessionID,
+          type: "assistant.reasoning",
+          sequence: 1,
+          data: { content: "先检查仓库源。" },
+        })
+        await eventHub.publish({
+          eventID: `reasoning-2-${runID}`,
+          runID,
+          sessionID: input.sessionID,
+          type: "assistant.reasoning",
+          sequence: 2,
+          data: { content: "确认后再继续。" },
+        })
+        await eventHub.publish({
+          eventID: `text-${runID}`,
           runID,
           sessionID: input.sessionID,
           type: "assistant.text",
-          sequence: 1,
+          sequence: 3,
           data: { content: "延迟回答已到达" },
         })
         await sessions.setStatus(input.sessionID, "completed")
@@ -846,7 +860,7 @@ describe.serial("Nexum UI smoke", () => {
           runID,
           sessionID: input.sessionID,
           type: "session.completed",
-          sequence: 2,
+          sequence: 4,
         })
         return (await sessions.get(input.sessionID))!
       },
@@ -872,10 +886,13 @@ describe.serial("Nexum UI smoke", () => {
     await page.getByRole("button", { name: /发送 Prompt/ }).click()
 
     await expect(page.getByText("正在思考", { exact: true })).toBeVisible()
-    await expect(page.locator(".thinking-dots")).toBeVisible()
     releaseRun?.()
+    await expect(page.locator(".chat-message.reasoning")).toContainText("先检查仓库源。确认后再继续。")
+    await expect(page.locator(".chat-message.reasoning")).toHaveCount(1)
     await expect(page.locator(".chat-message.assistant")).toContainText("延迟回答已到达")
-    await expect(page.getByText("正在思考", { exact: true })).toHaveCount(0)
+    await expect(page.locator(".chat-message.assistant")).not.toContainText("先检查仓库源")
+    await expect(page.locator(".thinking-card")).toHaveCount(0)
+    await expect(page.locator(".thinking-status")).toHaveCount(0)
   })
 })
 
