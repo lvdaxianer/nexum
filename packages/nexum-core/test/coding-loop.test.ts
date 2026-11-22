@@ -152,6 +152,61 @@ test("publishes a thinking heartbeat while the model is silent", async () => {
   expect(events.at(-1)?.type).toBe("session.completed")
 })
 
+test("keeps reasoning ordered across a tool boundary without mixing it into text events", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-loop-reasoning-order-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory })
+  const events: Array<{ type: string; data?: Record<string, unknown> }> = []
+  const messageStore = createInMemoryMessageStore()
+  let modelCalls = 0
+  const model: ModelPort = {
+    async *prompt(input) {
+      modelCalls += 1
+      if (input.toolResults?.length) {
+        yield { type: "reasoning", reasoningContent: "根据读取结果继续判断。" }
+        yield { type: "text", content: "检查完成。" }
+        yield { type: "completed" }
+        return
+      }
+      yield { type: "reasoning", reasoningContent: "先读取 README。" }
+      yield { type: "tool-call", toolCallID: "call_reasoning_order", toolName: "read", toolInput: { path: "README.md" } }
+    },
+  }
+
+  await createNexumCodingLoop({
+    model,
+    tool: { async execute() { return { ok: true, output: "README 内容" } } },
+    permission: { async evaluate() { return "allow" } },
+    sessions,
+    events: { async publish(event) { events.push({ type: event.type, data: event.data }) } },
+    messageStore,
+  }).run({ sessionID: session.sessionID, text: "检查 README" })
+
+  expect(modelCalls).toBe(2)
+  expect(events.map((event) => event.type)).toEqual([
+    "assistant.reasoning",
+    "tool.request",
+    "tool.result",
+    "assistant.reasoning",
+    "assistant.text",
+    "session.completed",
+  ])
+  expect(events[0]?.data).toEqual({ content: "先读取 README。" })
+  expect(events[3]?.data).toEqual({ content: "根据读取结果继续判断。" })
+  expect(events[4]?.data).toEqual({ content: "检查完成。" })
+  expect(await messageStore.load(session.sessionID)).toEqual([
+    { role: "user", content: "检查 README" },
+    {
+      role: "assistant",
+      reasoningContent: "先读取 README。",
+      toolCalls: [{ id: "call_reasoning_order", name: "read", input: { path: "README.md" } }],
+    },
+    { role: "tool", toolCallID: "call_reasoning_order", content: "README 内容" },
+    { role: "assistant", content: "检查完成。", reasoningContent: "根据读取结果继续判断。" },
+  ])
+})
+
 test("continues the model conversation with the assistant tool call and tool result", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-loop-conversation-"))
   temporaryDirectories.push(directory)
