@@ -67,13 +67,14 @@ test("gives events a run identity and keeps sequence monotonic across prompts", 
   status = "idle"
   await loop.run({ sessionID: session.sessionID, text: "第二次" })
 
-  expect(events).toHaveLength(4)
+  expect(events).toHaveLength(6)
   expect(events[0]?.sessionID).toBe(session.sessionID)
   expect(events[0]?.runID).toBeString()
   expect(events[1]?.runID).toBe(events[0]?.runID)
-  expect(events[2]?.runID).toBeString()
-  expect(events[2]?.runID).not.toBe(events[0]?.runID)
-  expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4])
+  expect(events[2]?.runID).toBe(events[0]?.runID)
+  expect(events[3]?.runID).toBeString()
+  expect(events[3]?.runID).not.toBe(events[0]?.runID)
+  expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6])
   expect(events.every((event) => event.eventID.length > 0 && !Number.isNaN(Date.parse(event.occurredAt)))).toBe(true)
 })
 
@@ -126,5 +127,5 @@ test("continues event sequence after loading the persisted session cursor", asyn
 
   await loop.run({ sessionID: session.sessionID, text: "继续" })
 
-  expect(events.map((event) => event.sequence)).toEqual([8, 9, 10])
+  expect(events.map((event) => event.sequence)).toEqual([8, 9, 10, 11])
 })

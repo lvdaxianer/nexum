@@ -65,7 +65,7 @@ test("cancels a waiting run before its next tool executes", async () => {
   expect(completed.status).toBe("cancelled")
   expect(finalSession?.status).toBe("cancelled")
   expect(executedTools).toBe(0)
-  expect(events).toEqual(["assistant.text", "session.cancelled", "run.settled"])
+  expect(events).toEqual(["model.attempt", "assistant.text", "session.cancelled", "run.settled"])
 
   await rm(directory, { recursive: true, force: true })
 })
@@ -101,6 +101,7 @@ test("marks model failures as terminal failed sessions", async () => {
 
   expect((await sessions.get(session.sessionID))?.status).toBe("failed")
   expect(events).toEqual([
+    { type: "model.attempt", data: { attempt: 1, maxRetries: 2 } },
     { type: "session.failed", data: { message: "模型不可达" } },
     { type: "run.settled", data: { result: "failed" } },
   ])
@@ -137,6 +138,6 @@ test("marks tool failures as terminal failed sessions", async () => {
   await expect(loop.run({ sessionID: session.sessionID, text: "执行命令" })).rejects.toThrow("工具执行失败")
 
   expect((await sessions.get(session.sessionID))?.status).toBe("failed")
-  expect(events).toEqual(["tool.request", "session.failed", "run.settled"])
+  expect(events).toEqual(["model.attempt", "tool.request", "session.failed", "run.settled"])
   await rm(directory, { recursive: true, force: true })
 })

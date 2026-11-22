@@ -43,7 +43,7 @@ test("publishes one settled event after a model timeout", async () => {
   )
 
   await expect(loop.run({ sessionID: session.sessionID, text: "超时任务" })).rejects.toMatchObject({ code: "timeout" })
-  expect(events.map((event) => event.type)).toEqual(["session.failed", "run.settled"])
+  expect(events.map((event) => event.type)).toEqual(["model.attempt", "session.failed", "run.settled"])
   expect(events.at(-1)?.data).toEqual({ result: "failed" })
   expect((await sessions.get(session.sessionID))?.status).toBe("failed")
   await rm(directory, { recursive: true, force: true })
@@ -62,7 +62,7 @@ test("treats the run deadline as a failed timeout instead of cancellation", asyn
   const result = await loop.run({ sessionID: session.sessionID, text: "运行截止" }).catch((error) => error)
 
   expect(result).toMatchObject({ code: "timeout" })
-  expect(events).toEqual(["session.failed", "run.settled"])
+  expect(events).toEqual(["model.attempt", "session.failed", "run.settled"])
   expect((await sessions.get(session.sessionID))?.status).toBe("failed")
   await rm(directory, { recursive: true, force: true })
 })
@@ -95,7 +95,7 @@ test("times out a hanging tool without accepting its late result", async () => {
 
   await expect(loop.run({ sessionID: session.sessionID, text: "工具超时" })).rejects.toMatchObject({ code: "timeout" })
   expect(executed).toBe(1)
-  expect(events).toEqual(["tool.request", "session.failed", "run.settled"])
+  expect(events).toEqual(["model.attempt", "tool.request", "session.failed", "run.settled"])
   await rm(directory, { recursive: true, force: true })
 })
 

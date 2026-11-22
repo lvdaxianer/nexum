@@ -1,5 +1,6 @@
 import {
   NEXUM_API_PREFIX,
+  NEXUM_EXPERIMENTAL_API_PREFIX,
   NEXUM_PROTOCOL_VERSION,
   type JsonObject,
   type NexumCapabilities,
@@ -61,6 +62,8 @@ export const Nexum = {
     const baseUrl = (options.baseUrl ?? "http://127.0.0.1:4097").replace(/\/$/, "")
     const fetcher = options.fetch ?? globalThis.fetch
     const request = <T>(path: string, init?: RequestInit) => requestJson<T>(fetcher, `${baseUrl}${NEXUM_API_PREFIX}${path}`, init)
+    const experimentalRequest = <T>(path: string, init?: RequestInit) =>
+      requestJson<T>(fetcher, `${baseUrl}${NEXUM_EXPERIMENTAL_API_PREFIX}${path}`, init)
 
     return {
       capabilities: () => request<NexumCapabilities>("/capabilities"),
@@ -87,6 +90,11 @@ export const Nexum = {
               request<{ readonly status: "accepted" }>(`/session/${encodeURIComponent(input.sessionID)}/prompt`, {
                 method: "POST",
                 body: JSON.stringify({ text: input.text }),
+              }),
+            continue: (input: { readonly sessionID: string }) =>
+              experimentalRequest<{ readonly status: "accepted" }>(`/session/${encodeURIComponent(input.sessionID)}/continue`, {
+                method: "POST",
+                body: "{}",
               }),
             cancel: (input: { readonly sessionID: string }) =>
               request<{ readonly status: "cancelled" }>(`/session/${encodeURIComponent(input.sessionID)}/cancel`, { method: "POST" }),

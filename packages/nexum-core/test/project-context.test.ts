@@ -114,11 +114,13 @@ test("restores project context after compaction before the next model step", asy
   ])
   expect(eventTypes).toEqual([
     "context.project.loaded",
+    "model.attempt",
     "tool.request",
     "tool.result",
     "context.compaction.started",
     "context.compaction.completed",
     "context.project.loaded",
+    "model.attempt",
     "session.completed",
     "run.settled",
   ])

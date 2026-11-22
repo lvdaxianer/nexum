@@ -65,16 +65,18 @@ test("runs model text, tool request, tool result, continuation, and completion i
   expect(completed.status).toBe("completed")
   expect(prompts).toEqual(["请读取 README.md", "continuation"])
   expect(events.map((event) => event.type)).toEqual([
+    "model.attempt",
     "assistant.text",
     "tool.request",
     "tool.result",
+    "model.attempt",
     "assistant.text",
     "session.completed",
     "run.settled",
   ])
-  expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6])
-  expect(events[1]?.data).toMatchObject({ toolName: "read", input: { path: "README.md" } })
-  expect(events[2]?.data).toMatchObject({ ok: true, output: "README 内容" })
+  expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+  expect(events[2]?.data).toMatchObject({ toolName: "read", input: { path: "README.md" } })
+  expect(events[3]?.data).toMatchObject({ ok: true, output: "README 内容" })
   expect(permissionRequests[0]).toMatchObject({ action: "read", resource: "README.md" })
 })
 
@@ -110,13 +112,14 @@ test("publishes streamed reasoning without persisting it as visible assistant te
   await loop.run({ sessionID: session.sessionID, text: "部署项目" })
 
   expect(events.map((event) => event.type)).toEqual([
+    "model.attempt",
     "assistant.reasoning",
     "assistant.reasoning",
     "assistant.text",
     "session.completed",
     "run.settled",
   ])
-  expect(events[0]?.data).toEqual({ content: "先检查部署环境。" })
+  expect(events[1]?.data).toEqual({ content: "先检查部署环境。" })
   expect(await messageStore.load(session.sessionID)).toEqual([
     { role: "user", content: "部署项目" },
     { role: "assistant", content: "我会先检查环境。", reasoningContent: "先检查部署环境。再执行构建。" },
@@ -198,23 +201,25 @@ test("keeps reasoning ordered across a tool boundary without mixing it into text
     { role: "tool", toolCallID: "call_reasoning_order", content: "README 内容" },
   ])
   expect(events.map((event) => event.type)).toEqual([
+    "model.attempt",
     "assistant.reasoning",
     "tool.request",
     "tool.result",
+    "model.attempt",
     "assistant.reasoning",
     "assistant.text",
     "session.completed",
     "run.settled",
   ])
-  expect(events[0]?.data).toEqual({ content: "先读取 README。" })
-  expect(events[1]?.data).toMatchObject({
+  expect(events[1]?.data).toEqual({ content: "先读取 README。" })
+  expect(events[2]?.data).toMatchObject({
     toolCallID: "call_reasoning_order",
     toolName: "read",
     input: { path: "README.md" },
   })
-  expect(events[2]?.data).toMatchObject({ toolCallID: "call_reasoning_order", ok: true, output: "README 内容" })
-  expect(events[3]?.data).toEqual({ content: "根据读取结果继续判断。" })
-  expect(events[4]?.data).toEqual({ content: "检查完成。" })
+  expect(events[3]?.data).toMatchObject({ toolCallID: "call_reasoning_order", ok: true, output: "README 内容" })
+  expect(events[5]?.data).toEqual({ content: "根据读取结果继续判断。" })
+  expect(events[6]?.data).toEqual({ content: "检查完成。" })
   expect(await messageStore.load(session.sessionID)).toEqual([
     { role: "user", content: "检查 README" },
     {
@@ -770,7 +775,7 @@ test("caps provider retry-after metadata and exposes the classified error", asyn
 
   expect(result.status).toBe("completed")
   expect(attempts).toBe(2)
-  expect(retryEvents).toEqual([{ attempt: 1, maxRetries: 1, delayMs: 5, errorCode: "rate_limited" }])
+  expect(retryEvents).toEqual([{ attempt: 1, maxRetries: 1, delayMs: 5, errorCode: "rate_limited", willRetry: true }])
 })
 
 test("does not retry a permanent model request error", async () => {
@@ -852,8 +857,10 @@ test("compacts and resumes when the model reports context overflow", async () =>
   expect(modelCalls).toBe(2)
   expect(compactCalls).toBe(1)
   expect(eventTypes).toEqual([
+    "model.attempt",
     "context.compaction.started",
     "context.compaction.completed",
+    "model.attempt",
     "assistant.text",
     "session.completed",
     "run.settled",
