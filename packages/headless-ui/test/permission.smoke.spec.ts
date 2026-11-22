@@ -407,7 +407,7 @@ describe.serial("Headless UI smoke", () => {
   )
 
   test.serial(
-    "saves an action-agnostic policy without an Action dimension",
+    "applies a permission mode as action-agnostic global rules",
     { timeout: 20_000 },
     async () => {
       browser = await chromium.launch({ headless: true })
@@ -428,47 +428,38 @@ describe.serial("Headless UI smoke", () => {
       await page.getByRole("button", { name: "保存并创建 Session" }).click()
       await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
 
-      await openDrawer(page, /权限策略/)
-      const drawer = page.getByRole("dialog")
-      await expect(drawer.getByLabel("Resource")).toBeVisible()
-      await expect(drawer.getByRole("group", { name: "Action" })).toHaveCount(0)
-      await expect(drawer.getByText("Action", { exact: true })).toHaveCount(0)
-      await expect(drawer.getByRole("button", { name: /^shell/ })).toHaveCount(0)
+      await page.locator(".app-sidebar").getByRole("button", { name: /权限策略/ }).click()
+      const panel = page.locator(".policy-popover")
+      await expect(panel.getByRole("radio", { name: /每次询问/ })).toBeVisible()
+      await expect(panel.getByRole("radio", { name: /完全访问/ })).toBeVisible()
 
-      await drawer.getByLabel("Resource").fill("bun test")
-      await drawer.getByRole("button", { name: /^始终允许/ }).click()
-      await drawer.getByRole("button", { name: /^全局默认/ }).click()
-      await drawer.getByRole("button", { name: "保存策略" }).click()
-      await expect(drawer.getByText(/策略已保存：bun test/)).toBeVisible()
+      await panel.getByRole("radio", { name: /完全访问/ }).click()
+      await expect(page.getByText("权限模式已切换：完全访问")).toBeVisible()
 
       expect(policyWrites).toEqual([
-        { method: "POST", body: { action: "*", resource: "bun test", effect: "allow", scope: "global" } },
+        { method: "POST", body: { action: "*", resource: "*", effect: "allow", scope: "global" } },
       ])
-
-      const card = drawer.locator(".permission-card")
-      await expect(card).toHaveCount(1)
-      await expect(card).toContainText("bun test")
-      await expect(card).toContainText("始终允许")
-      await expect(card).toContainText("全局默认")
-      await expect(card).not.toContainText("shell")
 
       const persisted = (await (
         await fetch(new URL("/api/experimental/headless/permission/policy", apiServer!.url))
       ).json()) as { data: { rules: unknown[] } }
       expect(persisted.data.rules).toMatchObject([
-        { action: "*", resource: "bun test", effect: "allow", scope: "global" },
+        { action: "*", resource: "*", effect: "allow", scope: "global" },
       ])
 
-      await drawer.getByRole("button", { name: "修改" }).click()
-      await drawer.getByLabel("Resource").fill("bun test --watch")
-      await drawer.getByRole("button", { name: "保存修改" }).click()
-      await expect(drawer.getByText(/策略已保存：bun test --watch/)).toBeVisible()
-      expect(policyWrites[1]).toEqual({ method: "PUT", body: { resource: "bun test --watch", effect: "allow" } })
+      await page.locator(".app-sidebar").getByRole("button", { name: /权限策略/ }).click()
+      await page.locator(".policy-popover").getByRole("radio", { name: /智能审批/ }).click()
+      await expect(page.getByText("权限模式已切换：智能审批")).toBeVisible()
 
-      await drawer.getByRole("button", { name: "删除" }).click()
-      await expect(page.getByRole("alertdialog")).toContainText("bun test --watch")
-      await page.getByRole("button", { name: "确认删除策略" }).click()
-      await expect(drawer.getByText("还没有权限策略，所有工具调用都会逐次询问。")).toBeVisible()
+      expect(policyWrites.slice(1)).toEqual([
+        { method: "POST", body: { action: "*", resource: "*", effect: "allow", scope: "global" } },
+        { method: "POST", body: { action: "*", resource: "rm *", effect: "ask", scope: "global" } },
+        { method: "POST", body: { action: "*", resource: "sudo *", effect: "ask", scope: "global" } },
+        { method: "POST", body: { action: "*", resource: "mv *", effect: "ask", scope: "global" } },
+        { method: "POST", body: { action: "*", resource: "dd *", effect: "ask", scope: "global" } },
+        { method: "POST", body: { action: "*", resource: "chmod *", effect: "ask", scope: "global" } },
+        { method: "POST", body: { action: "*", resource: "chown *", effect: "ask", scope: "global" } },
+      ])
     },
   )
 
