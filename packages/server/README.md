@@ -1,6 +1,6 @@
 # @opencode/server
 
-`@opencode/server` 是完整 OpenCode Server 的运行时服务组合，负责路由、鉴权、事件、文件和集成服务。它服务于原生 OpenCode 应用；Headless POC 的独立入口见 [`headless-server`](../headless-server/README.md)。
+`@opencode/server` 是完整 OpenCode Server 的运行时服务组合，负责路由、鉴权、事件、文件和集成服务。它服务于原生 OpenCode 应用；Nexum 的独立 HTTP/SSE 入口见 [`nexum-server`](../nexum-server/README.md)。
 
 ## 目录职责
 

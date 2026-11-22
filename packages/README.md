@@ -1,48 +1,69 @@
-# packages
+# Nexum 与 OpenCode Workspace 包
 
-`packages/` 是 OpenCode 的 workspace package 集合。每个子目录对应一个可独立理解、测试或构建的模块；包之间通过 `package.json` 的 workspace 依赖连接。
+`packages/` 同时承载 Nexum Runtime 和原 OpenCode 产品。两者有明确边界：Nexum 复用经过验证的 Agent 运行语义，但以 `@nexum/*` 作为独立的组合式模块出口；原 OpenCode 包继续服务原产品的 CLI、TUI、Desktop 和完整应用链路。
 
-## 核心链路
+## Nexum 包
+
+| 包 | 定位 | 主要内容 |
+| --- | --- | --- |
+| `nexum-core` | 基础层 | Coding Loop、Session、Permission、Question、Context、Skill、Memory/MCP/Host/Model/Store 端口和领域语义 |
+| `nexum-adapters` | 默认实现与组合层 | OpenAI-compatible Model、文件/内存 Store、本地 Host、Tools、Skill、Event、Memory、MCP 和 Runtime Composer |
+| `nexum-protocol` | 协议层 | `nexum.runtime.v1`、JSON Envelope、能力发现、Session、交互和事件模型 |
+| `nexum-client` | 协议层 | HTTP/SSE 协议客户端、响应校验、错误归一化和事件消费 |
+| `nexum-server` | 协议绑定层 | 将已组合 Runtime 暴露为 HTTP/SSE，不在 Server 内隐式创建业务实现 |
+| `nexum-surfaces` | 应用层 | 可替换的 Web 参考 Surface，负责把协议事件投影为聊天、卡片、抽屉和状态视图 |
+| `nexum-test` | 验证层 | 跨层 POC、文件持久化、重启恢复和可启动 Test Workbench；不作为生产依赖 |
+
+### Nexum 依赖方向
 
 ```text
-任意 UI → headless-ui / client → headless-server → headless-core
-                                      ↓
-                         protocol / schema / util
+nexum-adapters ────────> nexum-core
+nexum-protocol            纯协议模型
+nexum-client ──────────> nexum-protocol
+nexum-server ──────────> nexum-core + nexum-adapters + nexum-protocol
+nexum-surfaces ────────> nexum-client
+nexum-test ────────────> core + adapters + protocol + client + surfaces
 ```
 
-- `headless-core`：UI 无关的 Coding Loop、工具、权限、Question、上下文和 Skill 运行时。
-- `headless-server`：把 Core 能力暴露为 HTTP/SSE 服务。
-- `headless-ui`：可替换的参考页面，只负责控制面和状态展示。
-- `protocol`：HTTP API、事件和 OpenAPI 契约。
-- `client`：从契约生成的 Promise/Effect 客户端。
+Core 不导入 Adapter；Adapter 通过端口实现 Core 所需环境能力；Surface 不导入 Core；Test 才负责把各层组合到一起。
 
-## 基础运行时
+## 原 OpenCode 产品包
 
-- `core`：原 OpenCode 运行时服务及其基础设施。
-- `schema`：共享领域 Schema、ID 和事件数据类型。
-- `util`：跨模块通用工具、Effect layer 和运行时适配。
-- `server`：完整 OpenCode Server 的路由和服务组合。
-- `simulation`：测试和录制场景所需的模拟服务。
-- `script`：构建、打包和仓库维护脚本。
+这些包仍属于原 OpenCode 产品，不是 Nexum Runtime 的基础依赖：
 
-## UI 与扩展
+- `core`、`server`、`schema`、`util`：原产品的运行时、服务和共享基础设施；
+- `cli`、`tui`、`desktop`：原产品的命令行、终端和桌面入口；
+- `ui`、`theme`、`session-ui`、`nav-menus`：原产品 UI、主题和会话界面；
+- `client`、`protocol`、`sdk`：原产品协议、客户端和 SDK；
+- `plugin`、`plugin-browser`、`gui-plugins`：插件及浏览器扩展能力；
+- `ai`、`codemode`、`http-recorder`、`httpapi-codegen`：模型、受限代码执行、网络录制和 API 工具；
+- `data`、`effect-drizzle-sqlite`、`simulation`、`stories`、`script`、`patchmark`：数据、存储、模拟、故事、构建和开发工具；
+- `latex`、`merman`：LaTeX 与 Mermaid 内容渲染。
 
-- `cli`、`tui`：命令行和终端入口。
-- `ui`、`theme`：共享 Solid UI 组件、样式和主题。
-- `latex`、`merman`：Markdown 中 LaTeX 与 Mermaid 内容的渲染支持。
-- `plugin`、`plugin-browser`：插件运行时与浏览器插件。
-- `ai`、`codemode`、`http-recorder`、`httpapi-codegen`：模型、受限代码执行、网络录制和 API 工具。
+## 目录维护规则
 
-## 维护边界
+旧的 `headless-core`、`headless-server`、`headless-ui` 已由 Nexum 包替代，不再作为 workspace 模块维护。它们的历史实现已经迁移到 `nexum-core`、`nexum-adapters`、`nexum-server` 和 `nexum-surfaces`。
 
-模块新增或拆分时，先补充对应子目录 README，再更新这里的分类。`node_modules`、测试 fixture、构建输出和隐藏工具目录不属于可交付模块，不需要单独 README。
+新增 Nexum 能力时，先判断它属于：
 
-## 验证
+1. Core 运行语义和端口；
+2. 默认环境实现和 Runtime 组合；
+3. Protocol/Client/Server 公开边界；
+4. 某个具体场景的 Surface 或 Test。
 
-优先在目标包目录执行其 `package.json` 中的 `test`、`typecheck` 或 `build` 脚本；跨包契约变更还应运行：
+不要把页面状态、文件读写、HTTP 路由或供应商 SDK 放回 Core。
+
+## 常用验证
+
+测试应从目标包目录执行：
 
 ```bash
-bun test --cwd packages/headless-core
-bun test --cwd packages/headless-server
-bun run --cwd packages/protocol check:generated
+cd packages/nexum-core && bun test && bun run typecheck:tsc
+cd ../nexum-adapters && bun test && bun run typecheck:tsc
+cd ../nexum-server && bun test && bun run typecheck:tsc
+cd ../nexum-protocol && bun test && bun run typecheck
+cd ../nexum-client && bun test && bun run typecheck
+cd ../nexum-test && bun test && bun run typecheck:tsc
 ```
+
+完整架构说明见仓库根目录 [`README.md`](../README.md)。

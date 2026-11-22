@@ -8,7 +8,7 @@
 - `test/`：服务行为和回归测试。
 - `script/`：构建及辅助脚本。
 
-完整 Server 通过 [`server`](../server/README.md) 组合这里的能力；新的跨 UI Coding Loop 接入优先使用 [`headless-core`](../headless-core/README.md)，避免把原应用装配层带入新 UI。
+完整 Server 通过 [`server`](../server/README.md) 组合这里的能力；新的跨 UI Coding Loop 接入应使用独立的 [`nexum-core`](../nexum-core/README.md)，避免把原应用装配层带入新 UI。
 
 ## 验证
 

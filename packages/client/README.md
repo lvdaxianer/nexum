@@ -2,9 +2,9 @@
 
 Private generation target for clients derived directly from OpenCode's authoritative Effect `HttpApi`.
 
-## 在 Headless 架构中的位置
+## 在整体架构中的位置
 
-`@opencode/client` 是 UI 与 Headless Server 之间的传输客户端，不承载 Coding Loop、权限决策或工具执行。Web、桌面端和其他控制面可以复用它调用标准 API；协议权威在 [`packages/protocol`](../protocol/README.md)，服务端实现由 [`packages/headless-server`](../headless-server/README.md) 提供。
+`@opencode/client` 是原 OpenCode 产品的生成式传输客户端，不承载 Coding Loop、权限决策或工具执行。Nexum 场景使用独立的 [`@nexum/client`](../nexum-client/README.md) 和 [`@nexum-protocol`](../nexum-protocol/README.md)，避免把原产品的完整 API 面积带入可组合 Runtime。
 
 ## Entrypoints
 

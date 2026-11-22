@@ -9,7 +9,7 @@
 - `dev/`：本地开发宿主，详见 [`dev/README.md`](dev/README.md)。
 - `script/`：构建、打包、资源和产物校验脚本。
 
-CLI 是装配层，不应把核心 Coding Loop 或页面业务复制到这里。Headless 集成优先依赖 [`headless-server`](../headless-server/README.md)。
+CLI 是装配层，不应把核心 Coding Loop 或页面业务复制到这里。Nexum 集成优先依赖 [`nexum-server`](../nexum-server/README.md)，而不是把 Nexum Core 直接塞进 CLI。
 
 ## 验证
 

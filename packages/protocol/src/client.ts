@@ -1,7 +1,6 @@
 import { LocationNotFoundError, InvalidRequestError, SessionNotFoundError } from "./errors.js"
 import { makeDefaultApi } from "./api.js"
 import { HttpApiMiddleware } from "effect/http-api"
-import { HeadlessGroup } from "./groups/headless.js"
 
 class LocationMiddleware extends HttpApiMiddleware.Service<LocationMiddleware>()(
   "@opencode/client/LocationMiddleware",
@@ -21,8 +20,7 @@ const BaseClientApi = makeDefaultApi({
   sessionLocationMiddleware: SessionLocationMiddleware,
 })
 
-/** Client/OpenAPI contract includes the experimental Headless group without changing the server Api. */
-export const ClientApi = BaseClientApi.add(HeadlessGroup)
+export const ClientApi = BaseClientApi
 
 export const groupNames = {
   "server.server": "server",
@@ -57,7 +55,6 @@ export const groupNames = {
   "server.worktree": "worktree",
   "server.vcs": "vcs",
   "server.config": "config",
-  "server.headless": "headless",
 } as const
 
 // Experimental routes carry no compatibility promise, so the generated clients nest them under
