@@ -70,8 +70,9 @@ test("runs model text, tool request, tool result, continuation, and completion i
     "tool.result",
     "assistant.text",
     "session.completed",
+    "run.settled",
   ])
-  expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5])
+  expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6])
   expect(events[1]?.data).toMatchObject({ toolName: "read", input: { path: "README.md" } })
   expect(events[2]?.data).toMatchObject({ ok: true, output: "README 内容" })
   expect(permissionRequests[0]).toMatchObject({ action: "read", resource: "README.md" })
@@ -113,6 +114,7 @@ test("publishes streamed reasoning without persisting it as visible assistant te
     "assistant.reasoning",
     "assistant.text",
     "session.completed",
+    "run.settled",
   ])
   expect(events[0]?.data).toEqual({ content: "先检查部署环境。" })
   expect(await messageStore.load(session.sessionID)).toEqual([
@@ -149,7 +151,7 @@ test("publishes a thinking heartbeat while the model is silent", async () => {
   }).run({ sessionID: session.sessionID, text: "等待模型" })
 
   expect(events.some((event) => event.type === "assistant.thinking")).toBe(true)
-  expect(events.at(-1)?.type).toBe("session.completed")
+  expect(events.at(-1)?.type).toBe("run.settled")
 })
 
 test("keeps reasoning ordered across a tool boundary without mixing it into text events", async () => {
@@ -202,6 +204,7 @@ test("keeps reasoning ordered across a tool boundary without mixing it into text
     "assistant.reasoning",
     "assistant.text",
     "session.completed",
+    "run.settled",
   ])
   expect(events[0]?.data).toEqual({ content: "先读取 README。" })
   expect(events[1]?.data).toMatchObject({
@@ -853,6 +856,7 @@ test("compacts and resumes when the model reports context overflow", async () =>
     "context.compaction.completed",
     "assistant.text",
     "session.completed",
+    "run.settled",
   ])
 })
 

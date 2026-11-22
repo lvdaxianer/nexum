@@ -127,7 +127,7 @@ test("resumes the model with question answers and never executes a tool before a
   await questions.reply(session.sessionID, "call_question_001", [["src"]])
   await expect(run).resolves.toMatchObject({ status: "completed" })
   expect(toolCalls).toEqual([])
-  expect(events).toEqual(["question.request", "question.result", "session.completed"])
+  expect(events).toEqual(["question.request", "question.result", "session.completed", "run.settled"])
   expect(prompts[1]?.messages).toEqual([
     { role: "user", content: "开始任务" },
     {
@@ -202,7 +202,7 @@ test("cancelling a pending question fails the run without executing a tool", asy
   await questions.cancel(session.sessionID, "question_002")
   await expect(run).rejects.toThrow("问题已取消")
   expect(executed).toBe(false)
-  expect(events).toEqual(["question.request", "question.cancelled", "session.failed"])
+  expect(events).toEqual(["question.request", "question.cancelled", "session.failed", "run.settled"])
   await expect(questions.reply(session.sessionID, "question_002", [["是"]])).rejects.toMatchObject({
     code: "not_found",
   })

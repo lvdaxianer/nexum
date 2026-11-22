@@ -94,6 +94,7 @@ test("compacts accumulated tool history before the next model step", async () =>
     "context.compaction.started",
     "context.compaction.completed",
     "session.completed",
+    "run.settled",
   ])
 })
 
@@ -149,5 +150,5 @@ test("fails safely when context compaction cannot produce a summary", async () =
 
   expect(modelCalls).toBe(0)
   expect(toolCalls).toBe(0)
-  expect(events).toEqual(["context.compaction.started", "context.compaction.failed", "session.failed"])
+  expect(events).toEqual(["context.compaction.started", "context.compaction.failed", "session.failed", "run.settled"])
 })

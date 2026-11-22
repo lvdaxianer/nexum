@@ -120,5 +120,6 @@ test("restores project context after compaction before the next model step", asy
     "context.compaction.completed",
     "context.project.loaded",
     "session.completed",
+    "run.settled",
   ])
 })

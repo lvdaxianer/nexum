@@ -112,7 +112,7 @@ test("attaches Skill system message before the user message and publishes activa
     expect.objectContaining({ role: "system", sourceID: "skill:known-skill" }),
     { role: "user", content: "执行 @known-skill" },
   ])
-  expect(events).toEqual(["skill.activated", "session.completed"])
+  expect(events).toEqual(["skill.activated", "session.completed", "run.settled"])
 })
 
 test("cancels a Skill activation waiting for permission", async () => {
@@ -140,5 +140,5 @@ test("cancels a Skill activation waiting for permission", async () => {
 
   expect(completed.status).toBe("cancelled")
   expect(modelCalled).toBe(false)
-  expect(events).toEqual(["skill.failed", "session.cancelled"])
+  expect(events).toEqual(["skill.failed", "session.cancelled", "run.settled"])
 })
