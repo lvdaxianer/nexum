@@ -206,6 +206,21 @@ export class NexumSessionError extends Error {
   }
 }
 
+/** Coding Loop 运行边界错误。 */
+export type NexumRunErrorCode = "timeout" | "not_continuable"
+
+/** Coding Loop 运行边界错误，供 Protocol 映射稳定公共错误。 */
+export class NexumRunError extends Error {
+  constructor(
+    readonly code: NexumRunErrorCode,
+    message: string,
+    readonly sessionID?: string,
+  ) {
+    super(message)
+    this.name = "NexumRunError"
+  }
+}
+
 /**
  * 创建进程内 SessionStore。
  *
@@ -372,6 +387,12 @@ export interface NexumCodingLoopOptions {
   readonly maxModelRetries?: number
   readonly retryDelayMs?: number
   readonly maxRetryDelayMs?: number
+  /** 单次模型增量等待的最大毫秒数；0 或省略表示不启用该边界。 */
+  readonly modelTimeoutMs?: number
+  /** 单次工具执行等待的最大毫秒数；0 或省略表示不启用该边界。 */
+  readonly toolTimeoutMs?: number
+  /** 一次 Coding Loop 运行的总最大毫秒数；0 或省略表示不启用该边界。 */
+  readonly runTimeoutMs?: number
   /** 模型无增量输出时仍向交互层发送思考心跳；设为 0 可关闭。 */
   readonly thinkingHeartbeatMs?: number
   readonly maxOutputContinuations?: number
@@ -381,8 +402,11 @@ export interface NexumCodingLoopOptions {
 export interface NexumCodingLoop {
   readonly run: (input: NexumCodingLoopInput) => Promise<SessionRecord>
   readonly start?: (input: NexumCodingLoopInput) => NexumCodingLoopStart
+  readonly continue?: (sessionID: string) => Promise<SessionRecord>
   readonly cancel: (sessionID: string) => Promise<SessionRecord>
 }
+
+type NexumCodingLoopExecutionInput = NexumCodingLoopInput | { readonly sessionID: string; readonly mode: "continue" }
 
 /** 用于在 HTTP admission 与异步执行之间保持同一 Session 的运行占用。 */
 export type NexumCodingLoopStart =
@@ -429,7 +453,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
     return seed
   }
 
-  const execute = async (input: NexumCodingLoopInput, runState: ActiveRun) => {
+  const execute = async (input: NexumCodingLoopExecutionInput, runState: ActiveRun) => {
     const session = await options.sessions.get(input.sessionID).catch((error) => {
       if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
       throw error
@@ -439,7 +463,19 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       throw new NexumSessionError("session_not_found", "Session 不存在", input.sessionID)
     }
 
+    const history = await messageStore.load(input.sessionID)
+    const continuation = "mode" in input && input.mode === "continue"
+    const lastMessage = history.at(-1)
+    if (continuation && (!lastMessage || (lastMessage.role !== "user" && lastMessage.role !== "tool"))) {
+      throw new NexumRunError("not_continuable", "Session 没有可继续的上下文", input.sessionID)
+    }
+    const promptText = "mode" in input ? (lastMessage?.content ?? "") : input.text
+    if (continuation && !promptText.trim()) {
+      throw new NexumRunError("not_continuable", "Session 没有可继续的上下文", input.sessionID)
+    }
+
     const runID = crypto.randomUUID()
+    let settled = false
     const publish = async (type: string, data?: Record<string, unknown>) => {
       await seedSessionSequence(input.sessionID)
       const sequence = (sessionSequences.get(input.sessionID) ?? 0) + 1
@@ -454,12 +490,17 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         data,
       })
     }
+    const publishSettled = async (result: "completed" | "failed" | "cancelled") => {
+      if (settled) return
+      settled = true
+      await publish("run.settled", { result })
+    }
     // canonicalHistory 只保存需要跨 Prompt 恢复的消息；modelMessages 在其基础上临时注入 skill 与项目上下文。
-    let canonicalHistory: ModelMessage[] = [{ role: "user", content: input.text }]
+    let canonicalHistory: ModelMessage[] = continuation ? [...history] : [...history, { role: "user", content: promptText }]
     let modelMessages: ModelMessage[] = [...canonicalHistory]
     let skillSystemMessages: readonly ModelMessage[] = []
     const temporarySourceIDs = new Set<string>()
-    let prompt: ModelPrompt = { sessionID: input.sessionID, text: input.text, messages: modelMessages }
+    let prompt: ModelPrompt = { sessionID: input.sessionID, text: promptText, messages: modelMessages }
     const persist = () => messageStore.save(input.sessionID, canonicalHistory)
     const appendCanonical = (added: readonly ModelMessage[]) => {
       canonicalHistory = [...canonicalHistory, ...added]
@@ -476,12 +517,10 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
 
     try {
       await options.sessions.setStatus(input.sessionID, "running")
-      const history = await messageStore.load(input.sessionID)
       // 用户输入先进入 canonical 历史并立即落盘，避免后续临时注入污染历史。
-      canonicalHistory = [...history, { role: "user", content: input.text }]
-      await persist()
+      if (!continuation) await persist()
       const skillPrompt = options.skills
-        ? await options.skills.resolve({ sessionID: input.sessionID, text: input.text })
+        ? await options.skills.resolve({ sessionID: input.sessionID, text: promptText })
         : { skills: [], systemMessages: [] }
       for (const skill of skillPrompt.skills) {
         await publish("skill.activated", {
@@ -494,7 +533,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       modelMessages = await injectTemporaryContext(canonicalHistory)
       prompt = {
         sessionID: input.sessionID,
-        text: input.text,
+        text: promptText,
         messages: modelMessages,
         ...(options.tools ? { tools: options.tools } : {}),
       }
@@ -513,7 +552,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         }
         prompt = {
           ...prompt,
-          text: finalizing ? MAX_STEPS_PROMPT : input.text,
+          text: finalizing ? MAX_STEPS_PROMPT : promptText,
           messages: finalizing
             ? [...modelMessages, { role: "user", content: MAX_STEPS_PROMPT }]
             : modelMessages,
@@ -564,6 +603,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 await persist()
                 const completed = await options.sessions.setStatus(input.sessionID, "completed")
                 await publish("session.completed")
+                await publishSettled("completed")
                 return completed
               }
 
@@ -572,6 +612,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 await persist()
                 const completed = await options.sessions.setStatus(input.sessionID, "completed")
                 await publish("session.completed")
+                await publishSettled("completed")
                 return completed
               }
 
@@ -594,7 +635,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 await persist()
                 prompt = {
                   sessionID: input.sessionID,
-                  text: input.text,
+                  text: promptText,
                   toolResults: [result],
                   messages: modelMessages,
                   ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
@@ -642,7 +683,12 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 if (effect !== "allow") {
                   throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
                 }
-                const result = await options.tool.execute(request)
+                const result = await waitForAbortable(
+                  options.tool.execute(request),
+                  runState.controller.signal,
+                  options.toolTimeoutMs,
+                  new NexumRunError("timeout", "工具执行超时", input.sessionID),
+                )
                 const toolResult = { ...result, toolCallID }
                 toolResults.push(toolResult)
                 await publish("tool.result", {
@@ -655,7 +701,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
               await persist()
               prompt = {
                 sessionID: input.sessionID,
-                text: input.text,
+                text: promptText,
                 toolResults,
                 messages: modelMessages,
                 ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
@@ -691,39 +737,69 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         await persist()
         const completed = await options.sessions.setStatus(input.sessionID, "completed")
         await publish("session.completed")
+        await publishSettled("completed")
         return completed
       }
     } catch (error) {
       if (error instanceof NexumSkillInvocationError) {
         await publish("skill.failed", { skillID: error.skillID, code: error.code })
       }
-      if (runState.cancelled || runState.controller.signal.aborted || error instanceof NexumCancellationError) {
+      if (!runState.timedOut && (runState.cancelled || runState.controller.signal.aborted || error instanceof NexumCancellationError)) {
         const current = await options.sessions.get(input.sessionID)
         const cancelled =
           current?.status === "cancelled" ? current : await options.sessions.setStatus(input.sessionID, "cancelled")
         await publish("session.cancelled")
+        await publishSettled("cancelled")
         return cancelled
       }
       await options.sessions.setStatus(input.sessionID, "failed")
       await publish("session.failed", { message: safeErrorMessage(error) })
+      await publishSettled("failed")
       throw error
     } finally {
+      if (runState.timeoutTimer) clearTimeout(runState.timeoutTimer)
       if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
     }
   }
-  const start = (input: NexumCodingLoopInput): NexumCodingLoopStart => {
+  const start = (input: NexumCodingLoopExecutionInput): NexumCodingLoopStart => {
     if (activeRuns.has(input.sessionID)) return { accepted: false }
-    const runState: ActiveRun = { controller: new AbortController(), cancelled: false }
+    const runState: ActiveRun = {
+      controller: new AbortController(),
+      cancelled: false,
+      timedOut: false,
+    }
+    const timeoutMs = normalizeTimeout(options.runTimeoutMs)
+    if (timeoutMs !== undefined) {
+      runState.timeoutTimer = setTimeout(() => {
+        runState.timedOut = true
+        runState.controller.abort()
+      }, timeoutMs)
+    }
     activeRuns.set(input.sessionID, runState)
-    return { accepted: true, promise: execute(input, runState) }
+    const promise = execute(input, runState)
+    const cleanup = () => {
+      if (runState.timeoutTimer) clearTimeout(runState.timeoutTimer)
+      if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
+    }
+    void promise.then(cleanup, cleanup)
+    return { accepted: true, promise }
   }
 
   return {
-    start,
+    start(input) {
+      return start(input)
+    },
     run(input) {
       const started = start(input)
       if (!started.accepted) {
         return Promise.reject(new NexumSessionError("session_busy", "Session 当前正在运行", input.sessionID))
+      }
+      return started.promise
+    },
+    continue(sessionID) {
+      const started = start({ sessionID, mode: "continue" })
+      if (!started.accepted) {
+        return Promise.reject(new NexumSessionError("session_busy", "Session 当前正在运行", sessionID))
       }
       return started.promise
     },
@@ -749,6 +825,8 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
 interface ActiveRun {
   readonly controller: AbortController
   cancelled: boolean
+  timedOut: boolean
+  timeoutTimer?: ReturnType<typeof setTimeout>
 }
 
 /** Coding Loop 内部取消控制流错误。 */
@@ -756,6 +834,79 @@ class NexumCancellationError extends Error {
   constructor() {
     super("Coding Loop 已取消")
     this.name = "NexumCancellationError"
+  }
+}
+
+/** 将有限的超时配置归一化为可安全传给定时器的毫秒数。 */
+function normalizeTimeout(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) return undefined
+  return Math.max(1, Math.floor(value))
+}
+
+/** 在完成、取消或超时之间等待一个外部 Promise。 */
+function waitForAbortable<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+  timeoutMs: number | undefined,
+  timeoutError?: Error,
+): Promise<T> {
+  if (signal.aborted) return Promise.reject(new NexumCancellationError())
+  const timeout = normalizeTimeout(timeoutMs)
+  return new Promise<T>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const cleanup = () => {
+      if (timer) clearTimeout(timer)
+      signal.removeEventListener("abort", onAbort)
+    }
+    const onAbort = () => {
+      cleanup()
+      reject(new NexumCancellationError())
+    }
+    signal.addEventListener("abort", onAbort, { once: true })
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    if (timeout !== undefined) {
+      timer = setTimeout(() => {
+        cleanup()
+        reject(timeoutError ?? new NexumRunError("timeout", "运行超时"))
+      }, timeout)
+    }
+    void promise.then(
+      (value) => {
+        cleanup()
+        resolve(value)
+      },
+      (error: unknown) => {
+        cleanup()
+        reject(error)
+      },
+    )
+  })
+}
+
+/** 为模型流的每次 next 增加可取消的空闲等待边界。 */
+async function* readModelWithTimeout(
+  source: AsyncIterable<ModelChunk>,
+  runState: ActiveRun,
+  timeoutMs: number | undefined,
+): AsyncGenerator<ModelChunk, void> {
+  const iterator = source[Symbol.asyncIterator]()
+  try {
+    while (true) {
+      const next = await waitForAbortable(
+        iterator.next(),
+        runState.controller.signal,
+        timeoutMs,
+        new NexumModelError("timeout", "模型响应超时"),
+      )
+      if (next.done) return
+      yield next.value
+    }
+  } finally {
+    const closing = iterator.return?.()
+    if (closing) void closing.catch(() => {})
   }
 }
 
@@ -816,12 +967,18 @@ async function* promptWithRetry(
   while (true) {
     let yielded = false
     try {
-      for await (const chunk of model.prompt({ ...prompt, signal: runState.controller.signal })) {
+      throwIfCancelled(runState)
+      for await (const chunk of readModelWithTimeout(
+        model.prompt({ ...prompt, signal: runState.controller.signal }),
+        runState,
+        options.modelTimeoutMs,
+      )) {
         yielded = true
         yield chunk
       }
       return
     } catch (error) {
+      throwIfCancelled(runState)
       if (yielded || !isRetryableModelError(error) || retryCount >= maxRetries) throw error
       retryCount += 1
       const delayMs = calculateRetryDelay(baseDelay, retryCount, error, maxDelay)
@@ -831,7 +988,13 @@ async function* promptWithRetry(
         delayMs,
         ...(error instanceof NexumModelError ? { errorCode: error.code } : {}),
       })
-      if (delayMs > 0) await Bun.sleep(delayMs)
+      if (delayMs > 0) {
+        await waitForAbortable(
+          new Promise<void>((resolve) => setTimeout(resolve, delayMs)),
+          runState.controller.signal,
+          undefined,
+        )
+      }
       throwIfCancelled(runState)
     }
   }
@@ -877,6 +1040,7 @@ function calculateRetryDelay(baseDelay: number, attempt: number, error: unknown,
 
 /** 在模型或工具边界检查取消信号。 */
 function throwIfCancelled(run: ActiveRun): void {
+  if (run.timedOut) throw new NexumRunError("timeout", "Coding Loop 运行超时")
   if (run.cancelled || run.controller.signal.aborted) throw new NexumCancellationError()
 }
 

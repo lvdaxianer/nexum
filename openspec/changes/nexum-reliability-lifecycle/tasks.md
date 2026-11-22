@@ -6,8 +6,8 @@
 
 ## 2. Core 运行生命周期
 
-- [ ] 2.1 增加模型 Attempt、运行级 timeout、可取消退避和 `run.settled` 领域事件；为模型流空闲、工具超时、取消、重试耗尽和上下文压缩恢复补充 Core 测试。
-- [ ] 2.2 增加从既有 user/tool-result 上下文继续运行的 Core 能力，拒绝 assistant 尾部或无可继续上下文，并验证不会重复追加用户消息。
+- [x] 2.1 增加模型 Attempt、运行级 timeout、可取消退避和 `run.settled` 领域事件；为模型流空闲、工具超时、取消、重试耗尽和上下文压缩恢复补充 Core 测试。
+- [x] 2.2 增加从既有 user/tool-result 上下文继续运行的 Core 能力，拒绝 assistant 尾部或无可继续上下文，并验证不会重复追加用户消息。
 
 ## 3. Protocol 与 Client
 
