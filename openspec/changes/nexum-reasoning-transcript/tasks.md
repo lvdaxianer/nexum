@@ -18,8 +18,8 @@
 
 ## 4. 集成验证
 
-- [ ] 4.1 运行 `openspec validate --strict --change nexum-reasoning-transcript`，确认规范、设计和任务清单完整。
-- [ ] 4.2 在任务 worktree 运行 `bun run check`、相关包测试和 UI smoke；确认 git diff 只包含本变更及必要文档。
+- [x] 4.1 运行 `openspec validate nexum-reasoning-transcript --type change --strict`，确认规范、设计和任务清单完整。
+- [x] 4.2 在任务 worktree 运行 `bun run check`、相关包测试和 UI smoke；相关 Nexum 检查与 UI smoke 已通过，根级 check 已执行并记录现有 Bun 版本兼容性失败；确认 git diff 只包含本变更及必要文档。
 
 ## Workflow follow-up
 
