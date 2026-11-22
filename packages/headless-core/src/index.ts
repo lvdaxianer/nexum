@@ -112,10 +112,26 @@ export interface ToolPort {
 /** 权限评估结果。 */
 export type PermissionEffect = "allow" | "deny" | "ask"
 
+/** 交给观察者的待审批权限请求快照。 */
+export interface PermissionRequestSnapshot {
+  readonly id: string
+  readonly sessionID: string
+  readonly action: string
+  readonly resource: string
+  readonly reason?: string
+}
+
 /** 权限端口负责判断工具调用是否可以继续。 */
 export interface PermissionPort {
   readonly evaluate: (request: ToolRequest) => Promise<PermissionEffect>
   readonly cancel?: (sessionID: string, requestID?: string) => Promise<void>
+  /**
+   * 可选能力：注册 pending 请求观察者，返回取消订阅函数。
+   *
+   * 端口在阻塞等待决策之前调用观察者，Coding Loop 依赖它在 permission.requested
+   * 事件中携带真实的 requestID，而不是轮询 pending 列表猜测对应请求。
+   */
+  readonly observe?: (listener: (request: PermissionRequestSnapshot) => Promise<void> | void) => () => void
 }
 
 /** Session 的最小持久化记录。 */
@@ -614,22 +630,22 @@ export function createHeadlessCodingLoop(options: HeadlessCodingLoopOptions): He
                   toolName: request.toolName,
                   input: redactHeadlessSensitiveValue(request.input) as Record<string, unknown>,
                 })
-                const permissionEvaluation = options.permission.evaluate(request)
-                if ("list" in options.permission && typeof options.permission.list === "function") {
-                  const pending = (await options.permission.list(input.sessionID)).find(
-                    (item: { action: string; resource: string; id: string; reason?: string }) =>
-                      item.action === request.action,
-                  )
-                  if (pending) {
-                    await publish("permission.requested", {
-                      requestID: pending.id,
-                      action: pending.action,
-                      resource: pending.resource,
-                      reason: pending.reason,
-                    })
-                  }
+                // pending 请求由权限端口主动通知，保证 permission.requested 先于阻塞等待发布。
+                const stopObserving = options.permission.observe?.((pending) => {
+                  if (pending.sessionID !== request.sessionID || pending.action !== request.action) return
+                  return publish("permission.requested", {
+                    requestID: pending.id,
+                    action: pending.action,
+                    resource: pending.resource,
+                    reason: pending.reason,
+                  })
+                })
+                let effect: PermissionEffect
+                try {
+                  effect = await options.permission.evaluate(request)
+                } finally {
+                  stopObserving?.()
                 }
-                const effect = await permissionEvaluation
                 if (effect !== "allow") {
                   throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
                 }
@@ -1152,6 +1168,28 @@ export type {
   HeadlessPermissionRequest,
   HeadlessPermissionBrokerOptions,
 } from "./permission.js"
+export {
+  createFilePermissionPolicyStore,
+  createInMemoryPermissionPolicyStore,
+  evaluateHeadlessPermissionPolicy,
+  headlessAnyToolAction,
+  HeadlessPermissionPolicyError,
+  isDangerousHeadlessToolRequest,
+  matchHeadlessPermissionPattern,
+} from "./permission-policy.js"
+export type {
+  FilePermissionPolicyStoreOptions,
+  HeadlessPermissionPolicyDecision,
+  HeadlessPermissionPolicyEffect,
+  HeadlessPermissionPolicyErrorCode,
+  HeadlessPermissionPolicyFilter,
+  HeadlessPermissionPolicyRule,
+  HeadlessPermissionPolicyRuleInput,
+  HeadlessPermissionPolicyRuleUpdate,
+  HeadlessPermissionPolicyScope,
+  HeadlessPermissionPolicySource,
+  HeadlessPermissionPolicyStore,
+} from "./permission-policy.js"
 export {
   createFileInteractionStore,
   HeadlessInteractionStoreError,

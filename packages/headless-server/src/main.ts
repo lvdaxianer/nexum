@@ -2,6 +2,7 @@ import {
   createFileInteractionStore,
   createFileMessageStore,
   createFileModelConfigStore,
+  createFilePermissionPolicyStore,
   createFileSessionStore,
 } from "@opencode/headless-core"
 import { resolve } from "node:path"
@@ -22,13 +23,23 @@ async function main(): Promise<void> {
   const eventFile = process.env.OPENCODE_HEADLESS_EVENT_FILE ?? resolve(dataDirectory, "events.json")
   const messageFile = process.env.OPENCODE_HEADLESS_MESSAGE_FILE ?? resolve(dataDirectory, "messages.json")
   const interactionFile = process.env.OPENCODE_HEADLESS_INTERACTION_FILE ?? resolve(dataDirectory, "interactions.json")
+  const permissionPolicyFile =
+    process.env.OPENCODE_HEADLESS_PERMISSION_POLICY_FILE ?? resolve(dataDirectory, "permission-policies.json")
   const sessionStore = createFileSessionStore({ filePath: sessionFile })
   const modelConfigStore = createFileModelConfigStore({ filePath: modelConfigFile })
   const messageStore = createFileMessageStore({ filePath: messageFile })
   const interactionStore = createFileInteractionStore({ filePath: interactionFile })
+  const permissionPolicyStore = createFilePermissionPolicyStore({ filePath: permissionPolicyFile })
   const eventHub = createHeadlessEventHub({ filePath: eventFile })
   await eventHub.ready?.()
-  const server = await startHeadlessServer({ sessionStore, modelConfigStore, messageStore, interactionStore, eventHub })
+  const server = await startHeadlessServer({
+    sessionStore,
+    modelConfigStore,
+    messageStore,
+    interactionStore,
+    permissionPolicyStore,
+    eventHub,
+  })
   process.stdout.write(`Headless Service listening at ${server.url}\n`)
 
   const shutdown = async (): Promise<void> => {

@@ -79,6 +79,7 @@ describe.serial("Headless UI smoke", () => {
     await expect(page.getByRole("tab", { name: "对话" })).toBeVisible()
     await expect(page.getByRole("tab", { name: /事件/ })).toBeVisible()
     await expect(page.getByText("上下文", { exact: true })).toBeVisible()
+    await expect(page.locator(".prompt-bar").getByRole("button", { name: "权限策略" })).toBeVisible()
     await openDrawer(page, /模型配置/)
     await expect(page.getByLabel("服务地址")).toHaveValue("")
     await expect(page.getByLabel("模型名称")).toHaveValue("")
@@ -390,6 +391,9 @@ describe.serial("Headless UI smoke", () => {
       await page.getByRole("button", { name: /发送 Prompt/ }).click()
       const permissionActions = page.getByTestId("permission-actions")
       await expect(permissionActions).toBeVisible()
+      const promptPermission = page.getByTestId("prompt-permission")
+      await expect(promptPermission).toBeVisible()
+      await expect(promptPermission.getByRole("button", { name: "允许一次" })).toBeVisible()
       await permissionActions.getByRole("button", { name: "允许一次" }).click()
 
       await expect(page.locator(".pill-completed")).toBeVisible()
@@ -399,6 +403,140 @@ describe.serial("Headless UI smoke", () => {
       await page.getByRole("tab", { name: /事件/ }).click()
       await expect(page.getByText("tool.result")).toBeVisible()
       await expect(page.locator("body")).not.toContainText("super-secret-token")
+    },
+  )
+
+  test.serial(
+    "saves an action-agnostic policy without an Action dimension",
+    { timeout: 20_000 },
+    async () => {
+      browser = await chromium.launch({ headless: true })
+      const page = await browser.newPage()
+      const policyWrites: Array<{ method: string; body: unknown }> = []
+      page.on("request", (request) => {
+        if (!request.url().includes("/permission/policy")) return
+        if (request.method() !== "POST" && request.method() !== "PUT") return
+        policyWrites.push({ method: request.method(), body: JSON.parse(request.postData() ?? "null") })
+      })
+      apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      directory = await mkdtemp(join(tmpdir(), "headless-ui-policy-"))
+
+      await page.goto(uiOrigin)
+      await page.getByRole("button", { name: "新建 Session" }).click()
+      await page.getByLabel("工作目录").fill(directory)
+      await page.getByRole("button", { name: "保存并创建 Session" }).click()
+      await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+
+      await openDrawer(page, /权限策略/)
+      const drawer = page.getByRole("dialog")
+      await expect(drawer.getByLabel("Resource")).toBeVisible()
+      await expect(drawer.getByRole("group", { name: "Action" })).toHaveCount(0)
+      await expect(drawer.getByText("Action", { exact: true })).toHaveCount(0)
+      await expect(drawer.getByRole("button", { name: /^shell/ })).toHaveCount(0)
+
+      await drawer.getByLabel("Resource").fill("bun test")
+      await drawer.getByRole("button", { name: /^始终允许/ }).click()
+      await drawer.getByRole("button", { name: /^全局默认/ }).click()
+      await drawer.getByRole("button", { name: "保存策略" }).click()
+      await expect(drawer.getByText(/策略已保存：bun test/)).toBeVisible()
+
+      expect(policyWrites).toEqual([
+        { method: "POST", body: { action: "*", resource: "bun test", effect: "allow", scope: "global" } },
+      ])
+
+      const card = drawer.locator(".permission-card")
+      await expect(card).toHaveCount(1)
+      await expect(card).toContainText("bun test")
+      await expect(card).toContainText("始终允许")
+      await expect(card).toContainText("全局默认")
+      await expect(card).not.toContainText("shell")
+
+      const persisted = (await (
+        await fetch(new URL("/api/experimental/headless/permission/policy", apiServer!.url))
+      ).json()) as { data: { rules: unknown[] } }
+      expect(persisted.data.rules).toMatchObject([
+        { action: "*", resource: "bun test", effect: "allow", scope: "global" },
+      ])
+
+      await drawer.getByRole("button", { name: "修改" }).click()
+      await drawer.getByLabel("Resource").fill("bun test --watch")
+      await drawer.getByRole("button", { name: "保存修改" }).click()
+      await expect(drawer.getByText(/策略已保存：bun test --watch/)).toBeVisible()
+      expect(policyWrites[1]).toEqual({ method: "PUT", body: { resource: "bun test --watch", effect: "allow" } })
+
+      await drawer.getByRole("button", { name: "删除" }).click()
+      await expect(page.getByRole("alertdialog")).toContainText("bun test --watch")
+      await page.getByRole("button", { name: "确认删除策略" }).click()
+      await expect(drawer.getByText("还没有权限策略，所有工具调用都会逐次询问。")).toBeVisible()
+    },
+  )
+
+  test.serial(
+    "always-allow from the permission queue stores an action-agnostic rule",
+    { timeout: 20_000 },
+    async () => {
+      browser = await chromium.launch({ headless: true })
+      const page = await browser.newPage()
+      let upstreamCalls = 0
+      upstream = Bun.serve({
+        port: 0,
+        async fetch() {
+          upstreamCalls += 1
+          if (upstreamCalls > 1) return Response.json({ choices: [{ message: { content: "已写入" } }] })
+          return Response.json({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: "call_write_always",
+                      type: "function",
+                      function: {
+                        name: "write",
+                        arguments: JSON.stringify({ path: "notes.txt", content: "记录" }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          })
+        },
+      })
+      apiServer = await startHeadlessServer({ port: 4097, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      directory = await mkdtemp(join(tmpdir(), "headless-ui-always-"))
+
+      await page.goto(uiOrigin)
+      await openDrawer(page, /模型配置/)
+      await page.getByLabel("服务地址").fill(upstream.url.toString().replace(/\/$/, ""))
+      await page.getByLabel("模型名称").fill("fixture-model")
+      await page.getByLabel("凭据值").fill("fixture-secret")
+      await page.getByRole("button", { name: "保存模型配置" }).click()
+      await expect(page.getByText("模型 fixture-model 已就绪")).toBeVisible()
+      await closeDrawer(page)
+
+      await page.getByRole("button", { name: "新建 Session" }).click()
+      await page.getByLabel("工作目录").fill(directory)
+      await page.getByRole("button", { name: "保存并创建 Session" }).click()
+      await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+
+      await page.getByPlaceholder("描述下一步 Coding 任务…").fill("写入 notes.txt")
+      await page.getByRole("button", { name: /发送 Prompt/ }).click()
+      await page.getByTestId("permission-actions").getByRole("button", { name: "始终允许" }).click()
+
+      await expect(page.locator(".pill-completed")).toBeVisible()
+      await expect(page.getByText(/已保存全局「始终允许」策略/)).toBeVisible()
+      expect(await Bun.file(join(directory, "notes.txt")).text()).toBe("记录")
+
+      const persisted = (await (
+        await fetch(new URL("/api/experimental/headless/permission/policy", apiServer!.url))
+      ).json()) as { data: { rules: unknown[] } }
+      expect(persisted.data.rules).toMatchObject([
+        { action: "*", resource: "notes.txt", effect: "allow", scope: "global" },
+      ])
     },
   )
 

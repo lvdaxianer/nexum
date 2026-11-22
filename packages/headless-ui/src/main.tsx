@@ -21,6 +21,23 @@ type SessionSummary = ExperimentalHeadlessSessionListOutput["data"][number]
 type ModelProbeResult = ExperimentalHeadlessModelProbeOutput["data"]
 type SkillSummary = ExperimentalHeadlessSkillListOutput["data"][number]
 type ContextSource = { sourceID: string; kind: string; path: string }
+type PermissionPolicyEffect = "allow" | "ask" | "deny"
+type PermissionPolicyScope = "global" | "session"
+type PermissionPolicyRule = {
+  id: string
+  action: string
+  resource: string
+  effect: PermissionPolicyEffect
+  scope: PermissionPolicyScope
+  sessionID?: string
+  createdAt: string
+  updatedAt: string
+}
+type PermissionPolicyDraft = {
+  resource: string
+  effect: PermissionPolicyEffect
+  scope: PermissionPolicyScope
+}
 type ChatItemKind = "user" | "assistant" | "execution" | "status"
 type ChatStatus = "streaming" | "running" | "waiting" | "completed" | "failed" | "cancelled"
 type ChatItem = {
@@ -40,6 +57,31 @@ type ModelFieldErrors = Partial<Record<ModelField, string>>
 type ActionState = "idle" | "pending" | "success" | "error"
 
 const maxChatItems = 160
+
+const emptyPermissionPolicyDraft: PermissionPolicyDraft = {
+  resource: "",
+  effect: "allow",
+  scope: "global",
+}
+/** 策略不再有 Action 维度：新建规则以 `*` 表示按资源匹配所有工具调用。 */
+const anyToolAction = "*"
+const permissionPolicyEffectOptions: ReadonlyArray<{
+  value: PermissionPolicyEffect
+  label: string
+  description: string
+}> = [
+  { value: "allow", label: "始终允许", description: "命中后直接执行，不再弹出审批" },
+  { value: "ask", label: "每次询问", description: "回落到逐次审批，可收紧全局允许" },
+  { value: "deny", label: "始终拒绝", description: "优先级最高，Session 覆盖也不能解除" },
+]
+const permissionPolicyScopeOptions: ReadonlyArray<{
+  value: PermissionPolicyScope
+  label: string
+  description: string
+}> = [
+  { value: "global", label: "全局默认", description: "对所有 Session 生效，重启后保留" },
+  { value: "session", label: "当前 Session", description: "只影响选中的 Session" },
+]
 
 const apiBaseUrl =
   import.meta.env.VITE_HEADLESS_API_URL ?? `${window.location.protocol}//${window.location.hostname}:4097`
@@ -87,6 +129,15 @@ function App() {
   const [skillBusy, setSkillBusy] = createSignal(false)
   const [skillValidation, setSkillValidation] = createSignal<Record<string, string>>({})
   const [activeSkillIDs, setActiveSkillIDs] = createSignal<string[]>([])
+  const [policyDrawerOpen, setPolicyDrawerOpen] = createSignal(false)
+  const [policyRules, setPolicyRules] = createSignal<PermissionPolicyRule[]>([])
+  const [policyDraft, setPolicyDraft] = createSignal<PermissionPolicyDraft>(emptyPermissionPolicyDraft)
+  const [policyEditingID, setPolicyEditingID] = createSignal("")
+  const [policyBusy, setPolicyBusy] = createSignal(false)
+  const [policyError, setPolicyError] = createSignal("")
+  const [policyMessage, setPolicyMessage] = createSignal("")
+  const [policyDeleteTarget, setPolicyDeleteTarget] = createSignal<PermissionPolicyRule | undefined>()
+  const [policyDeleteBusy, setPolicyDeleteBusy] = createSignal(false)
   const [notice, setNotice] = createSignal("准备开始一次 Headless 运行")
   const [connected, setConnected] = createSignal(false)
   const [modelConfigured, setModelConfigured] = createSignal(false)
@@ -408,6 +459,156 @@ function App() {
     }
   }
 
+  /**
+   * 打开权限策略抽屉，并重置表单到新建状态。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-22
+   */
+  function openPolicyDrawer() {
+    setPolicyDrawerOpen(true)
+    setPolicyEditingID("")
+    setPolicyDraft(emptyPermissionPolicyDraft)
+    setPolicyError("")
+    setPolicyMessage("")
+    void loadPermissionPolicy()
+  }
+
+  /**
+   * 读取全局策略与当前 Session 的覆盖策略。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-22
+   */
+  async function loadPermissionPolicy() {
+    const query = sessionID() ? `?sessionID=${encodeURIComponent(sessionID())}` : ""
+    try {
+      const data = await requestPermissionPolicy<{ rules: PermissionPolicyRule[] }>(
+        `/api/experimental/headless/permission/policy${query}`,
+      )
+      setPolicyRules(data.rules)
+      setPolicyError("")
+    } catch (error) {
+      setPolicyRules([])
+      setPolicyError(messageFrom(error, "权限策略加载失败，请检查 Headless Server"))
+    }
+  }
+
+  /**
+   * 把选中的策略载入表单，进入修改模式。
+   *
+   * 表单只编辑资源和效果，作用范围在创建时确定；旧规则的 action 维度原样保留，
+   * 不会被静默放宽成「所有工具」。
+   *
+   * @param rule - 待修改的策略
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-22
+   */
+  function editPermissionPolicy(rule: PermissionPolicyRule) {
+    setPolicyEditingID(rule.id)
+    setPolicyDraft({
+      resource: rule.resource,
+      effect: rule.effect,
+      scope: rule.scope,
+    })
+    setPolicyError("")
+    setPolicyMessage("")
+  }
+
+  /**
+   * 退出修改模式，保留当前 scope 方便连续录入。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-22
+   */
+  function cancelPermissionPolicyEdit() {
+    const draft = policyDraft()
+    setPolicyEditingID("")
+    setPolicyDraft({ ...emptyPermissionPolicyDraft, scope: draft.scope })
+    setPolicyError("")
+  }
+
+  /**
+   * 新建或修改一条权限策略。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-22
+   */
+  async function savePermissionPolicyRule() {
+    if (policyBusy()) return
+    const draft = policyDraft()
+    const resource = draft.resource.trim()
+    if (!resource) {
+      setPolicyError("请填写 resource，例如 pwd、src/index.ts 或 *")
+      return
+    }
+    if (draft.scope === "session" && !sessionID()) {
+      setPolicyError("当前 Session 覆盖策略需要先选择或创建一个 Session")
+      return
+    }
+    setPolicyBusy(true)
+    setPolicyError("")
+    try {
+      const editingID = policyEditingID()
+      const saved = await requestPermissionPolicy<PermissionPolicyRule>(
+        `/api/experimental/headless/permission/policy${editingID ? `/${encodeURIComponent(editingID)}` : ""}`,
+        {
+          method: editingID ? "PUT" : "POST",
+          body: JSON.stringify(
+            editingID
+              ? { resource, effect: draft.effect }
+              : {
+                  action: anyToolAction,
+                  resource,
+                  effect: draft.effect,
+                  scope: draft.scope,
+                  ...(draft.scope === "session" ? { sessionID: sessionID() } : {}),
+                },
+          ),
+        },
+      )
+      setPolicyMessage(`策略已保存：${saved.resource} → ${permissionPolicyEffectLabel(saved.effect)}`)
+      setPolicyEditingID("")
+      setPolicyDraft({ ...emptyPermissionPolicyDraft, scope: draft.scope })
+      await loadPermissionPolicy()
+    } catch (error) {
+      setPolicyError(messageFrom(error, "权限策略保存失败"))
+    } finally {
+      setPolicyBusy(false)
+    }
+  }
+
+  /**
+   * 打开删除确认，避免误删之后重新放行危险操作。
+   * @param rule - 待删除的策略
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-22
+   */
+  function requestDeletePermissionPolicy(rule: PermissionPolicyRule) {
+    setPolicyDeleteTarget(rule)
+  }
+
+  /**
+   * 确认后删除策略，删除结果和错误都在抽屉内可发现。
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-22
+   */
+  async function confirmDeletePermissionPolicy() {
+    const target = policyDeleteTarget()
+    if (!target || policyDeleteBusy()) return
+    setPolicyDeleteBusy(true)
+    try {
+      await requestPermissionPolicy<{ id: string; deleted: boolean }>(
+        `/api/experimental/headless/permission/policy/${encodeURIComponent(target.id)}`,
+        { method: "DELETE" },
+      )
+      setPolicyMessage(`已删除策略：${target.resource}`)
+      if (policyEditingID() === target.id) cancelPermissionPolicyEdit()
+      await loadPermissionPolicy()
+    } catch (error) {
+      setPolicyError(messageFrom(error, "权限策略删除失败"))
+    } finally {
+      setPolicyDeleteBusy(false)
+      setPolicyDeleteTarget(undefined)
+    }
+  }
+
   async function selectSession(session: SessionSummary, announce = true) {
     const sequence = ++sessionSelectSequence
     streamController?.abort()
@@ -429,6 +630,7 @@ function App() {
     eventCursors.delete(session.id)
     connectEvents(session.id)
     if (announce) setNotice(`已选择 Session：${snapshot.data.session.name}`)
+    if (policyDrawerOpen()) void loadPermissionPolicy()
   }
 
   /**
@@ -807,6 +1009,11 @@ function App() {
         }),
       )
       await refreshPermissions()
+      if (decision === "allow_always") {
+        await loadPermissionPolicy()
+        setNotice("已保存全局「始终允许」策略：按该资源匹配所有工具，可在「权限策略」中修改或删除")
+        return
+      }
       setNotice(decision === "deny" ? "权限已拒绝" : "权限已通过")
     } catch (error) {
       setNotice(messageFrom(error, "权限处理失败，请重试"))
@@ -950,6 +1157,139 @@ function App() {
                 </For>
               </Show>
             </div>
+          </Drawer>
+          <Drawer
+            title="权限策略"
+            description="按资源匹配所有工具调用的权限效果。全局策略对所有 Session 生效，当前 Session 覆盖策略只影响选中的 Session。"
+            open={policyDrawerOpen()}
+            onOpenChange={(open) => (open ? openPolicyDrawer() : setPolicyDrawerOpen(false))}
+            triggerClass="nav-item"
+            trigger={
+              <>
+                <span>⚙</span>权限策略
+                <Show when={policyRules().length > 0}>
+                  <span class="nav-badge">{policyRules().length}</span>
+                </Show>
+              </>
+            }
+          >
+            <p class="helper-text">
+              策略只按 Resource 匹配，一次覆盖 shell、read、write、edit 等所有工具调用。判定顺序：始终拒绝 → 当前 Session 覆盖 → 全局默认 → 每次询问。危险命令（rm、sudo 等）和越界路径只接受精确匹配的允许规则。
+            </p>
+            <label class={`form-field ${policyError().includes("resource") ? "field-invalid" : ""}`}>
+              <span>
+                Resource <span class="required-mark">必填</span>
+              </span>
+              <input
+                id="permission-policy-resource"
+                aria-label="Resource"
+                aria-invalid={policyError().includes("resource")}
+                value={policyDraft().resource}
+                onInput={(event) => {
+                  setPolicyDraft({ ...policyDraft(), resource: event.currentTarget.value })
+                  setPolicyError("")
+                }}
+                placeholder="例如 pwd、bun test、src/*.ts 或 *"
+              />
+              <span class="field-help">支持 * 和 ? 通配；同一条规则对所有工具生效，危险操作仍需精确资源。</span>
+            </label>
+            <div class="form-field">
+              <span>
+                效果 <span class="required-mark">必填</span>
+              </span>
+              <div class="answer-options" role="group" aria-label="效果">
+                <For each={permissionPolicyEffectOptions}>
+                  {(option) => (
+                    <button
+                      type="button"
+                      class={`answer-option ${policyDraft().effect === option.value ? "is-selected" : ""}`}
+                      aria-pressed={policyDraft().effect === option.value}
+                      onClick={() => setPolicyDraft({ ...policyDraft(), effect: option.value })}
+                    >
+                      <span>{option.label}</span>
+                      <small>{option.description}</small>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+            <Show when={!policyEditingID()}>
+              <div class="form-field">
+                <span>作用范围</span>
+                <div class="answer-options" role="group" aria-label="作用范围">
+                  <For each={permissionPolicyScopeOptions}>
+                    {(option) => (
+                      <button
+                        type="button"
+                        class={`answer-option ${policyDraft().scope === option.value ? "is-selected" : ""}`}
+                        aria-pressed={policyDraft().scope === option.value}
+                        onClick={() => setPolicyDraft({ ...policyDraft(), scope: option.value })}
+                      >
+                        <span>{option.label}</span>
+                        <small>{option.description}</small>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </Show>
+            <div class="button-stack">
+              <button class="button button-primary" disabled={policyBusy()} onClick={() => void savePermissionPolicyRule()}>
+                {policyBusy() ? "保存中…" : policyEditingID() ? "保存修改" : "保存策略"}
+              </button>
+              <Show when={policyEditingID()}>
+                <button class="button button-secondary" disabled={policyBusy()} onClick={cancelPermissionPolicyEdit}>
+                  取消修改
+                </button>
+              </Show>
+            </div>
+            <Show when={policyError()}>
+              <p class="field-error" role="alert">
+                {policyError()}
+              </p>
+            </Show>
+            <Show when={policyMessage()}>
+              <p class="form-feedback form-feedback-success" role="status" aria-live="polite">
+                {policyMessage()}
+              </p>
+            </Show>
+            <div class="drawer-toolbar">
+              <p class="helper-text">已有策略 · {policyRules().length} 条</p>
+              <button class="text-button" disabled={policyBusy()} onClick={() => void loadPermissionPolicy()}>
+                刷新
+              </button>
+            </div>
+            <Show
+              when={policyRules().length > 0}
+              fallback={<p class="empty-copy">还没有权限策略，所有工具调用都会逐次询问。</p>}
+            >
+              <div class="permission-list" aria-live="polite">
+                <For each={policyRules()}>
+                  {(rule) => (
+                    <div class="permission-card">
+                      <div>
+                        <span class="permission-action">
+                          {rule.scope === "session" ? "当前 Session" : "全局默认"}
+                        </span>
+                        <strong title={rule.resource}>{rule.resource}</strong>
+                        <small>
+                          {permissionPolicyEffectLabel(rule.effect)} · 更新于{" "}
+                          {new Date(rule.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </small>
+                      </div>
+                      <div class="permission-actions">
+                        <button disabled={policyBusy()} onClick={() => editPermissionPolicy(rule)}>
+                          修改
+                        </button>
+                        <button class="deny" disabled={policyBusy()} onClick={() => requestDeletePermissionPolicy(rule)}>
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
           </Drawer>
           <Drawer
             title="模型服务"
@@ -1407,6 +1747,52 @@ function App() {
                 </Show>
               </div>
             </div>
+            <Show when={permissions().length > 0}>
+              <section class="permission-prompt" data-testid="prompt-permission" aria-live="assertive">
+                <div class="permission-prompt-head">
+                  <div>
+                    <strong>需要你的权限确认</strong>
+                    <span class="section-kicker">同类请求可选择始终允许，后续将直接执行</span>
+                  </div>
+                  <span class="permission-prompt-count">{permissions().length} 条</span>
+                </div>
+                <div class="permission-prompt-list">
+                  <For each={permissions()}>
+                    {(request) => (
+                      <div class="permission-prompt-card">
+                        <div class="permission-prompt-copy">
+                          <strong title={request.resource}>
+                            {request.action} · {request.resource}
+                          </strong>
+                          <span>{request.reason}</span>
+                        </div>
+                        <div class="permission-actions">
+                          <button
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "allow_once")}
+                          >
+                            {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
+                          </button>
+                          <button
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "allow_always")}
+                          >
+                            始终允许
+                          </button>
+                          <button
+                            class="deny"
+                            disabled={Boolean(pendingDecisionID())}
+                            onClick={() => decide(request.id, "deny")}
+                          >
+                            拒绝
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </section>
+            </Show>
             <div class="prompt-shell">
               <textarea
                 class="prompt-input"
@@ -1455,6 +1841,9 @@ function App() {
                     "⌘ ↵ 发送 · @ 引用 Skill"
                   )}
                 </span>
+                <button type="button" class="text-button" onClick={openPolicyDrawer}>
+                  ⚙ 权限策略
+                </button>
                 <button
                   class="send-fab"
                   disabled={!sessionID() || !prompt().trim() || busy() || inputLocked()}
@@ -1627,6 +2016,18 @@ function App() {
         </footer>
 
         <ConfirmDialog
+          title="删除这条权限策略？"
+          description={`删除后「${policyDeleteTarget()?.resource ?? ""}」会回落到下一层判定：Session 覆盖、全局默认或逐次询问。`}
+          confirmLabel="确认删除策略"
+          open={Boolean(policyDeleteTarget())}
+          onOpenChange={(open) => {
+            if (!open) setPolicyDeleteTarget(undefined)
+          }}
+          busy={policyDeleteBusy()}
+          onConfirm={() => void confirmDeletePermissionPolicy()}
+        />
+
+        <ConfirmDialog
           title="取消当前运行？"
           description="取消后正在执行的 Agent 任务会立即停止，本轮进度不可恢复。确认要继续吗？"
           confirmLabel="确认取消运行"
@@ -1638,6 +2039,40 @@ function App() {
       </section>
     </main>
   )
+}
+
+/**
+ * 调用 Headless Server 的权限策略接口。
+ *
+ * 策略路由属于 Headless Server 的实验接口，不进入生成的 SDK，因此页面直接用 fetch，
+ * 并把服务端返回的稳定错误消息原样交给调用方展示。
+ *
+ * @param path - 以 /api 开头的策略路径
+ * @param init - 可选的 fetch 配置
+ * @returns 响应中的 data 字段
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-22
+ */
+async function requestPermissionPolicy<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+  })
+  const payload = (await response.json().catch(() => undefined)) as { data?: T; message?: string } | undefined
+  if (!response.ok) throw new Error(payload?.message ?? "权限策略请求失败")
+  if (payload?.data === undefined) throw new Error("权限策略响应缺少数据")
+  return payload.data
+}
+
+/**
+ * 将策略效果转换为页面文案，与权限队列里的三个按钮保持一致。
+ * @param effect - 策略效果
+ * @returns 中文效果标签
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-22
+ */
+function permissionPolicyEffectLabel(effect: PermissionPolicyEffect): string {
+  return { allow: "始终允许", ask: "每次询问", deny: "始终拒绝" }[effect]
 }
 
 function messageFrom(error: unknown, fallback: string): string {

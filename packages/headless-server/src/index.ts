@@ -8,6 +8,7 @@
 import {
   HeadlessModelConfigError,
   HeadlessPermissionError,
+  HeadlessPermissionPolicyError,
   HeadlessQuestionError,
   HeadlessSessionError,
   HeadlessModelError,
@@ -23,9 +24,11 @@ import {
   createHeadlessSkillInvocationPort,
   createHeadlessSkillRegistry,
   createHeadlessToolRegistry,
+  headlessAnyToolAction,
   type HeadlessCodingLoop,
   type HeadlessModelConfigStore,
   type HeadlessPermissionBroker,
+  type HeadlessPermissionPolicyStore,
   type HeadlessQuestionPort,
   type HeadlessModelProbeMode,
   type HeadlessModelProbePort,
@@ -50,6 +53,7 @@ const HEADLESS_FEATURES = [
   "session",
   "prompt",
   "permission",
+  "permission_policy",
   "question",
   "context_compaction",
   "project_context",
@@ -86,6 +90,12 @@ export interface HeadlessServerOptions {
   readonly interactionStore?: HeadlessInteractionStore
   readonly codingLoop?: HeadlessCodingLoop
   readonly permissionBroker?: HeadlessPermissionBroker
+  /**
+   * 权限策略 Store；仅在未注入 `permissionBroker` 时生效。
+   *
+   * 注入 Broker 时以 Broker 自带的 `policy` 为准，避免同一服务出现两份策略来源。
+   */
+  readonly permissionPolicyStore?: HeadlessPermissionPolicyStore
   readonly questionPort?: HeadlessQuestionPort
   readonly modelProbe?: HeadlessModelProbePort
   readonly modelConfigStore?: HeadlessModelConfigStore
@@ -122,7 +132,9 @@ export async function startHeadlessServer(options: HeadlessServerOptions = {}): 
     createHeadlessModelProbePort({ model: createOpenAICompatibleModelPort({ config: modelConfigStore }) })
   const eventHub = options.eventHub ?? createHeadlessEventHub()
   const interactionStore = options.interactionStore
-  const permissionBroker = options.permissionBroker ?? createHeadlessPermissionBroker({ interactionStore })
+  const permissionBroker =
+    options.permissionBroker ??
+    createHeadlessPermissionBroker({ interactionStore, ...(options.permissionPolicyStore ? { policyStore: options.permissionPolicyStore } : {}) })
   const questionPort = options.questionPort ?? createHeadlessQuestionPort({ interactionStore })
   const skillRegistry =
     options.skillRegistry ??
@@ -208,7 +220,7 @@ function withCorsHeaders(response: Response, request: Request, origins: readonly
   headers.set("vary", "origin")
   if (origin && isAllowedOrigin(origin, origins)) {
     headers.set("access-control-allow-origin", origin)
-    headers.set("access-control-allow-methods", "GET, POST, PUT, OPTIONS")
+    headers.set("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS")
     headers.set("access-control-allow-headers", "content-type, x-trace-id, last-event-id")
     headers.set("access-control-max-age", "300")
   }
@@ -384,6 +396,20 @@ async function handleRequest(
       request.headers.get("last-event-id") ?? url.searchParams.get("after"),
       traceId,
     )
+  }
+
+  if (url.pathname === "/api/experimental/headless/permission/policy") {
+    if (request.method === "GET") return listPermissionPolicy(url, sessionService, permissionBroker, traceId)
+    if (request.method === "POST") return createPermissionPolicyRule(request, sessionService, permissionBroker, traceId)
+    return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 GET 或 POST 请求", traceId)
+  }
+
+  const permissionPolicyRuleMatch = url.pathname.match(/^\/api\/experimental\/headless\/permission\/policy\/([^/]+)$/)
+  if (permissionPolicyRuleMatch) {
+    const ruleID = decodeURIComponent(permissionPolicyRuleMatch[1]!)
+    if (request.method === "PUT") return updatePermissionPolicyRule(request, ruleID, permissionBroker, traceId)
+    if (request.method === "DELETE") return deletePermissionPolicyRule(ruleID, permissionBroker, traceId)
+    return errorResponse(405, "HEADLESS_METHOD_NOT_ALLOWED", "只支持 PUT 或 DELETE 请求", traceId)
   }
 
   const permissionListMatch = url.pathname.match(/^\/api\/experimental\/headless\/session\/([^/]+)\/permission$/)
@@ -921,6 +947,214 @@ async function replyPermission(
     }
     return errorResponse(500, "HEADLESS_PERMISSION_REPLY_FAILED", "权限审批失败", traceId)
   }
+}
+
+/**
+ * 策略接口允许的 action 白名单。
+ *
+ * `*` 表示 action-agnostic 规则，只按 resource 匹配所有工具调用；其余只接受具体工具名，
+ * 不接受 `s*` 这类部分通配，避免一条规则顺带放行意料之外的工具。
+ */
+const PERMISSION_POLICY_ACTIONS = [headlessAnyToolAction, "shell", "read", "write", "edit"] as const
+
+/**
+ * 返回全局默认策略和指定 Session 的覆盖策略。
+ *
+ * @param url - 携带可选 sessionID 查询参数的请求地址
+ * @param sessionService - Session 查询服务
+ * @param permissionBroker - 权限审批 Broker
+ * @param traceId - 当前请求链路标识
+ * @returns 策略规则列表或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-22
+ */
+async function listPermissionPolicy(
+  url: URL,
+  sessionService: HeadlessSessionService,
+  permissionBroker: HeadlessPermissionBroker | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!permissionBroker) return permissionUnavailable(traceId)
+  const sessionID = url.searchParams.get("sessionID")?.trim() || undefined
+  if (sessionID && !(await sessionService.get(sessionID))) {
+    return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  try {
+    const rules = await permissionBroker.policy.list(sessionID ? { sessionID } : undefined)
+    return jsonResponse({ data: { rules, defaultEffect: "ask", ...(sessionID ? { sessionID } : {}) } }, traceId)
+  } catch (error) {
+    return permissionPolicyErrorResponse(error, traceId)
+  }
+}
+
+/**
+ * 新建一条全局或 Session 覆盖权限策略。
+ *
+ * @param request - 包含 action、resource、effect 和可选 scope 的 JSON 请求
+ * @param sessionService - Session 查询服务
+ * @param permissionBroker - 权限审批 Broker
+ * @param traceId - 当前请求链路标识
+ * @returns 新建的策略规则或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-22
+ */
+async function createPermissionPolicyRule(
+  request: Request,
+  sessionService: HeadlessSessionService,
+  permissionBroker: HeadlessPermissionBroker | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!permissionBroker) return permissionUnavailable(traceId)
+  const payload = await request.json().catch(() => undefined)
+  if (
+    !isRecord(payload) ||
+    typeof payload.action !== "string" ||
+    typeof payload.resource !== "string" ||
+    typeof payload.effect !== "string"
+  ) {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "action、resource 和 effect 必须是字符串", traceId)
+  }
+  if (!isPermissionPolicyAction(payload.action)) {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", PERMISSION_POLICY_ACTION_HINT, traceId)
+  }
+  const scope = payload.scope ?? "global"
+  if (scope !== "global" && scope !== "session") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "scope 只支持 global 或 session", traceId)
+  }
+  const sessionID = scope === "session" && typeof payload.sessionID === "string" ? payload.sessionID.trim() : ""
+  if (scope === "session") {
+    if (!sessionID) {
+      return errorResponse(400, "HEADLESS_INVALID_REQUEST", "Session 作用域的策略必须提供 sessionID", traceId)
+    }
+    if (!(await sessionService.get(sessionID))) {
+      return errorResponse(404, "HEADLESS_SESSION_NOT_FOUND", "Session 不存在", traceId)
+    }
+  }
+
+  try {
+    const rule = await permissionBroker.policy.add({
+      action: payload.action,
+      resource: payload.resource,
+      effect: payload.effect,
+      scope,
+      ...(scope === "session" ? { sessionID } : {}),
+    })
+    return jsonResponse({ data: rule }, traceId)
+  } catch (error) {
+    return permissionPolicyErrorResponse(error, traceId)
+  }
+}
+
+/**
+ * 修改已有策略的 action、resource 或 effect。
+ *
+ * @param request - 包含待修改字段的 JSON 请求
+ * @param ruleID - 路径中的策略 ID
+ * @param permissionBroker - 权限审批 Broker
+ * @param traceId - 当前请求链路标识
+ * @returns 修改后的策略规则或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-22
+ */
+async function updatePermissionPolicyRule(
+  request: Request,
+  ruleID: string,
+  permissionBroker: HeadlessPermissionBroker | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!permissionBroker) return permissionUnavailable(traceId)
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload)) {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "请求体必须是 JSON 对象", traceId)
+  }
+  const action = payload.action
+  const resource = payload.resource
+  const effect = payload.effect
+  if (action === undefined && resource === undefined && effect === undefined) {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "至少需要提供 action、resource 或 effect", traceId)
+  }
+  if (action !== undefined && (typeof action !== "string" || !isPermissionPolicyAction(action))) {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", PERMISSION_POLICY_ACTION_HINT, traceId)
+  }
+  if (resource !== undefined && typeof resource !== "string") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "resource 必须是字符串", traceId)
+  }
+  if (effect !== undefined && typeof effect !== "string") {
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", "effect 必须是字符串", traceId)
+  }
+
+  try {
+    const rule = await permissionBroker.policy.update(ruleID, {
+      ...(typeof action === "string" ? { action } : {}),
+      ...(typeof resource === "string" ? { resource } : {}),
+      ...(typeof effect === "string" ? { effect } : {}),
+    })
+    return jsonResponse({ data: rule }, traceId)
+  } catch (error) {
+    return permissionPolicyErrorResponse(error, traceId)
+  }
+}
+
+/**
+ * 删除一条策略，删除后对应请求回落到下一层判定。
+ *
+ * @param ruleID - 路径中的策略 ID
+ * @param permissionBroker - 权限审批 Broker
+ * @param traceId - 当前请求链路标识
+ * @returns 删除结果或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-22
+ */
+async function deletePermissionPolicyRule(
+  ruleID: string,
+  permissionBroker: HeadlessPermissionBroker | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!permissionBroker) return permissionUnavailable(traceId)
+  try {
+    const rule = await permissionBroker.policy.remove(ruleID)
+    return jsonResponse({ data: { id: rule.id, deleted: true } }, traceId)
+  } catch (error) {
+    return permissionPolicyErrorResponse(error, traceId)
+  }
+}
+
+/** 策略 action 校验失败时返回的稳定文案。 */
+const PERMISSION_POLICY_ACTION_HINT = "action 只支持 shell、read、write、edit 或 *（匹配所有工具）"
+
+/** 判断 action 是否是具体工具动作，或表示匹配所有工具的 `*`。 */
+function isPermissionPolicyAction(value: string): boolean {
+  return PERMISSION_POLICY_ACTIONS.some((action) => action === value)
+}
+
+/** 统一返回权限能力未配置的服务错误。 */
+function permissionUnavailable(traceId: string): Response {
+  return errorResponse(503, "HEADLESS_PERMISSION_NOT_CONFIGURED", "Headless Permission 尚未配置", traceId)
+}
+
+/**
+ * 把策略存储错误映射为稳定 HTTP 错误码。
+ *
+ * @param error - 策略存储抛出的错误
+ * @param traceId - 当前请求链路标识
+ * @returns caller-safe 错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-22
+ */
+function permissionPolicyErrorResponse(error: unknown, traceId: string): Response {
+  if (error instanceof HeadlessPermissionPolicyError) {
+    if (error.code === "not_found") {
+      return errorResponse(404, "HEADLESS_PERMISSION_POLICY_NOT_FOUND", error.message, traceId)
+    }
+    if (error.code === "duplicate_rule") {
+      return errorResponse(409, "HEADLESS_PERMISSION_POLICY_CONFLICT", error.message, traceId)
+    }
+    if (error.code === "invalid_file") {
+      return errorResponse(500, "HEADLESS_PERMISSION_POLICY_UNAVAILABLE", error.message, traceId)
+    }
+    return errorResponse(400, "HEADLESS_INVALID_REQUEST", error.message, traceId)
+  }
+  return errorResponse(500, "HEADLESS_PERMISSION_POLICY_FAILED", "权限策略操作失败", traceId)
 }
 
 /** 返回指定 Session 的待回答 Question。 */
