@@ -12,7 +12,7 @@ import {
   type ToolRequest,
   type ToolPort,
 } from "../src/index.ts"
-import { createFileMessageStore, createInMemoryMessageStore, createNexumProjectContextPort } from "@nexum/adapters"
+import { createFileMessageStore, createInMemoryMessageStore, createNexumProjectContextPort } from "../../nexum-adapters/src/index.ts"
 import type { ContextCompactionPort } from "../src/context.ts"
 
 const temporaryDirectories: string[] = []

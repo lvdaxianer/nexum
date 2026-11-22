@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { createNexumSessionService } from "../src/index.ts"
-import { createInMemorySessionStore, createLocalDirectoryValidator } from "@nexum/adapters"
+import { createInMemorySessionStore, createLocalDirectoryValidator } from "../../nexum-adapters/src/index.ts"
 
 const temporaryDirectories: string[] = []
 

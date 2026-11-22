@@ -11,7 +11,7 @@ import {
   type ToolRequest,
   type ToolPort,
 } from "../src/index.ts"
-import { createFileInteractionStore } from "@nexum/adapters"
+import { createFileInteractionStore } from "../../nexum-adapters/src/index.ts"
 
 async function makeSession() {
   const directory = await mkdtemp(join(tmpdir(), "nexum-permission-"))

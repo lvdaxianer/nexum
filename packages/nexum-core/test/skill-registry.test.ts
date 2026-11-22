@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createNexumSkillRegistry } from "@nexum/adapters"
+import { createNexumSkillRegistry } from "../../nexum-adapters/src/index.ts"
 
 async function makeSkill(root: string, directory: string, name = directory) {
   const skillRoot = join(root, directory)

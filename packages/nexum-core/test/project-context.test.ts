@@ -10,7 +10,7 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "../src/index.ts"
-import { createNexumProjectContextPort } from "@nexum/adapters"
+import { createNexumProjectContextPort } from "../../nexum-adapters/src/index.ts"
 import type { ContextCompactionPort } from "../src/context.ts"
 
 const temporaryDirectories: string[] = []

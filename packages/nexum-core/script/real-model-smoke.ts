@@ -1,7 +1,7 @@
 import {
   createNexumModelConfigStore,
   createOpenAICompatibleModelPort,
-} from "@nexum/adapters"
+} from "../../nexum-adapters/src/index.ts"
 import type { ModelChunk, NexumFetch } from "../src/index.ts"
 
 /** 真实模型 smoke 的最小环境输入。 */

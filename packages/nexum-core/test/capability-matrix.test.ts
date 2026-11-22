@@ -11,7 +11,7 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "../src/index.ts"
-import { createNexumModelConfigStore, createOpenAICompatibleModelPort } from "@nexum/adapters"
+import { createNexumModelConfigStore, createOpenAICompatibleModelPort } from "../../nexum-adapters/src/index.ts"
 
 test("rejects malformed OpenAI Function Calling arguments without emitting a tool chunk", async () => {
   const config = createNexumModelConfigStore()

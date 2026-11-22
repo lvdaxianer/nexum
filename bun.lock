@@ -530,7 +530,6 @@
       "name": "@nexum/core",
       "version": "0.0.1",
       "devDependencies": {
-        "@nexum/adapters": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
       },

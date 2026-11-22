@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { MemoryPort } from "../src/index.ts"
-import { createInMemoryMemory } from "@nexum/adapters"
+import { createInMemoryMemory } from "../../nexum-adapters/src/index.ts"
 
 test("stores and searches namespaced memory without leaking mutable metadata", async () => {
   const memory: MemoryPort = createInMemoryMemory({ now: () => "2026-11-22T00:00:00.000Z" })

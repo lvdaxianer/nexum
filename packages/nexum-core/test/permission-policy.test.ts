@@ -9,7 +9,7 @@ import {
   type NexumPermissionPolicyRule,
   type ToolRequest,
 } from "../src/index.ts"
-import { createFilePermissionPolicyStore, createInMemoryPermissionPolicyStore } from "@nexum/adapters"
+import { createFilePermissionPolicyStore, createInMemoryPermissionPolicyStore } from "../../nexum-adapters/src/index.ts"
 
 function request(action: string, resource: string, sessionID = "session-a"): ToolRequest {
   return { sessionID, toolName: action === "shell" ? "shell" : action, action, resource, input: {} }

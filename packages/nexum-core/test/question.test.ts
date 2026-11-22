@@ -10,7 +10,7 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "../src/index.ts"
-import { createFileInteractionStore, createNexumQuestionPort } from "@nexum/adapters"
+import { createFileInteractionStore, createNexumQuestionPort } from "../../nexum-adapters/src/index.ts"
 
 const temporaryDirectories: string[] = []
 
