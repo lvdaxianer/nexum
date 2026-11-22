@@ -1289,7 +1289,9 @@ function App() {
                 >
                   <For each={chatItems()}>
                     {(item) => (
-                      <article class={`chat-message ${item.kind} chat-status-${item.status}`}>
+                      <article
+                        class={`chat-message ${item.kind} chat-status-${item.status} ${item.thinking ? "thinking" : ""}`}
+                      >
                         <Switch>
                           <Match when={item.kind === "user" || item.kind === "assistant"}>
                             <div class="turn-label">
