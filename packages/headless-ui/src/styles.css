@@ -1625,7 +1625,8 @@ input[aria-invalid="true"]:focus {
   box-shadow: 0 0 0 3px rgba(27, 155, 154, 0.12);
 }
 
-.prompt-input {
+.prompt-input,
+.prompt-input:focus {
   width: 100%;
   min-height: 54px;
   max-height: 160px;
@@ -1633,6 +1634,7 @@ input[aria-invalid="true"]:focus {
   border: 0;
   outline: 0;
   background: transparent;
+  box-shadow: none;
   color: #1d2b3c;
   font: inherit;
   font-size: 13px;
