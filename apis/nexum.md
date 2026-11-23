@@ -12,6 +12,7 @@
 | Nexum Runtime | `POST /api/nexum/skills/register`、`POST /api/nexum/skills/refresh`、`POST /api/nexum/skills/validate` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
 | Nexum Runtime | `DELETE /api/nexum/skills/:id`、`POST /api/nexum/skills/:id/activate` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
 | Nexum Runtime | `GET /api/nexum/role-prompt`、`PUT /api/nexum/role-prompt`、`DELETE /api/nexum/role-prompt` | [默认角色提示词](#默认角色提示词) | 已覆盖 |
+| Nexum Runtime | `GET /api/experimental/nexum/session/:sessionID/messages` | [Session 对话历史](#session-对话历史) | 已覆盖 |
 
 ## 协议约定
 
@@ -34,6 +35,7 @@
 | `GET` / `POST` | `/api/nexum/session` | 列出或创建 Session |
 | `PUT` / `DELETE` | `/api/nexum/session/:sessionID` | 更新或删除 Session |
 | `GET` | `/api/nexum/session/:sessionID/state` | 获取恢复状态 |
+| `GET` | `/api/experimental/nexum/session/:sessionID/messages` | 分页读取 canonical 对话历史；实验性接口 |
 | `POST` | `/api/nexum/session/:sessionID/prompt` | 提交长任务 Prompt |
 | `POST` | `/api/experimental/nexum/session/:sessionID/continue` | 从既有 User/Tool 上下文继续运行；实验性接口 |
 | `POST` | `/api/nexum/session/:sessionID/cancel` | 取消当前运行 |
@@ -62,6 +64,121 @@ Content-Type: application/json
 ```
 
 每次模型调用前，Nexum 将当前提示词原文作为 `system` 消息注入，来源标识固定为 `runtime:default-role`。该消息不会写入 Session 历史；resume、continue 和 compaction 后会重新读取最新配置。Nexum 不翻译、过滤或改写模型的 reasoning、tool 参数和文本输出，Agent 也不能通过工具修改该全局配置。
+
+## Session 对话历史
+
+### 接口概览
+
+`GET /api/experimental/nexum/session/:sessionID/messages` 从 `MessageStore` 读取 Session 的 canonical 消息历史，默认返回最新一页。它服务于页面恢复和向上滚动，不返回事件日志，也不返回默认角色提示词、Skill 原文、项目上下文原文、工具定义或模型凭据。实验性接口可能变化，不提供兼容别名。
+
+| 项目 | 内容 |
+| --- | --- |
+| 调用方 | Nexum Web UI 或需要恢复对话的 Runtime 客户端 |
+| 前置条件 | `sessionID` 对应现存 Session |
+| 分页 | `limit` 为 1-100 的整数，默认 50；`before` 为非负消息索引，返回其之前的一页；继续翻页时带上上页的 `snapshot` |
+| 排序 | 按 canonical 消息写入顺序升序返回；`index` 是当前历史快照中的零基索引 |
+| 脱敏 | 文本和结构化工具输入在响应边界脱敏；内部模型历史不被修改 |
+| 认证 | 当前认证约定待确认；服务实现未校验认证信息 |
+
+### 请求定义
+
+#### Method and URL
+
+```http
+GET http://127.0.0.1:4097/api/experimental/nexum/session/{sessionID}/messages?limit=50&before=100
+```
+
+#### Path parameters
+
+| 参数名 | 类型 | 必填 | 格式/范围 | 示例 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| `{sessionID}` | string | 是 | URL 编码后的 Session 标识 | `session_001` | 目标 Session |
+
+#### Query parameters
+
+| 参数名 | 类型 | 必填 | 默认值 | 范围 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| `limit` | integer | 否 | `50` | `1-100` | 本页最多返回的消息数 |
+| `before` | integer | 否 | 历史长度 | `>=0` 且不超过历史长度 | 返回索引小于该值的最近一页；使用上次响应的 `nextBefore` |
+| `snapshot` | string | 翻页时必填 | 无 | 上页响应的 `snapshotID` | `8d3f…` | 校验分页期间 canonical 历史未被重写 |
+
+#### Request headers and cookies
+
+`X-Trace-Id` 可选，格式为 1-128 位字母、数字、`.`、`_`、`:` 或 `-`；缺失或非法时服务生成新的 trace ID。`Accept: application/json` 可选。请求 Cookie 不适用。
+
+### 成功响应：`200 OK`
+
+```json
+{
+  "data": {
+    "messages": [
+      {
+        "index": 98,
+        "message": { "role": "user", "content": "请检查项目状态" }
+      },
+      {
+        "index": 99,
+        "message": {
+          "role": "system",
+          "sourceID": "context:summary",
+          "content": "Context summary:\n已完成项目检查"
+        }
+      }
+    ],
+    "total": 100,
+    "hasMore": true,
+    "nextBefore": 98,
+    "snapshotID": "8d3f0f5c…"
+  },
+  "meta": {
+    "protocolVersion": "nexum.runtime.v1",
+    "traceId": "trace_messages_001"
+  }
+}
+```
+
+| 字段路径 | 类型 | 必有/可选 | 说明 |
+| --- | --- | --- | --- |
+| `data.messages` | array | 必有 | 当前页消息，按 canonical 顺序升序排列 |
+| `data.messages[].index` | integer | 必有 | 当前消息在历史快照中的零基索引 |
+| `data.messages[].message` | object | 必有 | `system`、`user`、`assistant` 或 `tool` 消息 |
+| `data.total` | integer | 必有 | 当前历史快照的消息总数 |
+| `data.hasMore` | boolean | 必有 | 是否还有更早消息 |
+| `data.nextBefore` | integer | 可选 | 下一次请求使用的 `before`；没有更早消息时省略 |
+| `data.snapshotID` | string | 必有 | 当前 canonical 历史快照标识；向上翻页时原样作为 `snapshot` 传回 |
+| `meta.protocolVersion` | string | 必有 | 固定为 `nexum.runtime.v1` |
+| `meta.traceId` | string | 必有 | 请求链路标识 |
+
+`assistant` 消息可包含 `content`、`reasoningContent` 和 `toolCalls`；`tool` 消息包含 `toolCallID` 和 `content`。压缩摘要以 `sourceID: context:summary` 的 `system` 消息返回。
+
+### 错误响应
+
+错误响应包含 `errorCode`、中文 `message`、`traceId` 和协议 `meta`；不会返回本地文件路径、异常堆栈或凭据。
+
+| HTTP 状态码 | `errorCode` | 触发条件 | 调用方处理 |
+| --- | --- | --- | --- |
+| `400` | `NEXUM_INVALID_REQUEST` | `limit`、`before` 缺失格式错误或超出范围 | 修正分页参数后重试 |
+| `404` | `NEXUM_SESSION_NOT_FOUND` | Session 不存在 | 清除本地 Session 选择并重新加载列表 |
+| `409` | `NEXUM_HISTORY_SNAPSHOT_EXPIRED` | 翻页期间历史被压缩或重写 | 丢弃旧游标，从最新页重新加载 |
+| `405` | `NEXUM_METHOD_NOT_ALLOWED` | 使用非 GET 方法 | 改用 GET |
+| `500` | `NEXUM_INTERNAL_ERROR` | MessageStore 不可读或服务内部失败 | 使用 `traceId` 排障，保留当前页面内容并稍后重试 |
+
+### curl 示例
+
+```bash
+curl --get 'http://127.0.0.1:4097/api/experimental/nexum/session/session_001/messages' \
+  --data-urlencode 'limit=50' \
+  --header 'Accept: application/json' \
+  --header 'X-Trace-Id: trace_messages_001'
+```
+
+使用上一页返回的游标查询更早消息：
+
+```bash
+curl --get 'http://127.0.0.1:4097/api/experimental/nexum/session/session_001/messages' \
+  --data-urlencode 'before=98' \
+  --data-urlencode 'limit=50'
+```
 
 ## Session 删除
 
@@ -331,7 +448,16 @@ Core 只产生运行事实，Server 将事实编码为协议事件，应用层�
 
 因此，UI 不应通过解析模型文本来猜测是否需要反问或展示权限卡片，而应消费对应的协议事件。
 
-Session state 快照还包含 `canContinue`，表示当前持久化历史是否以可继续的 `user` 或 `tool` 消息结尾。应用层恢复页面时应优先使用该字段决定是否展示 Continue 操作。
+Session state 快照还包含 `canContinue`，表示当前持久化历史是否以可继续的 `user` 或 `tool` 消息结尾。应用层恢复页面时应优先使用该字段决定是否展示 Continue 操作；恢复对话正文应使用上面的消息历史接口，不应从事件窗口反推完整消息。
+
+事件流支持可选查询参数 `afterSequence`，用于从严格大于该值的 `sequence` 开始回放：
+
+```http
+GET /api/nexum/session/{sessionID}/events?afterSequence=42
+Accept: text/event-stream
+```
+
+`afterSequence` 是非负整数；格式非法时返回 `400 NEXUM_INVALID_REQUEST`。如果同时提供 `Last-Event-ID`（或兼容的 `after` query），服务会将事件 ID 对应的序号与 `afterSequence` 取较大值作为下界，仍只返回严格更大的事件。断线重连应继续使用 `Last-Event-ID`，首次加载可使用 Session state 的 `lastSequence`。历史消息和事件流来自两个持久化读模型，页面应以消息历史恢复对话正文、以事件流恢复实时状态；在运行并发写入期间，实时事件仍是最终状态来源。
 
 ## 实验性：继续运行
 

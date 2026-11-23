@@ -227,6 +227,115 @@ test("deletes one session and its durable history while preserving the work dire
   expect(((await repeated.json()) as { errorCode: string }).errorCode).toBe("NEXUM_SESSION_NOT_FOUND")
 })
 
+test("pages canonical session messages without exposing credential-shaped values", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-messages-project-"))
+  temporaryDirectories.push(directory)
+  const sessionStore = createInMemorySessionStore()
+  const sessionService = createNexumSessionService({ store: sessionStore })
+  const messageStore = createInMemoryMessageStore()
+  const session = await sessionService.create({ directory, name: "历史对话" })
+  await messageStore.save(session.sessionID, [
+    { role: "user", content: "第一条 Prompt" },
+    { role: "assistant", content: "第一条回答", reasoningContent: "先检查目录" },
+    {
+      role: "assistant",
+      toolCalls: [
+        {
+          id: "tool-call-001",
+          name: "shell",
+          input: {
+            command: "pwd",
+            token: "secret-value",
+            nested: [{ access_token: "access-secret", client_secret: "client-secret" }],
+          },
+        },
+      ],
+    },
+    {
+      role: "tool",
+      toolCallID: "tool-call-001",
+      content: 'tool output: {"access_token":"json secret","private_key":"private secret"}',
+    },
+    { role: "system", sourceID: "context:summary", content: "Context summary:\n已完成目录检查" },
+    { role: "system", sourceID: "runtime:default-role", content: "内部角色提示词：必须隐藏" },
+    { role: "user", content: "最新 Prompt" },
+  ])
+  const server = await startNexumServer({ port: 0, sessionService, messageStore })
+  servers.push(server)
+
+  const firstResponse = await fetch(
+    new URL(`/api/experimental/nexum/session/${session.sessionID}/messages?limit=3`, server.url),
+  )
+  const firstBody = (await firstResponse.json()) as {
+    data: {
+      messages: Array<{ index: number; message: Record<string, unknown> }>
+      total: number
+      hasMore: boolean
+      nextBefore?: number
+      snapshotID: string
+    }
+  }
+
+  expect(firstResponse.status).toBe(200)
+  expect(firstBody.data.total).toBe(7)
+  expect(firstBody.data.snapshotID).toHaveLength(64)
+  expect(firstBody.data.messages.map((item) => item.index)).toEqual([4, 5, 6])
+  expect(firstBody.data.messages[0]?.message).toMatchObject({ role: "system", sourceID: "context:summary" })
+  expect(firstBody.data.messages[1]?.message).toMatchObject({
+    role: "system",
+    sourceID: "context:hidden",
+    content: "内部系统上下文未在对话历史中展示",
+  })
+  expect(firstBody.data.hasMore).toBe(true)
+  expect(firstBody.data.nextBefore).toBe(4)
+
+  const secondResponse = await fetch(
+    new URL(`/api/experimental/nexum/session/${session.sessionID}/messages?before=4&limit=3`, server.url),
+  )
+  const secondBody = (await secondResponse.json()) as {
+    data: { messages: Array<{ index: number; message: Record<string, unknown> }>; nextBefore?: number }
+  }
+
+  expect(secondResponse.status).toBe(200)
+  expect(secondBody.data.messages.map((item) => item.index)).toEqual([1, 2, 3])
+  expect(secondBody.data.messages[1]?.message).toMatchObject({
+    role: "assistant",
+    toolCalls: [
+      {
+        id: "tool-call-001",
+        input: {
+          token: "[REDACTED]",
+          nested: [{ access_token: "[REDACTED]", client_secret: "[REDACTED]" }],
+        },
+      },
+    ],
+  })
+  expect(secondBody.data.messages[2]?.message).toMatchObject({
+    role: "tool",
+    content: 'tool output: {"access_token":[REDACTED],"private_key":[REDACTED]}',
+  })
+  expect(JSON.stringify(secondBody.data.messages)).not.toContain("内部角色提示词")
+  expect(secondBody.data.nextBefore).toBe(1)
+
+  const expiredResponse = await fetch(
+    new URL(`/api/experimental/nexum/session/${session.sessionID}/messages?before=4&snapshot=stale`, server.url),
+  )
+  expect(expiredResponse.status).toBe(409)
+  expect(((await expiredResponse.json()) as { errorCode: string }).errorCode).toBe("NEXUM_HISTORY_SNAPSHOT_EXPIRED")
+
+  const invalidResponse = await fetch(
+    new URL(`/api/experimental/nexum/session/${session.sessionID}/messages?limit=0`, server.url),
+  )
+  expect(invalidResponse.status).toBe(400)
+  expect(((await invalidResponse.json()) as { errorCode: string }).errorCode).toBe("NEXUM_INVALID_REQUEST")
+
+  const missingResponse = await fetch(
+    new URL("/api/experimental/nexum/session/missing-session/messages", server.url),
+  )
+  expect(missingResponse.status).toBe(404)
+  expect(((await missingResponse.json()) as { errorCode: string }).errorCode).toBe("NEXUM_SESSION_NOT_FOUND")
+})
+
 test("rejects deletion for a running session with a stable conflict", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-server-delete-running-"))
   temporaryDirectories.push(directory)
@@ -1111,6 +1220,32 @@ test("streams ordered session events over SSE", async () => {
     sequence: 2,
   })
   await Bun.sleep(10)
+})
+
+test("starts an SSE replay after a sequence cursor", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-events-sequence-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  const eventHub = createNexumEventHub()
+  await eventHub.publish({ type: "assistant.text", sessionID: session.sessionID, sequence: 1, data: { content: "旧消息" } })
+  await eventHub.publish({ type: "tool.result", sessionID: session.sessionID, sequence: 2, data: { ok: true } })
+  await eventHub.publish({ type: "session.completed", sessionID: session.sessionID, sequence: 3 })
+  const server = await startNexumServer({ port: 0, sessionService, eventHub })
+  servers.push(server)
+
+  const response = await fetch(
+    new URL(`/api/nexum/session/${session.sessionID}/events?afterSequence=2`, server.url),
+  )
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error("SSE 响应缺少可读流")
+  const text = await readSseUntil(reader, '"sequence":3')
+
+  expect(response.status).toBe(200)
+  expect(text).toContain("event: session.completed")
+  expect(text).toContain('"sequence":3')
+  expect(text).not.toContain("旧消息")
+  await reader.cancel()
 })
 
 async function readSseUntil(

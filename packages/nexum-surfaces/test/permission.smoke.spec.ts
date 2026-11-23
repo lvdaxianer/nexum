@@ -13,7 +13,12 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "@nexum/core"
-import { createNexumProjectContextPort, createNexumQuestionPort, createNexumSkillRegistry } from "../../nexum-adapters/src/index.ts"
+import {
+  createInMemoryMessageStore,
+  createNexumProjectContextPort,
+  createNexumQuestionPort,
+  createNexumSkillRegistry,
+} from "../../nexum-adapters/src/index.ts"
 import { createNexumEventHub } from "../../nexum-server/src/events.ts"
 import { startNexumServer, type NexumServer } from "../../nexum-server/src/index.ts"
 
@@ -66,6 +71,79 @@ describe.serial("Nexum UI smoke", () => {
     await page.goto(remoteUiOrigin)
     await apiRequest
     await expect(page.getByRole("heading", { name: "Agent 工作台" })).toBeVisible()
+  })
+
+  test.serial("restores paged conversation history and keeps live events incremental", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    const eventHub = createNexumEventHub()
+    const sessionService = createNexumSessionService()
+    const messageStore = createInMemoryMessageStore()
+    directory = await mkdtemp(join(tmpdir(), "nexum-ui-history-"))
+    const session = await sessionService.create({ directory, name: "历史恢复" })
+    await messageStore.save(
+      session.sessionID,
+      Array.from({ length: 52 }, (_, index) => ({ role: "user" as const, content: `历史-${index}` })),
+    )
+    await eventHub.publish({
+      eventID: "history-old-event",
+      runID: "history-run",
+      sessionID: session.sessionID,
+      type: "assistant.text",
+      sequence: 1,
+      occurredAt: "2026-11-23T00:00:00.000Z",
+      data: { content: "旧实时事件" },
+    })
+    apiServer = await startNexumServer({
+      port: apiPort,
+      corsOrigins: [uiOrigin],
+      sessionService,
+      messageStore,
+      eventHub,
+    })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+    let failHistoryOnce = true
+    await page.route("**/api/experimental/nexum/session/*/messages*", async (route) => {
+      if (!failHistoryOnce) {
+        await route.continue()
+        return
+      }
+      failHistoryOnce = false
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ errorCode: "NEXUM_TEST_HISTORY_UNAVAILABLE", message: "历史服务暂时不可用" }),
+      })
+    })
+
+    await page.goto(uiOrigin)
+    await expect(page.getByRole("alert")).toContainText("历史服务暂时不可用")
+    await page.getByRole("button", { name: "重试" }).click()
+    await expect(page.getByText("历史-51", { exact: true })).toBeVisible()
+    await expect(page.getByText("历史-0", { exact: true })).toHaveCount(0)
+
+    const olderPage = page.waitForResponse(
+      (response) => response.url().includes(`/api/experimental/nexum/session/${session.sessionID}/messages?before=2`),
+    )
+    await page.locator(".conversation-body").evaluate((element) => {
+      element.scrollTop = 0
+      element.dispatchEvent(new Event("scroll", { bubbles: true }))
+    })
+    await olderPage
+    await expect(page.getByText("历史-0", { exact: true })).toBeVisible()
+
+    await eventHub.publish({
+      eventID: "history-live-event",
+      runID: "history-live-run",
+      sessionID: session.sessionID,
+      type: "assistant.text",
+      sequence: 2,
+      occurredAt: "2026-11-23T00:00:01.000Z",
+      data: { content: "实时回答" },
+    })
+    await expect(page.getByText("实时回答", { exact: true })).toHaveCount(1)
+    await page.reload()
+    await expect(page.getByText("历史-51", { exact: true })).toBeVisible()
   })
 
   test.serial("renders the internal Agent workbench shell", { timeout: 15_000 }, async () => {
