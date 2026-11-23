@@ -43,7 +43,7 @@ Headless Service SHALL 提供创建、列出、查询和取消 Session 的稳定
 
 #### Scenario: 页面刷新后恢复
 - **WHEN** 页面重新加载且存在当前 Session 标识
-- **THEN** 页面重新连接事件流并刷新权限、Question 和 Session 状态，不要求用户重新创建任务
+- **THEN** 页面加载该 Session 的分页消息历史、重新连接事件流并刷新权限、Question 和 Session 状态，不要求用户重新创建任务
 
 #### Scenario: 事件流断开
 - **WHEN** SSE 连接断开
