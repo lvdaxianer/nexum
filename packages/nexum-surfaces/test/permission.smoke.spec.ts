@@ -101,9 +101,9 @@ describe.serial("Nexum UI smoke", () => {
         async run(input) {
           return (await sessionService.get(input.sessionID))!
         },
-        async continue(sessionID) {
+        async continueStart(sessionID) {
           continueCalls += 1
-          return (await sessionService.get(sessionID))!
+          return { accepted: true, promise: sessionService.get(sessionID).then((value) => value!) }
         },
         async cancel(sessionID) {
           return sessionService.setStatus(sessionID, "cancelled")
@@ -138,6 +138,10 @@ describe.serial("Nexum UI smoke", () => {
       occurredAt: "2026-11-23T00:00:00.001Z",
       data: { code: "timeout", message: "运行超时" },
     })
+
+    await expect(page.getByText("模型重试", { exact: true })).toBeVisible()
+    const continueButton = page.getByRole("button", { name: "继续运行" })
+    await expect(continueButton).toHaveCount(0)
     await eventHub.publish({
       eventID: "continue-settled",
       runID: "continue-run",
@@ -147,9 +151,6 @@ describe.serial("Nexum UI smoke", () => {
       occurredAt: "2026-11-23T00:00:00.002Z",
       data: { result: "failed" },
     })
-
-    await expect(page.getByText("模型重试", { exact: true })).toBeVisible()
-    const continueButton = page.getByRole("button", { name: "继续运行" })
     await expect(continueButton).toBeVisible()
     await continueButton.click()
     await expect(continueButton).toBeDisabled()

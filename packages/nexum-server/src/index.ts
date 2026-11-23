@@ -827,7 +827,7 @@ function continueAdmissionError(
   if (session.status === "running") {
     return errorResponse(409, "NEXUM_SESSION_RUN_CONFLICT", "Session 当前正在运行，请等待本轮完成后再继续", traceId)
   }
-  if (!codingLoop || (!codingLoop.continue && !codingLoop.continueStart)) {
+  if (!codingLoop?.continueStart) {
     return errorResponse(503, "NEXUM_CONTINUE_NOT_CONFIGURED", "Nexum Continue 尚未配置", traceId)
   }
   return undefined
@@ -844,13 +844,9 @@ function continueAdmissionError(
  */
 async function startContinue(codingLoop: NexumCodingLoop, sessionID: string, traceId: string): Promise<Response> {
   try {
-    if (codingLoop.continueStart) {
-      const started = await codingLoop.continueStart(sessionID)
-      if (!started.accepted) return continueAdmissionResponse(started.reason, traceId)
-      void started.promise.catch(() => undefined)
-      return jsonResponse({ data: { status: "accepted" } }, traceId)
-    }
-    void codingLoop.continue!(sessionID).catch(() => undefined)
+    const started = await codingLoop.continueStart!(sessionID)
+    if (!started.accepted) return continueAdmissionResponse(started.reason, traceId)
+    void started.promise.catch(() => undefined)
     return jsonResponse({ data: { status: "accepted" } }, traceId)
   } catch (error) {
     return continueErrorResponse(error, traceId)

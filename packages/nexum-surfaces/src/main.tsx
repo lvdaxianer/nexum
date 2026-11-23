@@ -720,8 +720,6 @@ function App() {
           setSessionStatus("completed")
         }
         if (event.type === "session.failed") {
-          setContinueBusy(false)
-          setContinueAvailable(true)
           setSessionStatus("failed")
         }
         if (event.type === "session.cancelled") {
@@ -746,7 +744,7 @@ function App() {
           if (id) setActiveSkillIDs((current) => (current.includes(id) ? current : [...current, id]))
         }
         if (event.type === "skill.failed") setNotice("Skill 激活失败，请检查状态和权限")
-        void refreshPermissions(id)
+        if (event.type === "tool.request" || event.type === "permission.requested") void refreshPermissions(id)
       }
     } catch (error) {
       if (!controller.signal.aborted) setNotice(messageFrom(error, "事件流已断开，请重新连接"))
