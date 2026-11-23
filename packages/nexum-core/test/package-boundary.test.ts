@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { join } from "node:path"
 
-const FORBIDDEN_UI_PACKAGES = ["@opencode/app", "@opencode/tui", "@opencode/desktop", "@opencode/cli"]
+const FORBIDDEN_SURFACE_PACKAGES = ["@nexum/surfaces"]
 const FORBIDDEN_IMPORTS = ["node:fs", "node:fs/promises", "node:child_process", "node:http", "node:net"]
 const FORBIDDEN_EXPORTS = ["createFile", "createInMemory", "createOpenAICompatible", "createLocal"]
 
@@ -14,7 +14,7 @@ test("nexum-core exports a UI-independent composition entry", async () => {
   const dependencies = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
 
   expect(packageModule.createNexumCore).toBeFunction()
-  expect(dependencies).not.toEqual(expect.arrayContaining(FORBIDDEN_UI_PACKAGES))
+  expect(dependencies).not.toEqual(expect.arrayContaining(FORBIDDEN_SURFACE_PACKAGES))
 })
 
 test("nexum-core does not import infrastructure or export default adapters", async () => {

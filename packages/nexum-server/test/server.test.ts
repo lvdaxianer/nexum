@@ -28,7 +28,7 @@ import {
 import { createNexumEventHub } from "../src/events.ts"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
 
-const FORBIDDEN_UI_PACKAGES = ["@opencode/app", "@opencode/tui", "@opencode/desktop", "@opencode/cli"]
+const FORBIDDEN_SURFACE_PACKAGES = ["@nexum/surfaces"]
 const servers: NexumServer[] = []
 const upstreamServers: Array<ReturnType<typeof Bun.serve>> = []
 const temporaryDirectories: string[] = []
@@ -1400,6 +1400,15 @@ test("stores model configuration without returning its credential", async () => 
   expect(await getResponse.json()).toMatchObject({ data: updateBody.data, meta: { protocolVersion: "nexum.runtime.v1" } })
 })
 
+test("returns an explicit null data value when no model configuration exists", async () => {
+  const server = await startNexumServer({ port: 0, modelConfigStore: createNexumModelConfigStore() })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/nexum/model", server.url))
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ data: null, meta: { protocolVersion: "nexum.runtime.v1" } })
+})
+
 test("nexum-server package stays independent from UI packages", async () => {
   const manifest = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as {
     dependencies?: Record<string, string>
@@ -1407,7 +1416,7 @@ test("nexum-server package stays independent from UI packages", async () => {
   }
   const dependencies = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
 
-  expect(dependencies).not.toEqual(expect.arrayContaining(FORBIDDEN_UI_PACKAGES))
+  expect(dependencies).not.toEqual(expect.arrayContaining(FORBIDDEN_SURFACE_PACKAGES))
 })
 
 test("recovers persisted interaction requests as orphaned and rejects their old reply IDs", async () => {

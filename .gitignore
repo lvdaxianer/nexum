@@ -9,7 +9,6 @@ node_modules
 .agents/skills/
 .github/
 .husky/
-.opencode/
 .vscode/
 *~
 playground
@@ -26,7 +25,6 @@ ts-dist
 /result
 refs
 Session.vim
-/opencode.json
 a.out
 target
 .scripts
@@ -34,7 +32,6 @@ target
 .direnv/
 
 # Local dev files
-opencode-dev
 .headless/
 packages/nexum-test/.nexum-test/
 RELEASE_REVIEW.md

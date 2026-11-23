@@ -1,112 +1,34 @@
-# Contributing to OpenCode
+# Contributing to Nexum
 
-The changes most likely to be accepted are:
-
-- Bug fixes
-- Additional LSPs and formatters
-- LLM performance improvements
-- Environment-specific fixes
-- Missing standard behavior
-- Documentation improvements
-
-UI and core product features require design review before implementation. If you are unsure whether a change fits, ask a maintainer or choose an issue labeled [`help wanted`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3Ahelp-wanted), [`good first issue`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22), [`bug`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3Abug), or [`perf`](https://github.com/anomalyco/opencode/issues?q=is%3Aopen%20is%3Aissue%20label%3A%22perf%22).
-
-Want to take on an issue? Leave a comment and a maintainer may assign it unless it is already being worked on.
-
-> [!NOTE]
-> PRs that ignore these guardrails will likely be closed.
-
-## Adding Providers
-
-New providers should rarely require OpenCode changes. Add the provider to [models.dev](https://github.com/anomalyco/models.dev) first.
+Nexum 的变更应保持 Core、Adapter、Protocol、Server、Surface 和 Test 的依赖方向清晰。新增能力先确认它属于运行语义、环境适配、公开协议还是具体交互 Surface，再选择对应包。
 
 ## Development
 
-OpenCode requires the Bun version in the `packageManager` field of [`package.json`](./package.json) or newer. From the repository root:
+Nexum 使用 `packageManager` 中声明的 Bun 版本或更高版本。从仓库根目录运行：
 
 ```bash
 bun install
-bun dev [directory]
+bun dev
 ```
 
-`bun dev` runs the V2 CLI and TUI. Pass a directory to open another project, or `.` to open this repository.
+`bun dev` 启动 `@nexum/test` 的 Server 和 Web Surface。需要单独启动前端时运行 `bun run dev:surface`。
 
-To test a development TUI against your installed OpenCode V2 background service and live sessions:
+## Packages
+
+- `packages/nexum-core`：领域语义、端口和生命周期
+- `packages/nexum-adapters`：默认模型、存储、Host、Tools、Skill 和 Runtime 组合
+- `packages/nexum-protocol`：公开协议模型和事件契约
+- `packages/nexum-client`：HTTP/SSE 协议客户端
+- `packages/nexum-server`：HTTP/SSE 服务绑定
+- `packages/nexum-surfaces`：参考 Web Surface
+- `packages/nexum-test`：跨层测试与本地工作台
+
+## Verification
+
+测试从受影响包目录执行，不从根目录运行测试。完整检查使用：
 
 ```bash
-bun run dev:live [directory]
+bun run check
 ```
 
-For web development, run the backend and app in separate terminals. Other interfaces have root scripts:
-
-```bash
-bun dev serve --port 4096
-bun run dev:web
-bun run dev:desktop
-bun run dev:site
-```
-
-### Packages
-
-- `packages/schema`: shared wire and storage contracts
-- `packages/core`: domain behavior and persistence
-- `packages/protocol`: public API definitions
-- `packages/server`: HTTP server and runtime composition
-- `packages/client`: generated TypeScript clients
-- `packages/cli`: command-line entrypoint and service lifecycle
-- `packages/tui`: terminal interface
-- `packages/app`: shared web interface
-- `packages/desktop`: Electron desktop application
-- `packages/plugin`: plugin API
-
-### Verification
-
-Run typechecks, and tests where defined, from the affected package rather than the repository root:
-
-```bash
-cd packages/core
-bun run test
-bun typecheck
-```
-
-Follow package-specific instructions in nearby `AGENTS.md` files. After changing the public Protocol or Server `HttpApi`, run `bun run generate` from `packages/client`; never edit generated client files directly.
-
-Follow the repository [style guide](./AGENTS.md).
-
-## Pull Requests
-
-### Link Issues When Required
-
-Bug fixes, chores, and tests must reference an existing issue. Documentation, refactor, and feature PRs are exempt from the automated linked-issue check. When required, use `Fixes #123` or `Closes #123` in the PR description.
-
-Before implementing new functionality, open a feature request describing the problem, why it belongs in OpenCode, and your proposed approach if you have one. Wait for design approval before opening the implementation PR.
-
-Base branches on `dev` and complete the provided pull request template.
-
-### Keep It Focused
-
-- Keep PRs small and focused.
-- Explain the problem and why the change fixes it.
-- Check whether the functionality already exists.
-- For UI changes, include before-and-after screenshots or video.
-- For logic changes, explain what you tested and how a reviewer can verify it.
-
-### Keep It Brief
-
-Long, AI-generated PR descriptions and issues may be ignored. Write a short explanation in your own words. If the change cannot be explained briefly, the PR may be too large.
-
-### Use Conventional Titles
-
-Use `type(scope): summary`. Supported types are `feat`, `fix`, `docs`, `chore`, `refactor`, and `test`. The scope is optional.
-
-Examples:
-
-- `docs: update contributing guide`
-- `fix(tui): restore scroll position`
-- `feat(app): add workspace search`
-
-## Issues
-
-Bug reports and feature requests must use their issue templates. Blank issues are not allowed; ask support and how-to questions in the [Discord community](https://discord.gg/opencode).
-
-Automated checks flag missing templates, placeholder text, AI-generated walls of text, and missing meaningful content. You have two hours to correct a flagged issue before it closes automatically. Ask a maintainer if an issue was flagged incorrectly.
+修改 HTTP 或协议边界时，同时更新 `apis/nexum.md` 和对应 Protocol/Server/Client 测试。遵守仓库根目录 `AGENTS.md` 中的工作流、分支和提交规范。

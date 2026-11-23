@@ -18,4 +18,4 @@ Skill 内容由 Core 的注册、校验和权限流程控制；目录中的说�
 
 ## 验证
 
-每个 Skill 以自身 README 中的命令为准。Registry 的通用发现、校验、注册、权限和激活能力由 Headless Core 测试覆盖。
+每个 Skill 以自身 README 中的命令为准。Registry 的通用发现、校验、注册、权限和激活能力由 Nexum Core 测试覆盖。

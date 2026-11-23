@@ -1,47 +1,14 @@
 # Security
 
-## IMPORTANT
+Nexum Runtime 可以执行模型请求、文件操作、Shell 工具和外部 Skill。权限策略用于让宿主明确控制这些动作，但它不是操作系统级沙箱。需要强隔离时，请将 Nexum 放在容器、虚拟机或专用沙箱中运行。
 
-We do not accept AI generated security reports. We receive a large number of
-these and we absolutely do not have the resources to review them all. If you
-submit one that will be an automatic ban from the project.
+## Runtime boundary
 
-## Threat Model
+- 外部 Skill 通过地址注册，Nexum 校验入口文件、路径边界和摘要后才进入可发现状态。
+- 工具调用经过 Permission Policy；宿主仍应为模型、文件系统、Shell、MCP 和网络配置最小权限。
+- 模型供应商收到的数据受其自身隐私政策约束，不属于 Nexum 的控制范围。
+- 外部 MCP Server、Skill 源目录和用户自定义配置由部署方负责信任评估。
 
-### Overview
+## Reporting
 
-OpenCode is an AI-powered coding assistant that runs locally on your machine. It provides an agent system with access to powerful tools including shell execution, file operations, and web access.
-
-### No Sandbox
-
-OpenCode does **not** sandbox the agent. The permission system exists as a UX feature to help users stay aware of what actions the agent is taking - it prompts for confirmation before executing commands, writing files, etc. However, it is not designed to provide security isolation.
-
-If you need true isolation, run OpenCode inside a Docker container or VM.
-
-### Server Mode
-
-Server mode is opt-in only. When enabled, set `OPENCODE_SERVER_PASSWORD` to require HTTP Basic Auth. Without this, the server runs unauthenticated (with a warning). It is the end user's responsibility to secure the server - any functionality it provides is not a vulnerability.
-
-### Out of Scope
-
-| Category                        | Rationale                                                               |
-| ------------------------------- | ----------------------------------------------------------------------- |
-| **Server access when opted-in** | If you enable server mode, API access is expected behavior              |
-| **Sandbox escapes**             | The permission system is not a sandbox (see above)                      |
-| **LLM provider data handling**  | Data sent to your configured LLM provider is governed by their policies |
-| **MCP server behavior**         | External MCP servers you configure are outside our trust boundary       |
-| **Malicious config files**      | Users control their own config; modifying it is not an attack vector    |
-
----
-
-# Reporting Security Issues
-
-We appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
-
-To report a security issue, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/anomalyco/opencode/security/advisories/new) tab.
-
-The team will send a response indicating the next steps in handling your report. After the initial reply to your report, the security team will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.
-
-## Escalation
-
-If you do not receive an acknowledgement of your report within 6 business days, you may send an email to security@anoma.ly
+请不要在公开 issue 中提交凭据、模型 API Key、Session 内容或外部 Skill 源代码。报告安全问题时，先移除敏感数据，并通过仓库维护者指定的私密渠道提交复现步骤、影响范围和修复建议。
