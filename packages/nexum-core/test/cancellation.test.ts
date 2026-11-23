@@ -6,6 +6,7 @@ import {
   createNexumCodingLoop,
   createNexumSessionService,
   type EventSink,
+  type MessageStore,
   type ModelPort,
   type PermissionPort,
   type ToolPort,
@@ -56,8 +57,9 @@ test("cancels a waiting run before its next tool executes", async () => {
   const run = loop.run({ sessionID: session.sessionID, text: "请读取 README.md" })
 
   await started.promise
-  const cancelled = await loop.cancel(session.sessionID)
+  const cancellation = loop.cancel(session.sessionID)
   release.resolve()
+  const cancelled = await cancellation
   const completed = await run
   const finalSession = await sessions.get(session.sessionID)
 
@@ -67,6 +69,58 @@ test("cancels a waiting run before its next tool executes", async () => {
   expect(executedTools).toBe(0)
   expect(events).toEqual(["model.attempt", "assistant.text", "session.cancelled", "run.settled"])
 
+  await rm(directory, { recursive: true, force: true })
+})
+
+test("waits for an aborted run before deletion so no later writes occur", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-cancel-delete-"))
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory })
+  const modelStarted = deferred()
+  let saveCount = 0
+  const messageStore: MessageStore = {
+    async load() {
+      return []
+    },
+    async save() {
+      saveCount += 1
+    },
+    async delete() {},
+  }
+  const model: ModelPort = {
+    async *prompt(input) {
+      modelStarted.resolve()
+      await new Promise<never>((_, reject) => {
+        if (input.signal?.aborted) {
+          reject(new Error("模型已中止"))
+          return
+        }
+        input.signal?.addEventListener("abort", () => reject(new Error("模型已中止")), { once: true })
+      })
+      yield { type: "completed" }
+    },
+  }
+  const loop = createNexumCodingLoop({
+    model,
+    messageStore,
+    sessions,
+    tool: { async execute() { return { ok: true, output: "unused" } } },
+    permission: { async evaluate() { return "allow" } },
+    events: { async publish() {} },
+  })
+
+  const started = loop.start!({ sessionID: session.sessionID, text: "可取消任务" })
+  if (!started.accepted) throw new Error("运行未被接受")
+  await modelStarted.promise
+  const cancelled = await loop.cancel(session.sessionID)
+  const savesAfterCancel = saveCount
+  await sessions.delete(session.sessionID, async () => messageStore.delete(session.sessionID))
+  await Promise.resolve()
+
+  expect(cancelled.status).toBe("cancelled")
+  expect(await started.promise).toMatchObject({ status: "cancelled" })
+  expect(await sessions.get(session.sessionID)).toBeUndefined()
+  expect(saveCount).toBe(savesAfterCancel)
   await rm(directory, { recursive: true, force: true })
 })
 

@@ -13,6 +13,7 @@ import {
   type NexumQuestion,
   type NexumResponse,
   type NexumSession,
+  type NexumSessionDeleteResult,
   type NexumSessionState,
   type NexumSkill,
 } from "@nexum/protocol"
@@ -29,6 +30,7 @@ export type {
   NexumQuestion,
   NexumResponse,
   NexumSession,
+  NexumSessionDeleteResult,
   NexumSessionState,
   NexumSkill,
 } from "@nexum/protocol"
@@ -86,6 +88,8 @@ export const Nexum = {
                 method: "PUT",
                 body: JSON.stringify({ name: input.name }),
               }),
+            delete: (input: { readonly sessionID: string }) =>
+              request<NexumSessionDeleteResult>(`/session/${encodeURIComponent(input.sessionID)}`, { method: "DELETE" }),
             prompt: (input: { readonly sessionID: string; readonly text: string }) =>
               request<{ readonly status: "accepted" }>(`/session/${encodeURIComponent(input.sessionID)}/prompt`, {
                 method: "POST",

@@ -130,6 +130,11 @@ export type NexumSession = {
   readonly updatedAt: string
 }
 
+export type NexumSessionDeleteResult = {
+  readonly id: string
+  readonly deleted: true
+}
+
 export type NexumPermission = {
   readonly id: string
   readonly sessionID: string

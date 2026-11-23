@@ -16,6 +16,7 @@ test("discovers optional capabilities and rejects work after close", async () =>
 
   expect(runtime.status()).toBe("ready")
   expect(runtime.capabilities().find((item) => item.id === "memory")?.status).toBe("disabled")
+  expect(runtime.capabilities().find((item) => item.id === "session")?.operations).toContain("delete")
   await runtime.close()
   expect(runtime.status()).toBe("closed")
   await expect(runtime.prompt({ sessionID: "missing", text: "hello" })).rejects.toBeInstanceOf(NexumRuntimeError)
