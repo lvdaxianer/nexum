@@ -51,6 +51,18 @@ test("keeps history in memory per session without sharing mutable state", async 
   expect(await store.load("session_a")).toEqual(conversation)
 })
 
+test("deletes one in-memory history while preserving other sessions", async () => {
+  const store = createInMemoryMessageStore()
+
+  await store.save("session_delete", conversation)
+  await store.save("session_keep", [{ role: "user", content: "保留的会话" }])
+  await store.delete("session_delete")
+  await store.delete("missing")
+
+  expect(await store.load("session_delete")).toEqual([])
+  expect(await store.load("session_keep")).toEqual([{ role: "user", content: "保留的会话" }])
+})
+
 test("persists every session to a fresh file store instance", async () => {
   const filePath = await temporaryFilePath()
   const store = createFileMessageStore({ filePath })
@@ -105,4 +117,21 @@ test("rejects history records with an invalid canonical message shape", async ()
   const error = await store.load("session_a").catch((reason: unknown) => reason)
   expect(error).toBeInstanceOf(NexumMessageStoreError)
   expect(error).toMatchObject({ name: "NexumMessageStoreError", code: "corrupt_file" })
+})
+
+test("deletes one session history while preserving other sessions after restart", async () => {
+  const filePath = await temporaryFilePath()
+  const store = createFileMessageStore({ filePath })
+
+  await store.save("session_delete", conversation)
+  await store.save("session_keep", [{ role: "user", content: "保留的会话" }])
+  await store.delete("session_delete")
+  await store.delete("missing")
+
+  expect(await store.load("session_delete")).toEqual([])
+  expect(await store.load("session_keep")).toEqual([{ role: "user", content: "保留的会话" }])
+
+  const reopened = createFileMessageStore({ filePath })
+  expect(await reopened.load("session_delete")).toEqual([])
+  expect(await reopened.load("session_keep")).toEqual([{ role: "user", content: "保留的会话" }])
 })

@@ -36,6 +36,7 @@ export interface NexumInteractionStore {
   readonly get: (requestID: string) => Promise<NexumInteractionRecord | undefined>
   readonly save: (record: NexumInteractionRecord) => Promise<void>
   readonly delete: (requestID: string) => Promise<void>
+  readonly deleteSession: (sessionID: string) => Promise<void>
 }
 
 /** 交互 Store 领域错误码。 */

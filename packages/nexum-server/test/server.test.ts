@@ -205,6 +205,7 @@ test("returns a stable JSON error when the session store fails during a request"
       throw new Error("internal session store details")
     },
     async save() {},
+    async delete() {},
   }
   const server = await startNexumServer({
     port: 0,

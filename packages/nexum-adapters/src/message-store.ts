@@ -15,6 +15,7 @@ import { NexumMessageStoreError } from "@nexum/core"
 export interface MessageStore {
   readonly load: (sessionID: string) => Promise<readonly ModelMessage[]>
   readonly save: (sessionID: string, messages: readonly ModelMessage[]) => Promise<void>
+  readonly delete: (sessionID: string) => Promise<void>
 }
 
 /** 可供测试和 POC 使用的内存 MessageStore。 */
@@ -39,6 +40,9 @@ export function createInMemoryMessageStore(): InMemoryMessageStore {
     },
     async save(sessionID, messages) {
       sessions.set(sessionID, copyMessages(messages))
+    },
+    async delete(sessionID) {
+      sessions.delete(sessionID)
     },
   }
 }
@@ -87,6 +91,19 @@ export function createFileMessageStore(options: FileMessageStoreOptions): Messag
       const operation = writeQueue.then(async () => {
         const sessions = new Map(await load())
         sessions.set(sessionID, next)
+        await persistMessageFile(options.filePath, sessions)
+        loaded = Promise.resolve(sessions)
+      })
+      writeQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      )
+      await operation
+    },
+    async delete(sessionID) {
+      const operation = writeQueue.then(async () => {
+        const sessions = new Map(await load())
+        sessions.delete(sessionID)
         await persistMessageFile(options.filePath, sessions)
         loaded = Promise.resolve(sessions)
       })

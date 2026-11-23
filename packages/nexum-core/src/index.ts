@@ -147,6 +147,7 @@ export interface SessionStore {
   readonly list: () => Promise<readonly SessionRecord[]>
   readonly get: (sessionID: string) => Promise<SessionRecord | undefined>
   readonly save: (session: SessionRecord) => Promise<void>
+  readonly delete: (sessionID: string) => Promise<void>
 }
 
 /** Nexum Session 的状态类型。 */
@@ -183,6 +184,7 @@ export interface NexumSessionService {
   readonly get: (sessionID: string) => Promise<SessionRecord | undefined>
   readonly update: (sessionID: string, input: NexumSessionUpdateInput) => Promise<SessionRecord>
   readonly setStatus: (sessionID: string, status: NexumSessionStatus) => Promise<SessionRecord>
+  readonly delete: (sessionID: string) => Promise<void>
 }
 
 /** Nexum Session Service 的依赖配置。 */
@@ -239,6 +241,9 @@ function createInMemorySessionStore(): InMemorySessionStore {
     async save(session) {
       sessions.set(session.sessionID, { ...session })
     },
+    async delete(sessionID) {
+      sessions.delete(sessionID)
+    },
     async list() {
       return sortSessions(Array.from(sessions.values(), (session) => ({ ...session })))
     },
@@ -276,6 +281,21 @@ export async function validateNexumDirectory(directory: string): Promise<void> {
 export function createNexumSessionService(options: NexumSessionServiceOptions = {}): NexumSessionService {
   const store = options.store ?? createInMemorySessionStore()
   const directoryValidator = options.directoryValidator ?? { validate: validateNexumDirectory }
+  const sessionQueues = new Map<string, Promise<void>>()
+
+  const enqueueSessionOperation = <T>(sessionID: string, operation: () => Promise<T>): Promise<T> => {
+    const previous = sessionQueues.get(sessionID) ?? Promise.resolve()
+    const current = previous.then(operation, operation)
+    const settled = current.then(
+      () => undefined,
+      () => undefined,
+    )
+    sessionQueues.set(sessionID, settled)
+    void settled.then(() => {
+      if (sessionQueues.get(sessionID) === settled) sessionQueues.delete(sessionID)
+    })
+    return current
+  }
 
   return {
     async create(input) {
@@ -302,32 +322,48 @@ export function createNexumSessionService(options: NexumSessionServiceOptions = 
     get(sessionID) {
       return store.get(sessionID)
     },
-    async update(sessionID, input) {
-      const current = await store.get(sessionID)
-      if (!current) {
-        throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
-      }
-      const name = requireSessionName(input.name)
-      const next = { ...current, name, updatedAt: nextSessionTimestamp(current.updatedAt) }
-      await store.save(next)
-      return next
+    update(sessionID, input) {
+      return enqueueSessionOperation(sessionID, async () => {
+        const current = await store.get(sessionID)
+        if (!current) {
+          throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
+        }
+        const name = requireSessionName(input.name)
+        const next = { ...current, name, updatedAt: nextSessionTimestamp(current.updatedAt) }
+        await store.save(next)
+        return next
+      })
     },
-    async setStatus(sessionID, status) {
-      const current = await store.get(sessionID)
-      if (!current) {
-        throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
-      }
-      if (current.status === status) return current
-      if (!isAllowedTransition(current.status, status)) {
-        throw new NexumSessionError(
-          "invalid_transition",
-          `Session 状态不能从 ${current.status} 变更为 ${status}`,
-          sessionID,
-        )
-      }
-      const next = { ...current, status, updatedAt: nextSessionTimestamp(current.updatedAt) }
-      await store.save(next)
-      return next
+    setStatus(sessionID, status) {
+      return enqueueSessionOperation(sessionID, async () => {
+        const current = await store.get(sessionID)
+        if (!current) {
+          throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
+        }
+        if (current.status === status) return current
+        if (!isAllowedTransition(current.status, status)) {
+          throw new NexumSessionError(
+            "invalid_transition",
+            `Session 状态不能从 ${current.status} 变更为 ${status}`,
+            sessionID,
+          )
+        }
+        const next = { ...current, status, updatedAt: nextSessionTimestamp(current.updatedAt) }
+        await store.save(next)
+        return next
+      })
+    },
+    delete(sessionID) {
+      return enqueueSessionOperation(sessionID, async () => {
+        const current = await store.get(sessionID)
+        if (!current) {
+          throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
+        }
+        if (current.status === "running") {
+          throw new NexumSessionError("session_busy", "Session 当前正在运行", sessionID)
+        }
+        await store.delete(sessionID)
+      })
     },
   }
 }

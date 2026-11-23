@@ -61,6 +61,7 @@ export interface NexumInteractionStore {
   readonly get: (requestID: string) => Promise<NexumInteractionRecord | undefined>
   readonly save: (record: NexumInteractionRecord) => Promise<void>
   readonly delete: (requestID: string) => Promise<void>
+  readonly deleteSession: (sessionID: string) => Promise<void>
 }
 
 export { NexumInteractionStoreError }
@@ -133,6 +134,13 @@ export function createFileInteractionStore(options: FileInteractionStoreOptions)
     },
     async delete(requestID) {
       await write((records) => records.delete(requestID))
+    },
+    async deleteSession(sessionID) {
+      await write((records) => {
+        for (const [requestID, record] of records) {
+          if (record.sessionID === sessionID) records.delete(requestID)
+        }
+      })
     },
   }
 }

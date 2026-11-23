@@ -80,3 +80,50 @@ test("marks only pending records as orphaned when reopened", async () => {
   ])
   await rm(root, { recursive: true, force: true })
 })
+
+test("deletes all interactions for one session while preserving other sessions after restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-interaction-store-delete-"))
+  const filePath = join(root, "interactions.json")
+  const store = createFileInteractionStore({ filePath })
+  const records: NexumInteractionRecord[] = [
+    {
+      requestID: "delete-one",
+      sessionID: "session_delete",
+      status: "orphaned",
+      createdAt: "2026-11-22T00:00:00.000Z",
+      updatedAt: "2026-11-22T00:00:00.000Z",
+      kind: "permission",
+      action: "shell",
+      resource: "pwd",
+    },
+    {
+      requestID: "delete-two",
+      sessionID: "session_delete",
+      status: "orphaned",
+      createdAt: "2026-11-22T00:00:01.000Z",
+      updatedAt: "2026-11-22T00:00:01.000Z",
+      kind: "permission",
+      action: "shell",
+      resource: "ls",
+    },
+    {
+      requestID: "keep-one",
+      sessionID: "session_keep",
+      status: "orphaned",
+      createdAt: "2026-11-22T00:00:02.000Z",
+      updatedAt: "2026-11-22T00:00:02.000Z",
+      kind: "permission",
+      action: "shell",
+      resource: "git status",
+    },
+  ]
+  await Promise.all(records.map((record) => store.save(record)))
+
+  await store.deleteSession("session_delete")
+  await store.deleteSession("missing")
+
+  expect(await store.list()).toEqual([records[2]])
+  const reopened = createFileInteractionStore({ filePath })
+  expect(await reopened.list()).toEqual([records[2]])
+  await rm(root, { recursive: true, force: true })
+})
