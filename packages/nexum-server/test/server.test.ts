@@ -213,7 +213,12 @@ test("returns a stable JSON error when the session store fails during a request"
   servers.push(server)
 
   const response = await fetch(new URL("/api/nexum/session", server.url))
-  const body = (await response.json()) as { errorCode: string; message: string }
+  const body = (await response.json()) as {
+    errorCode: string
+    message: string
+    traceId: string
+    meta: { protocolVersion: string; traceId: string }
+  }
 
   expect(response.status).toBe(500)
   expect(body).toMatchObject({ errorCode: "NEXUM_INTERNAL_ERROR", message: "Nexum Service 暂时不可用" })
@@ -372,6 +377,128 @@ test("rejects a prompt while the session is already running", async () => {
     message: "Session 当前正在运行，请等待本轮完成后再提交",
     traceId: "prompt_conflict_trace",
     meta: { protocolVersion: "nexum.runtime.v1", traceId: "prompt_conflict_trace" },
+  })
+})
+
+test("accepts an experimental continue request without appending a new prompt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-continue-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  const continuations: string[] = []
+  const server = await startNexumServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        return (await sessionService.get(input.sessionID))!
+      },
+      async continue(sessionID) {
+        continuations.push(sessionID)
+        return (await sessionService.get(sessionID))!
+      },
+      async cancel(sessionID) {
+        return sessionService.setStatus(sessionID, "cancelled")
+      },
+    },
+  })
+  servers.push(server)
+
+  const response = await fetch(
+    new URL(`/api/experimental/nexum/session/${session.sessionID}/continue`, server.url),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    },
+  )
+
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({
+    data: { status: "accepted" },
+    meta: { protocolVersion: "nexum.runtime.v1" },
+  })
+  expect(continuations).toEqual([session.sessionID])
+})
+
+test("rejects experimental continue while the session is running", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-continue-conflict-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  await sessionService.setStatus(session.sessionID, "running")
+  const server = await startNexumServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        return (await sessionService.get(input.sessionID))!
+      },
+      async continue() {
+        throw new Error("continue should not be called for a running session")
+      },
+      async cancel(sessionID) {
+        return sessionService.setStatus(sessionID, "cancelled")
+      },
+    },
+  })
+  servers.push(server)
+
+  const response = await fetch(
+    new URL(`/api/experimental/nexum/session/${session.sessionID}/continue`, server.url),
+    { method: "POST", body: "{}" },
+  )
+  const body = (await response.json()) as {
+    errorCode: string
+    message: string
+    traceId: string
+    meta: { protocolVersion: string; traceId: string }
+  }
+
+  expect(response.status).toBe(409)
+  expect(body).toEqual({
+    errorCode: "NEXUM_SESSION_RUN_CONFLICT",
+    message: "Session 当前正在运行，请等待本轮完成后再继续",
+    traceId: expect.any(String),
+    meta: expect.objectContaining({ protocolVersion: "nexum.runtime.v1" }),
+  })
+})
+
+test("returns a stable error when no continuation context is available", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-continue-context-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  const server = await startNexumServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        return (await sessionService.get(input.sessionID))!
+      },
+      async canContinue() {
+        return false
+      },
+      async continue() {
+        throw new Error("continue should not start without context")
+      },
+      async cancel(sessionID) {
+        return sessionService.setStatus(sessionID, "cancelled")
+      },
+    },
+  })
+  servers.push(server)
+
+  const response = await fetch(
+    new URL(`/api/experimental/nexum/session/${session.sessionID}/continue`, server.url),
+    { method: "POST", body: "{}" },
+  )
+  const body = (await response.json()) as { errorCode: string; message: string }
+
+  expect(response.status).toBe(409)
+  expect(body).toMatchObject({
+    errorCode: "NEXUM_SESSION_NOT_CONTINUABLE",
+    message: "Session 没有可继续的上下文",
   })
 })
 
@@ -672,6 +799,40 @@ test("streams ordered session events over SSE", async () => {
   expect(text).toContain("event: session.started")
   expect(text).toContain('"type":"session.started"')
   expect(text).toContain('"status":"running"')
+
+  const retryRead = reader.read()
+  await eventHub.publish({
+    type: "model.retry",
+    sessionID: session.sessionID,
+    runID: "run-retry",
+    sequence: 2,
+    data: { attempt: 1, maxRetries: 2, delayMs: 250, willRetry: true },
+  })
+  const retryText = new TextDecoder().decode(
+    (await Promise.race([
+      retryRead,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("SSE 重试事件读取超时")), 1_000)),
+    ])).value,
+  )
+  expect(retryText).toContain("event: model.retry")
+  expect(retryText).toContain('"willRetry":true')
+
+  const settledRead = reader.read()
+  await eventHub.publish({
+    type: "run.settled",
+    sessionID: session.sessionID,
+    runID: "run-retry",
+    sequence: 3,
+    data: { result: "failed" },
+  })
+  const settledText = new TextDecoder().decode(
+    (await Promise.race([
+      settledRead,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("SSE 结算事件读取超时")), 1_000)),
+    ])).value,
+  )
+  expect(settledText).toContain("event: run.settled")
+  expect(settledText).toContain('"result":"failed"')
   await reader.cancel()
   await eventHub.publish({
     type: "session.completed",

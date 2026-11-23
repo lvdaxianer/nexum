@@ -164,6 +164,7 @@ export type NexumSkill = {
 
 export type NexumSessionState = {
   readonly session: NexumSession
+  readonly canContinue: boolean
   readonly pendingPermissions: readonly NexumPermission[]
   readonly pendingQuestions: readonly NexumQuestion[]
   readonly lastSequence: number

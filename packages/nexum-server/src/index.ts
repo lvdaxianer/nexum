@@ -12,6 +12,7 @@ import {
   NexumPermissionPolicyError,
   NexumQuestionError,
   NexumSessionError,
+  NexumRunError,
   NexumModelError,
   NexumModelProbeError,
   NexumSkillInvocationError,
@@ -24,13 +25,14 @@ import {
   type NexumModelProbeMode,
   type NexumModelProbePort,
   type NexumSessionService,
+  type SessionRecord,
   type SessionStore,
   type NexumSkillInvocationPort,
   type NexumSkillRegistry,
   type MessageStore,
   type NexumInteractionStore,
 } from "@nexum/core"
-import { NEXUM_EVENT_TYPES } from "@nexum/protocol"
+import { NEXUM_EVENT_TYPES, NEXUM_EXPERIMENTAL_API_PREFIX } from "@nexum/protocol"
 import { resolve } from "node:path"
 import type { NexumEventHub } from "./events.ts"
 
@@ -56,7 +58,7 @@ const NEXUM_CAPABILITIES = [
   { id: "tool", version: "1", status: "enabled", operations: ["execute"] },
   { id: "permission", version: "1", status: "enabled", operations: ["evaluate"] },
   { id: "interaction", version: "1", status: "enabled", operations: ["request", "reply"] },
-  { id: "session", version: "1", status: "enabled", operations: ["create", "list", "get", "update"] },
+  { id: "session", version: "1", status: "enabled", operations: ["create", "list", "get", "update", "continue"] },
   { id: "context", version: "1", status: "enabled", operations: ["load", "compact"] },
   { id: "skill", version: "1", status: "enabled", operations: ["list", "activate"] },
   { id: "memory", version: "1", status: "disabled", operations: ["search", "upsert", "remove"] },
@@ -149,6 +151,10 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
     idleTimeout: options.idleTimeout ?? 0,
     fetch: async (request) => {
       if (request.method === "OPTIONS") return corsPreflight(request, corsOrigins)
+      const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
+      const startedAt = Date.now()
+      const path = new URL(request.url).pathname
+      console.info("nexum.request_started", { traceId, method: request.method, path, startedAt })
       try {
         const response = await handleRequest(
           request,
@@ -161,16 +167,38 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
           modelProbe,
           skillRegistry,
           skillInvocation,
+          traceId,
         )
-        return withCorsHeaders(response, request, corsOrigins)
+        const result = withCorsHeaders(response, request, corsOrigins)
+        const endedAt = Date.now()
+        console.info("nexum.request_completed", {
+          traceId,
+          method: request.method,
+          path,
+          status: result.status,
+          startedAt,
+          endedAt,
+          durationMs: endedAt - startedAt,
+        })
+        return result
       } catch (error) {
-        const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
         logRequestFailure(request, traceId, error)
-        return withCorsHeaders(
+        const result = withCorsHeaders(
           errorResponse(500, "NEXUM_INTERNAL_ERROR", "Nexum Service 暂时不可用", traceId),
           request,
           corsOrigins,
         )
+        const endedAt = Date.now()
+        console.info("nexum.request_completed", {
+          traceId,
+          method: request.method,
+          path,
+          status: result.status,
+          startedAt,
+          endedAt,
+          durationMs: endedAt - startedAt,
+        })
+        return result
       }
     },
   })
@@ -231,8 +259,9 @@ async function handleRequest(
   modelProbe?: NexumModelProbePort,
   skillRegistry?: NexumSkillRegistry,
   skillInvocation?: NexumSkillInvocationPort,
+  requestTraceId?: string,
 ): Promise<Response> {
-  const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
+  const traceId = requestTraceId ?? traceIdFrom(request.headers.get(TRACE_ID_HEADER))
   const url = new URL(request.url)
 
   if (url.pathname === "/health/live" || url.pathname === "/health/ready") {
@@ -268,6 +297,22 @@ async function handleRequest(
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
     return createSession(request, sessionService, traceId)
+  }
+
+  const continueMatch = url.pathname.match(
+    new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/session/([^/]+)/continue$`),
+  )
+  if (continueMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    return continueSession(
+      request,
+      decodeURIComponent(continueMatch[1]!),
+      sessionService,
+      codingLoop,
+      traceId,
+    )
   }
 
   const updateSessionMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)$/)
@@ -351,6 +396,7 @@ async function handleRequest(
     return getSessionState(
       decodeURIComponent(stateMatch[1]!),
       sessionService,
+      codingLoop,
       permissionBroker,
       questionPort,
       eventHub,
@@ -733,6 +779,118 @@ async function createPrompt(
 }
 
 /**
+ * 接受从既有 User 或 Tool 上下文继续运行的实验性请求。
+ *
+ * @param request - 标准 Web 请求
+ * @param sessionID - 目标 Session ID
+ * @param sessionService - Session 查询服务
+ * @param codingLoop - 可选的 Coding Loop 继续适配器
+ * @param traceId - 当前请求链路标识
+ * @returns accepted 响应或 caller-safe 错误响应
+ */
+async function continueSession(
+  request: Request,
+  sessionID: string,
+  sessionService: NexumSessionService,
+  codingLoop: NexumCodingLoop | undefined,
+  traceId: string,
+): Promise<Response> {
+  const admissionError = continueAdmissionError(await sessionService.get(sessionID), codingLoop, traceId)
+  if (admissionError) return admissionError
+
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload)) {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "请求体必须是 JSON 对象", traceId)
+  }
+  if (!codingLoop!.continueStart && codingLoop!.canContinue && !(await codingLoop!.canContinue(sessionID))) {
+    return errorResponse(409, "NEXUM_SESSION_NOT_CONTINUABLE", "Session 没有可继续的上下文", traceId)
+  }
+
+  return startContinue(codingLoop!, sessionID, traceId)
+}
+
+/**
+ * 校验 Continue 请求的 Session 与 Runtime 前置条件。
+ *
+ * @param session - 当前 Session 快照
+ * @param codingLoop - 可选的 Coding Loop 继续适配器
+ * @param traceId - 当前请求链路标识
+ * @returns 前置条件错误或 undefined
+ * @author lvdaxianer@yeah.net
+ */
+function continueAdmissionError(
+  session: SessionRecord | undefined,
+  codingLoop: NexumCodingLoop | undefined,
+  traceId: string,
+): Response | undefined {
+  if (!session) return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  if (session.status === "running") {
+    return errorResponse(409, "NEXUM_SESSION_RUN_CONFLICT", "Session 当前正在运行，请等待本轮完成后再继续", traceId)
+  }
+  if (!codingLoop || (!codingLoop.continue && !codingLoop.continueStart)) {
+    return errorResponse(503, "NEXUM_CONTINUE_NOT_CONFIGURED", "Nexum Continue 尚未配置", traceId)
+  }
+  return undefined
+}
+
+/**
+ * 启动 Continue 并返回异步受理结果。
+ *
+ * @param codingLoop - Coding Loop 继续适配器
+ * @param sessionID - 目标 Session ID
+ * @param traceId - 当前请求链路标识
+ * @returns accepted 响应或同步启动错误响应
+ * @author lvdaxianer@yeah.net
+ */
+async function startContinue(codingLoop: NexumCodingLoop, sessionID: string, traceId: string): Promise<Response> {
+  try {
+    if (codingLoop.continueStart) {
+      const started = await codingLoop.continueStart(sessionID)
+      if (!started.accepted) return continueAdmissionResponse(started.reason, traceId)
+      void started.promise.catch(() => undefined)
+      return jsonResponse({ data: { status: "accepted" } }, traceId)
+    }
+    void codingLoop.continue!(sessionID).catch(() => undefined)
+    return jsonResponse({ data: { status: "accepted" } }, traceId)
+  } catch (error) {
+    return continueErrorResponse(error, traceId)
+  }
+}
+
+/**
+ * 将 Core Continue admission 结果转换为稳定 HTTP 响应。
+ *
+ * @param reason - Core 返回的受理失败原因
+ * @param traceId - 当前请求链路标识
+ * @returns caller-safe 错误响应
+ * @author lvdaxianer@yeah.net
+ */
+function continueAdmissionResponse(reason: "session_busy" | "not_continuable", traceId: string): Response {
+  if (reason === "not_continuable") {
+    return errorResponse(409, "NEXUM_SESSION_NOT_CONTINUABLE", "Session 没有可继续的上下文", traceId)
+  }
+  return errorResponse(409, "NEXUM_SESSION_RUN_CONFLICT", "Session 当前正在运行，请等待本轮完成后再继续", traceId)
+}
+
+/**
+ * 将 Continue 同步启动异常转换为稳定 HTTP 错误。
+ *
+ * @param error - Continue 启动异常
+ * @param traceId - 当前请求链路标识
+ * @returns caller-safe 错误响应
+ * @author lvdaxianer@yeah.net
+ */
+function continueErrorResponse(error: unknown, traceId: string): Response {
+  if (error instanceof NexumSessionError && error.code === "session_busy") {
+    return errorResponse(409, "NEXUM_SESSION_RUN_CONFLICT", "Session 当前正在运行，请等待本轮完成后再继续", traceId)
+  }
+  if (error instanceof NexumRunError && error.code === "not_continuable") {
+    return errorResponse(409, "NEXUM_SESSION_NOT_CONTINUABLE", "Session 没有可继续的上下文", traceId)
+  }
+  return errorResponse(503, "NEXUM_CONTINUE_FAILED", "Nexum Continue 暂时不可用", traceId)
+}
+
+/**
  * 请求取消指定 Session 的当前运行。
  *
  * @param sessionID - 目标 Session ID
@@ -831,6 +989,7 @@ async function streamEvents(
 async function getSessionState(
   sessionID: string,
   sessionService: NexumSessionService,
+  codingLoop: NexumCodingLoop | undefined,
   permissionBroker: NexumPermissionBroker | undefined,
   questionPort: NexumQuestionPort | undefined,
   eventHub: NexumEventHub,
@@ -853,6 +1012,7 @@ async function getSessionState(
           createdAt: session.createdAt,
           updatedAt: session.updatedAt,
         },
+        canContinue: codingLoop?.canContinue ? await codingLoop.canContinue(sessionID) : false,
         pendingPermissions,
         pendingQuestions,
         lastSequence: eventHub.lastSequence(sessionID),

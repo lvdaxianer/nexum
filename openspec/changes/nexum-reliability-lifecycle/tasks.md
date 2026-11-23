@@ -15,8 +15,8 @@
 
 ## 4. Application 接入
 
-- [ ] 4.1 Server 增加 continue 路由、请求校验、Session 冲突和稳定错误映射，SSE 原样透传生命周期事件；补充 Server HTTP/SSE 测试。
-- [ ] 4.2 Surface 消费重试和 settled 事件，保持自动重试期间运行态，提供失败后的 continue 操作并验证重复点击不会产生并发运行；运行 Surface 类型检查和 smoke 测试。
+- [x] 4.1 Server 增加 continue 路由、请求校验、Session 冲突和稳定错误映射，SSE 原样透传生命周期事件；补充 Server HTTP/SSE 测试。
+- [x] 4.2 Surface 消费重试和 settled 事件，保持自动重试期间运行态，提供失败后的 continue 操作并验证重复点击不会产生并发运行；运行 Surface 类型检查和 smoke 测试。
 
 ## 5. 集成验证与交付
 
