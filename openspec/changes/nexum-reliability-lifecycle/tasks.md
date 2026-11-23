@@ -20,7 +20,9 @@
 
 ## 5. 集成验证与交付
 
-- [ ] 5.1 完成三层边界审查、OpenSpec 严格校验、相关包测试/typecheck、`git diff --check` 和根级 `bun run check`，确认文档与实现一致。
+- [x] 5.1 完成三层边界审查、OpenSpec 严格校验、相关包测试/typecheck、`git diff --check` 和根级 `bun run check`，确认文档与实现一致。
+
+> 验证备注：根级 `bun run check` 已执行；当前仓库中 `@opencode/plugin-figma`、`@opencode/schema` 和 `@opencode/http-recorder` 的 `typecheck` 脚本调用不存在的 `check` script，属于本变更之外的既有基线问题。Nexum 相关包已单独通过测试与 typecheck。
 
 ## Workflow follow-up
 
