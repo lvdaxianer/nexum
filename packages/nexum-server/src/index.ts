@@ -60,7 +60,7 @@ const NEXUM_CAPABILITIES = [
   { id: "interaction", version: "1", status: "enabled", operations: ["request", "reply"] },
   { id: "session", version: "1", status: "enabled", operations: ["create", "list", "get", "update", "delete", "continue"] },
   { id: "context", version: "1", status: "enabled", operations: ["load", "compact"] },
-  { id: "skill", version: "1", status: "enabled", operations: ["list", "activate"] },
+  { id: "skill", version: "1", status: "enabled", operations: ["list", "detail", "register", "refresh", "validate", "unregister", "activate"] },
   { id: "memory", version: "1", status: "disabled", operations: ["search", "upsert", "remove"] },
   { id: "mcp", version: "1", status: "disabled", operations: ["listServers", "listTools", "listResources", "listPrompts", "callTool"] },
   { id: "host", version: "1", status: "enabled", operations: ["readText", "writeText", "runShell"] },
@@ -88,6 +88,7 @@ export interface NexumServerOptions {
   readonly modelProbe?: NexumModelProbePort
   readonly modelConfigStore?: NexumModelConfigStore
   readonly skillRegistry?: NexumSkillRegistry
+  readonly skillRegistryFile?: string
   readonly skillInvocation?: NexumSkillInvocationPort
   readonly skillRoots?: readonly string[]
   readonly eventHub?: NexumEventHub
@@ -126,6 +127,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
     ...(options.questionPort ? { questionPort: options.questionPort } : {}),
     ...(options.modelProbe ? { modelProbe: options.modelProbe } : {}),
     ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
+    ...(options.skillRegistryFile ? { skillRegistryFile: options.skillRegistryFile } : {}),
     ...(options.skillInvocation ? { skillInvocation: options.skillInvocation } : {}),
     ...(options.codingLoop ? { codingLoop: options.codingLoop } : {}),
     skillRoots: options.skillRoots ?? [resolve(process.cwd(), "skills")],
@@ -362,7 +364,7 @@ async function handleRequest(
     if (request.method !== "POST") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
-    return refreshSkills(skillRegistry, traceId)
+    return refreshSkills(request, skillRegistry, traceId)
   }
 
   if (url.pathname === "/api/nexum/skills/validate") {
@@ -382,10 +384,10 @@ async function handleRequest(
 
   const skillDetailMatch = url.pathname.match(/^\/api\/nexum\/skills\/([^/]+)$/)
   if (skillDetailMatch) {
-    if (request.method !== "GET") {
-      return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
-    }
-    return detailSkill(decodeURIComponent(skillDetailMatch[1]!), skillRegistry, traceId)
+    const skillID = decodeURIComponent(skillDetailMatch[1]!)
+    if (request.method === "GET") return detailSkill(skillID, skillRegistry, traceId)
+    if (request.method === "DELETE") return unregisterSkill(skillID, skillRegistry, traceId)
+    return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 或 DELETE 请求", traceId)
   }
 
   const promptMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)\/prompt$/)
@@ -554,7 +556,7 @@ async function detailSkill(
 }
 
 /**
- * 按 ID 幂等注册已存在于配置 root 的 Skill。
+ * 按地址幂等注册一个本地 Skill。
  *
  * @param request - 注册请求
  * @param skillRegistry - Skill Registry
@@ -570,11 +572,15 @@ async function registerSkill(
 ): Promise<Response> {
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
   const payload = await request.json().catch(() => undefined)
-  if (!isRecord(payload) || typeof payload.id !== "string" || payload.id.trim() === "") {
-    return errorResponse(400, "NEXUM_INVALID_REQUEST", "id 必须是非空字符串", traceId)
+  if (!isRecord(payload) || typeof payload.address !== "string" || payload.address.trim() === "") {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "address 必须是非空字符串", traceId)
   }
-  await skillRegistry.refresh()
-  return detailSkill(payload.id, skillRegistry, traceId)
+  try {
+    const data = await skillRegistry.register(payload.address)
+    return jsonResponse({ data }, traceId)
+  } catch {
+    return errorResponse(400, "NEXUM_SKILL_REGISTER_FAILED", "Skill 地址无法注册", traceId)
+  }
 }
 
 /**
@@ -586,10 +592,41 @@ async function registerSkill(
  * @author lvdaxianer@yeah.net
  * @date 2026-11-20
  */
-async function refreshSkills(skillRegistry: NexumSkillRegistry | undefined, traceId: string): Promise<Response> {
+async function refreshSkills(
+  request: Request,
+  skillRegistry: NexumSkillRegistry | undefined,
+  traceId: string,
+): Promise<Response> {
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
-  await skillRegistry.refresh()
+  const payload = await request.json().catch(() => ({}))
+  if (!isRecord(payload) || (payload.id !== undefined && typeof payload.id !== "string")) {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "id 必须是字符串", traceId)
+  }
+  await skillRegistry.refresh(payload.id)
   return listSkills(skillRegistry, traceId)
+}
+
+/**
+ * 取消注册一个 Skill，不操作源目录。
+ * @param skillID - 路径中的 Skill ID
+ * @param skillRegistry - Skill Registry
+ * @param traceId - 当前请求链路标识
+ * @returns 空成功响应或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-23
+ */
+async function unregisterSkill(
+  skillID: string,
+  skillRegistry: NexumSkillRegistry | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!skillRegistry) return skillRegistryUnavailable(traceId)
+  try {
+    await skillRegistry.unregister(skillID)
+    return jsonResponse({ data: { id: skillID, deleted: true } }, traceId)
+  } catch {
+    return errorResponse(404, "NEXUM_SKILL_NOT_FOUND", "Skill 未注册", traceId)
+  }
 }
 
 /**
@@ -612,6 +649,7 @@ async function validateSkills(
   if (!isRecord(payload) || (payload.id !== undefined && typeof payload.id !== "string")) {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "id 必须是字符串", traceId)
   }
+  await skillRegistry.refresh(payload.id)
   const summaries = await skillRegistry.list()
   const data = payload.id === undefined ? summaries : summaries.filter((item) => item.id === payload.id)
   return jsonResponse(

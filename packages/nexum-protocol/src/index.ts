@@ -18,6 +18,7 @@ export const NEXUM_EVENT_TYPES = [
   "context.compaction.completed",
   "context.compaction.failed",
   "context.project.loaded",
+  "skill.updated",
   "skill.activated",
   "skill.failed",
   "model.attempt",
@@ -74,6 +75,7 @@ export type NexumRunSettledEventData = {
 }
 
 export type NexumEventDataByType = {
+  "skill.updated": NexumSkillRegistryUpdateEventData
   "model.attempt": NexumModelAttemptEventData
   "model.retry": NexumModelRetryEventData
   "run.settled": NexumRunSettledEventData
@@ -165,6 +167,28 @@ export type NexumSkill = {
   readonly files: readonly string[]
   readonly status: "ready" | "invalid" | "conflict"
   readonly diagnostics: readonly string[]
+  readonly sourceType?: "local-directory"
+  readonly registeredAt?: string
+  readonly updatedAt?: string
+}
+
+export type NexumSkillRegistryUpdateEventData = {
+  readonly change: "registered" | "refreshed" | "validated" | "unregistered"
+  readonly skillID: string
+  readonly status?: NexumSkill["status"]
+}
+
+export type NexumSkillRegisterInput = {
+  readonly address: string
+}
+
+export type NexumSkillRefreshInput = {
+  readonly id?: string
+}
+
+export type NexumSkillDeleteResult = {
+  readonly id: string
+  readonly deleted: true
 }
 
 export type NexumSessionState = {

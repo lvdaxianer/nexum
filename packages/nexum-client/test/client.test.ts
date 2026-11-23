@@ -71,3 +71,31 @@ test("deletes a session through the stable DELETE endpoint", async () => {
   expect(requests[0]?.method).toBe("DELETE")
   expect(await requests[0]?.text()).toBe("")
 })
+
+test("manages Skill registrations by address through the Nexum client", async () => {
+  const requests: Request[] = []
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      const request = new Request(typeof input === "string" ? input : input.toString(), init)
+      requests.push(request)
+      return Response.json({
+        data: { id: "metric-view-lifecycle", deleted: true },
+        meta: { protocolVersion: "nexum.runtime.v1", traceId: "trace_skill" },
+      })
+    },
+  })
+
+  await client.experimental.nexum.skill.register({ address: "/workspace/skills/metric-view-lifecycle" })
+  await client.experimental.nexum.skill.refresh({ id: "metric-view-lifecycle" })
+  await client.experimental.nexum.skill.unregister({ id: "metric-view-lifecycle" })
+
+  expect(requests.map((request) => [request.method, request.url])).toEqual([
+    ["POST", "http://nexum.test/api/nexum/skills/register"],
+    ["POST", "http://nexum.test/api/nexum/skills/refresh"],
+    ["DELETE", "http://nexum.test/api/nexum/skills/metric-view-lifecycle"],
+  ])
+  expect(await requests[0]?.json()).toEqual({ address: "/workspace/skills/metric-view-lifecycle" })
+  expect(await requests[1]?.json()).toEqual({ id: "metric-view-lifecycle" })
+  expect(await requests[2]?.text()).toBe("")
+})

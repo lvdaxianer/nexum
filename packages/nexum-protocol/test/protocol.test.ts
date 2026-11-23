@@ -36,6 +36,7 @@ test("publishes typed reasoning events in the protocol contract", () => {
     "context.compaction.completed",
     "context.compaction.failed",
     "context.project.loaded",
+    "skill.updated",
     "skill.activated",
     "skill.failed",
     "model.attempt",

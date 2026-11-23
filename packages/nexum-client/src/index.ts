@@ -15,6 +15,9 @@ import {
   type NexumSession,
   type NexumSessionDeleteResult,
   type NexumSessionState,
+  type NexumSkillDeleteResult,
+  type NexumSkillRegisterInput,
+  type NexumSkillRefreshInput,
   type NexumSkill,
 } from "@nexum/protocol"
 
@@ -32,6 +35,9 @@ export type {
   NexumSession,
   NexumSessionDeleteResult,
   NexumSessionState,
+  NexumSkillDeleteResult,
+  NexumSkillRegisterInput,
+  NexumSkillRefreshInput,
   NexumSkill,
 } from "@nexum/protocol"
 
@@ -130,12 +136,19 @@ export const Nexum = {
           },
           skill: {
             list: () => request<readonly NexumSkill[]>("/skills"),
-            refresh: () => request<readonly NexumSkill[]>("/skills/refresh", { method: "POST" }),
+            detail: (input: { readonly id: string }) =>
+              request<NexumSkill>(`/skills/${encodeURIComponent(input.id)}`),
+            register: (input: NexumSkillRegisterInput) =>
+              request<NexumSkill>("/skills/register", { method: "POST", body: JSON.stringify(input) }),
+            refresh: (input: NexumSkillRefreshInput = {}) =>
+              request<readonly NexumSkill[]>("/skills/refresh", { method: "POST", body: JSON.stringify(input) }),
             validate: (input: { readonly id?: string }) =>
               request<{ readonly valid: boolean; readonly data: readonly NexumSkill[] }>("/skills/validate", {
                 method: "POST",
                 body: JSON.stringify(input),
               }),
+            unregister: (input: { readonly id: string }) =>
+              request<NexumSkillDeleteResult>(`/skills/${encodeURIComponent(input.id)}`, { method: "DELETE" }),
           },
         },
       },

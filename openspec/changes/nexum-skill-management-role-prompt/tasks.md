@@ -9,10 +9,10 @@
 
 ## 2. Protocol、Server、Client 与事件
 
-- [ ] 2.1 扩展 Nexum Protocol 的 Skill 注册状态、请求/响应、能力操作和安全 registry update event 类型；通过 Protocol 类型检查和事件序列化测试验证不暴露绝对路径/凭据。
-- [ ] 2.2 实现 detail、按 address register、refresh、validate、DELETE unregister 路由及稳定错误/trace ID，更新能力声明和启动注入；通过 `packages/nexum-server` API 集成测试覆盖幂等、冲突、删除不删源和坏地址。
-- [ ] 2.3 更新 Nexum Client 的 list/detail/register/refresh/validate/unregister/role-prompt 调用，并从 `packages/client` 执行 `bun run generate`；通过 Client 类型检查和现有客户端测试验证生成结果一致。
-- [ ] 2.4 更新 `apis/nexum.md` 和相关接口文档，明确 address 注册、`.nexum/skills.json`、DELETE 边界与事件；通过文档中的示例请求与实际路由对照检查。
+- [x] 2.1 扩展 Nexum Protocol 的 Skill 注册状态、请求/响应、能力操作和安全 registry update event 类型；通过 Protocol 类型检查和事件序列化测试验证不暴露绝对路径/凭据。
+- [x] 2.2 实现 detail、按 address register、refresh、validate、DELETE unregister 路由及稳定错误/trace ID，更新能力声明和启动注入；通过 `packages/nexum-server` API 集成测试覆盖幂等、冲突、删除不删源和坏地址。
+- [x] 2.3 更新 Nexum Client 的 list/detail/register/refresh/validate/unregister/role-prompt 调用，并从 `packages/client` 执行 `bun run generate`；通过 Client 类型检查和现有客户端测试验证生成结果一致。
+- [x] 2.4 更新 `apis/nexum.md` 和相关接口文档，明确 address 注册、`.nexum/skills.json`、DELETE 边界与事件；通过文档中的示例请求与实际路由对照检查。
 
 ## 3. 默认角色提示词持久化与模型上下文
 
