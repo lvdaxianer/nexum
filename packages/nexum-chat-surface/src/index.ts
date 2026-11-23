@@ -189,3 +189,6 @@ export type {
   NexumQuestion,
   NexumSkill,
 }
+
+export { ChatSurface } from "./chat-surface"
+export type { ChatItem, ChatSurfaceProps } from "./chat-surface"

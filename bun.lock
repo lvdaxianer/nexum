@@ -30,10 +30,17 @@
       "version": "0.0.1",
       "dependencies": {
         "@nexum/client": "workspace:*",
+        "dompurify": "catalog:",
+        "marked": "catalog:",
+        "solid-js": "catalog:",
       },
       "devDependencies": {
-        "@tsconfig/bun": "catalog:",
+        "@playwright/test": "catalog:",
+        "@tsconfig/node22": "catalog:",
         "@types/bun": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plugin-solid": "2.11.10",
       },
     },
     "packages/nexum-client": {
