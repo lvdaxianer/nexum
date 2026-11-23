@@ -2,6 +2,8 @@
 
 export type NexumSkillStatus = "ready" | "invalid" | "conflict"
 
+export type NexumSkillSourceType = "local-directory"
+
 export interface NexumSkillSummary {
   readonly id: string
   readonly name: string
@@ -12,6 +14,9 @@ export interface NexumSkillSummary {
   readonly files: readonly string[]
   readonly status: NexumSkillStatus
   readonly diagnostics: readonly string[]
+  readonly sourceType?: NexumSkillSourceType
+  readonly registeredAt?: string
+  readonly updatedAt?: string
 }
 
 export interface NexumSkillPackage extends NexumSkillSummary {
@@ -21,10 +26,13 @@ export interface NexumSkillPackage extends NexumSkillSummary {
 export interface NexumSkillRegistryOptions {
   readonly roots: readonly string[]
   readonly maxFileBytes?: number
+  readonly filePath?: string
 }
 
 export interface NexumSkillRegistry {
-  readonly refresh: () => Promise<void>
+  readonly register: (address: string) => Promise<NexumSkillSummary>
+  readonly refresh: (id?: string) => Promise<void>
   readonly list: () => Promise<readonly NexumSkillSummary[]>
   readonly get: (id: string) => Promise<NexumSkillPackage | undefined>
+  readonly unregister: (id: string) => Promise<void>
 }

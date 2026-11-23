@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createNexumSkillRegistry } from "../../nexum-adapters/src/index.ts"
@@ -90,4 +90,67 @@ test("does not expose credential-shaped metadata in validation diagnostics", asy
 
   expect(JSON.stringify(summary)).not.toContain("should-not-leak")
   expect(summary?.description).toBe("token=[REDACTED]")
+})
+
+test("registers an address and restores the Skill after a new registry is created", async () => {
+  const sourceRoot = await mkdtemp(join(tmpdir(), "nexum-skill-source-"))
+  const skillRoot = await makeSkill(sourceRoot, "persisted-skill")
+  const dataRoot = await mkdtemp(join(tmpdir(), "nexum-skill-data-"))
+  const filePath = join(dataRoot, "skills.json")
+  const first = createNexumSkillRegistry({ roots: [], filePath })
+
+  await expect(first.register(skillRoot)).resolves.toMatchObject({ id: "persisted-skill", status: "ready" })
+  expect(JSON.parse(await readFile(filePath, "utf8")).registrations).toHaveLength(1)
+
+  const second = createNexumSkillRegistry({ roots: [], filePath })
+  await second.refresh()
+  await expect(second.list()).resolves.toMatchObject([{ id: "persisted-skill", status: "ready" }])
+})
+
+test("re-registering an address is idempotent", async () => {
+  const sourceRoot = await mkdtemp(join(tmpdir(), "nexum-skill-source-"))
+  const skillRoot = await makeSkill(sourceRoot, "idempotent-skill")
+  const dataRoot = await mkdtemp(join(tmpdir(), "nexum-skill-data-"))
+  const filePath = join(dataRoot, "skills.json")
+  const registry = createNexumSkillRegistry({ roots: [], filePath })
+
+  await registry.register(skillRoot)
+  await registry.register(`${skillRoot}/.`)
+
+  await expect(registry.list()).resolves.toHaveLength(1)
+  expect(JSON.parse(await readFile(filePath, "utf8")).registrations).toHaveLength(1)
+})
+
+test("unregisters a Skill without deleting its source directory", async () => {
+  const sourceRoot = await mkdtemp(join(tmpdir(), "nexum-skill-source-"))
+  const skillRoot = await makeSkill(sourceRoot, "removable-skill")
+  const dataRoot = await mkdtemp(join(tmpdir(), "nexum-skill-data-"))
+  const filePath = join(dataRoot, "skills.json")
+  const skillFile = join(skillRoot, "SKILL.md")
+  const original = await readFile(skillFile, "utf8")
+  const registry = createNexumSkillRegistry({ roots: [], filePath })
+
+  await registry.register(skillRoot)
+  await registry.unregister("removable-skill")
+
+  await expect(registry.list()).resolves.toEqual([])
+  await expect(readFile(skillFile, "utf8")).resolves.toBe(original)
+  expect(JSON.parse(await readFile(filePath, "utf8")).registrations).toEqual([])
+})
+
+test("refreshing one registered Skill keeps other registered Skills available", async () => {
+  const sourceRoot = await mkdtemp(join(tmpdir(), "nexum-skill-source-"))
+  const firstSkill = await makeSkill(sourceRoot, "first-skill")
+  const secondSkill = await makeSkill(sourceRoot, "second-skill")
+  const dataRoot = await mkdtemp(join(tmpdir(), "nexum-skill-data-"))
+  const registry = createNexumSkillRegistry({ roots: [], filePath: join(dataRoot, "skills.json") })
+
+  await registry.register(firstSkill)
+  await registry.register(secondSkill)
+  await registry.refresh("first-skill")
+
+  await expect(registry.list()).resolves.toMatchObject([
+    { id: "first-skill", status: "ready" },
+    { id: "second-skill", status: "ready" },
+  ])
 })

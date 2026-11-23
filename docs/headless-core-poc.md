@@ -40,7 +40,9 @@ bun run --cwd packages/headless-ui dev
 
 ## Skill Registry
 
-Skill Registry 是 UI 无关的 Core 能力。它从项目 Skill root 发现目录，校验 manifest、路径边界、摘要和 `SKILL.md` 完整性；Server 暴露 list/detail/register/refresh/validate/activate 管理接口，生成客户端保持同一协议契约。
+Skill Registry 是 UI 无关的 Core 能力。它从显式注册的本地地址读取目录，校验 manifest、路径边界、摘要和 `SKILL.md` 完整性；Server 暴露 list/detail/register/refresh/validate/activate/unregister 管理接口，生成客户端保持同一协议契约。
+
+默认本地 Runtime 将注册源持久化到 `<dataDirectory>/skills.json`。取消注册只移除 Nexum 的注册记录和派生状态，不会删除、移动或修改 Skill 源目录；源目录被移动或损坏时，注册记录保留为 invalid，用户可以刷新或重新注册新的地址。
 
 页面层只负责展示注册状态、验证结果、激活状态和 `@` 自动补全。Prompt 进入 Coding Loop 后，Skill Invocation Port 解析 mention、去重并等待 `skill.use` 权限；获得批准后把 Skill 内容作为带稳定 `sourceID` 的 system message 注入模型上下文，并通过 SSE 发布 `skill.activated` 或 `skill.failed`。因此任何其他 UI 只要实现同一 Headless Client 契约，即可复用 Registry、权限和 Coding Loop。
 

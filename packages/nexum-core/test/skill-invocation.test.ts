@@ -33,6 +33,9 @@ function registryFor(ids: readonly string[]): NexumSkillRegistry {
     ]),
   )
   return {
+    async register() {
+      return [...packages.values()][0]!
+    },
     async refresh() {},
     async list() {
       return [...packages.values()]
@@ -40,6 +43,7 @@ function registryFor(ids: readonly string[]): NexumSkillRegistry {
     async get(id) {
       return packages.get(id)
     },
+    async unregister() {},
   }
 }
 

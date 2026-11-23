@@ -20,6 +20,7 @@ export {
   type NexumSkillPackage,
   type NexumSkillRegistry,
   type NexumSkillRegistryOptions,
+  type NexumSkillSourceType,
   type NexumSkillStatus,
   type NexumSkillSummary,
 } from "./skill-registry.js"
