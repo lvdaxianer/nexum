@@ -228,6 +228,8 @@ curl --request DELETE 'http://127.0.0.1:4097/api/nexum/session/session_001' \
 
 Nexum 以注册表中的地址为 Skill 来源。默认本地 Runtime 将注册源和安全状态持久化到 `<dataDirectory>/skills.json`；显式配置可通过 `NEXUM_SKILL_REGISTRY_FILE` 覆盖。取消注册只删除 Nexum 注册记录，不删除、移动或修改源目录。
 
+Session Agent 使用内置 `skill_registry` 工具管理 Nexum 注册表，操作为 `list`、`detail`、`register`、`refresh`、`validate` 和 `unregister`。`register` 必须提供本地目录 `address`；工具不会使用 shell 搜索 Skill，也不会删除或修改源目录。注册、刷新和取消注册使用 `skill.manage` 权限边界，列表、详情和校验使用只读边界；默认角色提示词管理不作为 Agent 工具暴露。
+
 ### 通用约定
 
 | 项目 | 约定 |

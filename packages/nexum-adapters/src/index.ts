@@ -157,7 +157,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   })
   const skillInvocation = options.skillInvocation ?? createNexumSkillInvocationPort({ registry: skills, permission })
   const host = options.host ?? createLocalHostAdapter()
-  const tools = createNexumToolRegistry({ sessions, host })
+  const tools = createNexumToolRegistry({ sessions, host, skillRegistry: skills })
   const memory = options.memory ?? createInMemoryMemory()
   const loopOptions = {
     tool: tools.port,
