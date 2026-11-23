@@ -86,6 +86,89 @@ describe.serial("Nexum UI smoke", () => {
     await expect(page.getByRole("heading", { name: "Skills" })).toBeVisible()
   })
 
+  test.serial("offers one continue action after a settled failed run", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    const eventHub = createNexumEventHub()
+    const sessionService = createNexumSessionService()
+    let continueCalls = 0
+    apiServer = await startNexumServer({
+      port: 4097,
+      corsOrigins: [uiOrigin],
+      eventHub,
+      sessionService,
+      codingLoop: {
+        async run(input) {
+          return (await sessionService.get(input.sessionID))!
+        },
+        async continue(sessionID) {
+          continueCalls += 1
+          return (await sessionService.get(sessionID))!
+        },
+        async cancel(sessionID) {
+          return sessionService.setStatus(sessionID, "cancelled")
+        },
+      },
+    })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    directory = await mkdtemp(join(tmpdir(), "nexum-ui-continue-"))
+
+    await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(directory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.locator(".session-id")).toBeVisible()
+    const sessionID = await page.locator(".session-id").innerText()
+
+    await eventHub.publish({
+      eventID: "continue-retry",
+      runID: "continue-run",
+      sessionID,
+      type: "model.retry",
+      sequence: 1,
+      occurredAt: "2026-11-23T00:00:00.000Z",
+      data: { attempt: 1, maxRetries: 2, delayMs: 250, willRetry: true },
+    })
+    await eventHub.publish({
+      eventID: "continue-failed",
+      runID: "continue-run",
+      sessionID,
+      type: "session.failed",
+      sequence: 2,
+      occurredAt: "2026-11-23T00:00:00.001Z",
+      data: { code: "timeout", message: "运行超时" },
+    })
+    await eventHub.publish({
+      eventID: "continue-settled",
+      runID: "continue-run",
+      sessionID,
+      type: "run.settled",
+      sequence: 3,
+      occurredAt: "2026-11-23T00:00:00.002Z",
+      data: { result: "failed" },
+    })
+
+    await expect(page.getByText("模型重试", { exact: true })).toBeVisible()
+    const continueButton = page.getByRole("button", { name: "继续运行" })
+    await expect(continueButton).toBeVisible()
+    await continueButton.click()
+    await expect(continueButton).toBeDisabled()
+    await expect.poll(() => continueCalls).toBe(1)
+    await continueButton.click({ force: true }).catch(() => undefined)
+    expect(continueCalls).toBe(1)
+
+    await eventHub.publish({
+      eventID: "continue-completed",
+      runID: "continue-run-2",
+      sessionID,
+      type: "run.settled",
+      sequence: 4,
+      occurredAt: "2026-11-23T00:00:00.003Z",
+      data: { result: "completed" },
+    })
+    await expect(continueButton).toHaveCount(0)
+  })
+
   test.serial("keeps name and directory attached to each session", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()

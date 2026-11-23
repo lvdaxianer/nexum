@@ -402,6 +402,8 @@ export interface NexumCodingLoopOptions {
 export interface NexumCodingLoop {
   readonly run: (input: NexumCodingLoopInput) => Promise<SessionRecord>
   readonly start?: (input: NexumCodingLoopInput) => NexumCodingLoopStart
+  readonly canContinue?: (sessionID: string) => Promise<boolean>
+  readonly continueStart?: (sessionID: string) => Promise<NexumCodingLoopContinueStart>
   readonly continue?: (sessionID: string) => Promise<SessionRecord>
   readonly cancel: (sessionID: string) => Promise<SessionRecord>
 }
@@ -412,6 +414,13 @@ type NexumCodingLoopExecutionInput = NexumCodingLoopInput | { readonly sessionID
 export type NexumCodingLoopStart =
   | { readonly accepted: true; readonly promise: Promise<SessionRecord> }
   | { readonly accepted: false }
+
+/**
+ * Continue admission 的稳定失败原因。
+ */
+export type NexumCodingLoopContinueStart =
+  | { readonly accepted: true; readonly promise: Promise<SessionRecord> }
+  | { readonly accepted: false; readonly reason: "session_busy" | "not_continuable" }
 
 /**
  * 创建最小单 Agent Coding Loop。
@@ -429,6 +438,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
   const maxOutputContinuations = Math.max(1, options.maxOutputContinuations ?? 8)
   const messageStore = options.messageStore ?? createInMemoryMessageStore()
   const activeRuns = new Map<string, ActiveRun>()
+  const continuationAdmissions = new Set<string>()
   const sessionSequences = new Map<string, number>()
   const sessionSequenceSeeds = new Map<string, Promise<void>>()
 
@@ -761,6 +771,11 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
     }
   }
+  const canContinue = async (sessionID: string) => {
+    const history = await messageStore.load(sessionID)
+    const lastMessage = history.at(-1)
+    return Boolean(lastMessage && (lastMessage.role === "user" || lastMessage.role === "tool") && lastMessage.content.trim())
+  }
   const start = (input: NexumCodingLoopExecutionInput): NexumCodingLoopStart => {
     if (activeRuns.has(input.sessionID)) return { accepted: false }
     const runState: ActiveRun = {
@@ -796,12 +811,29 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       }
       return started.promise
     },
-    continue(sessionID) {
-      const started = start({ sessionID, mode: "continue" })
-      if (!started.accepted) {
-        return Promise.reject(new NexumSessionError("session_busy", "Session 当前正在运行", sessionID))
+    canContinue,
+    async continueStart(sessionID) {
+      if (activeRuns.has(sessionID) || continuationAdmissions.has(sessionID)) {
+        return { accepted: false, reason: "session_busy" }
       }
-      return started.promise
+      continuationAdmissions.add(sessionID)
+      try {
+        if (!(await canContinue(sessionID))) return { accepted: false, reason: "not_continuable" }
+        const started = start({ sessionID, mode: "continue" })
+        if (!started.accepted) return { accepted: false, reason: "session_busy" }
+        return started
+      } finally {
+        continuationAdmissions.delete(sessionID)
+      }
+    },
+    continue(sessionID) {
+      return this.continueStart!(sessionID).then((started) => {
+        if (started.accepted) return started.promise
+        if (started.reason === "not_continuable") {
+          return Promise.reject(new NexumRunError("not_continuable", "Session 没有可继续的上下文", sessionID))
+        }
+        return Promise.reject(new NexumSessionError("session_busy", "Session 当前正在运行", sessionID))
+      })
     },
     async cancel(sessionID) {
       const current = await options.sessions.get(sessionID)

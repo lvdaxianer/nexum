@@ -153,6 +153,7 @@ test("continues a failed run from the existing user context without duplicating 
   )
 
   await expect(loop.run({ sessionID: session.sessionID, text: "原始任务" })).rejects.toThrow("模型暂时失败")
+  await expect(loop.canContinue!(session.sessionID)).resolves.toBe(true)
   await expect(loop.continue!(session.sessionID)).resolves.toMatchObject({ status: "completed" })
 
   expect(prompts[1]).toEqual([{ role: "user", content: "原始任务" }])
@@ -196,6 +197,39 @@ test("continues a failed run from the last tool result", async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
+test("serializes concurrent continuation admissions for one session", async () => {
+  const { directory, session, sessions } = await createSession()
+  let calls = 0
+  let release: (() => void) | undefined
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const loop = dependencies(
+    { async publish() {} },
+    {
+      async *prompt() {
+        calls += 1
+        if (calls === 1) throw new Error("首次运行失败")
+        await blocked
+        yield { type: "text", content: "继续完成" }
+        yield { type: "completed" }
+      },
+    },
+    { sessions },
+  )
+
+  await expect(loop.run({ sessionID: session.sessionID, text: "并发继续" })).rejects.toThrow("首次运行失败")
+  const first = await loop.continueStart!(session.sessionID)
+  const second = await loop.continueStart!(session.sessionID)
+
+  expect(first.accepted).toBe(true)
+  expect(second).toEqual({ accepted: false, reason: "session_busy" })
+  if (!first.accepted) throw new Error("首次 Continue 未受理")
+  release?.()
+  await first.promise
+  await rm(directory, { recursive: true, force: true })
+})
+
 test("rejects continue when the history ends with an assistant answer", async () => {
   const { directory, session, sessions } = await createSession()
   let calls = 0
@@ -209,6 +243,7 @@ test("rejects continue when the history ends with an assistant answer", async ()
   const loop = dependencies({ async publish() {} }, model, { sessions })
 
   await loop.run({ sessionID: session.sessionID, text: "完成任务" })
+  await expect(loop.canContinue!(session.sessionID)).resolves.toBe(false)
   await expect(loop.continue!(session.sessionID)).rejects.toBeInstanceOf(NexumRunError)
   expect(calls).toBe(1)
   await rm(directory, { recursive: true, force: true })

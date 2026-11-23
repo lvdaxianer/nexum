@@ -1070,6 +1070,7 @@ input[aria-invalid="true"]:focus {
 }
 
 .pill-running,
+.pill-retrying,
 .pill-awaiting {
   background: #fff3df;
   color: #a76716;

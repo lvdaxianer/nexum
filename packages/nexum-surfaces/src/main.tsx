@@ -127,6 +127,8 @@ function App() {
   const [pendingDecisionID, setPendingDecisionID] = createSignal("")
   const [pendingQuestionID, setPendingQuestionID] = createSignal("")
   const [cancelBusy, setCancelBusy] = createSignal(false)
+  const [continueAvailable, setContinueAvailable] = createSignal(false)
+  const [continueBusy, setContinueBusy] = createSignal(false)
   const [renameBusy, setRenameBusy] = createSignal(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
   let streamController: AbortController | undefined
@@ -139,7 +141,7 @@ function App() {
   const seenEventKeys = new Set<string>()
 
   /** Agent 回答期间（运行中/等待权限/等待回答）锁定输入，避免打断本轮执行。 */
-  const inputLocked = () => ["running", "awaiting permission", "awaiting question"].includes(sessionStatus())
+  const inputLocked = () => ["running", "retrying", "awaiting permission", "awaiting question"].includes(sessionStatus())
 
   function scrollRailSection(element: HTMLElement | undefined) {
     element?.scrollIntoView({ behavior: "smooth", block: "nearest" })
@@ -528,6 +530,8 @@ function App() {
     setSessionID(session.id)
     setSessionName(snapshot.data.session.name)
     setSessionStatus(snapshot.data.session.status)
+    setContinueAvailable(snapshot.data.canContinue)
+    setContinueBusy(false)
     setDirectory(snapshot.data.session.directory)
     setEvents([])
     setChatItems(snapshot.data.session.status === "running" ? [thinkingChatItem(session.id)] : [])
@@ -679,6 +683,7 @@ function App() {
       )) {
         const eventKey = event.eventID
         if (seenEventKeys.has(eventKey)) continue
+        if (event.sessionID !== id || id !== sessionID()) continue
         seenEventKeys.add(eventKey)
         eventCursors.set(id, event.eventID)
         setEvents((current) => [
@@ -688,9 +693,42 @@ function App() {
           ].slice(-200),
         ])
         setChatItems((current) => projectChatEvent(current, event))
-        if (event.type === "session.completed") setSessionStatus("completed")
-        if (event.type === "session.failed") setSessionStatus("failed")
-        if (event.type === "session.cancelled") setSessionStatus("cancelled")
+        const data = eventDataOf(event.data)
+        if (event.type === "model.attempt") {
+          setSessionStatus("running")
+          setNotice(`模型第 ${typeof data.attempt === "number" ? data.attempt : ""} 次尝试`)
+        }
+        if (event.type === "model.retry") {
+          setSessionStatus("retrying")
+          const delayMs = data.delayMs
+          setNotice(`模型调用失败，${typeof delayMs === "number" ? `${delayMs}ms 后` : "即将"}自动重试`)
+        }
+        if (event.type === "run.settled") {
+          const result = runResultFromEvent(data)
+          if (!result) {
+            setNotice("收到无效的运行结算事件")
+            continue
+          }
+          setContinueBusy(false)
+          setContinueAvailable(result === "failed")
+          setSessionStatus(result)
+          setNotice(result === "failed" ? "本轮运行失败，可以继续运行" : result === "completed" ? "本轮运行已完成" : "本轮运行已取消")
+        }
+        if (event.type === "session.completed") {
+          setContinueBusy(false)
+          setContinueAvailable(false)
+          setSessionStatus("completed")
+        }
+        if (event.type === "session.failed") {
+          setContinueBusy(false)
+          setContinueAvailable(true)
+          setSessionStatus("failed")
+        }
+        if (event.type === "session.cancelled") {
+          setContinueBusy(false)
+          setContinueAvailable(false)
+          setSessionStatus("cancelled")
+        }
         if (event.type === "tool.request" || event.type === "permission.requested")
           setSessionStatus("awaiting permission")
         if (event.type === "question.request") {
@@ -844,6 +882,8 @@ function App() {
       ),
     )
     const previousStatus = sessionStatus()
+    setContinueAvailable(false)
+    setContinueBusy(false)
     setSessionStatus("running")
     try {
       setActiveSkillIDs(skillIDsFromText(text))
@@ -869,6 +909,26 @@ function App() {
       setNotice(messageFrom(error, "Prompt 未提交成功，请重试"))
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * 从失败运行的最后一个 User 或 Tool 上下文继续执行。
+   *
+   * @returns 无可继续请求或请求失败时保持失败态
+   * @author lvdaxianer@yeah.net
+   */
+  async function continueRun() {
+    if (!sessionID() || !continueAvailable() || continueBusy()) return
+    setContinueBusy(true)
+    setSessionStatus("running")
+    setNotice("正在继续运行，等待新的生命周期事件")
+    try {
+      await client.experimental.nexum.session.continue({ sessionID: sessionID() })
+    } catch (error) {
+      setContinueBusy(false)
+      setSessionStatus("failed")
+      setNotice(messageFrom(error, "继续运行失败，请重试"))
     }
   }
 
@@ -1333,6 +1393,16 @@ function App() {
             >
               取消运行
             </button>
+            <Show when={continueAvailable()}>
+              <button
+                class="toolbar-button"
+                aria-label="继续运行"
+                disabled={continueBusy()}
+                onClick={() => void continueRun()}
+              >
+                {continueBusy() ? "继续中…" : "继续运行"}
+              </button>
+            </Show>
             <Drawer
               title="会话操作"
               description="重命名当前 Session，或重新建立事件流、刷新运行状态。"
@@ -1966,7 +2036,7 @@ function closeReasoning(items: ChatItem[], runID: string): ChatItem[] {
  * @returns 更新后的聊天条目
  */
 function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
-  const data = event.data ?? {}
+  const data = eventDataOf(event.data)
   const localTime = new Date(event.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
   const detail = JSON.stringify(data, null, 2)
   const value = (key: string) => (typeof data[key] === "string" ? data[key] : "")
@@ -2145,6 +2215,42 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
         localTime,
         eventType: event.type,
       })
+    case "model.attempt":
+      return upsert({
+        id: `model-attempt:${event.runID}`,
+        kind: "execution",
+        title: "模型尝试",
+        content: `第 ${String(data.attempt ?? "")} 次模型调用`,
+        detail,
+        status: "running",
+        localTime,
+        eventType: event.type,
+      })
+    case "model.retry":
+      return upsert({
+        id: `model-retry:${event.runID}`,
+        kind: "execution",
+        title: "模型重试",
+        content: `调用失败，${String(data.delayMs ?? 0)}ms 后重试`,
+        detail,
+        status: "running",
+        localTime,
+        eventType: event.type,
+      })
+    case "run.settled":
+      {
+        const result = runResultFromEvent(data)
+        if (!result) return items
+      return upsert({
+        id: `run:${event.runID}:settled`,
+        kind: "status",
+        title: "运行已结算",
+        content: result === "failed" ? "运行失败，可继续执行" : result === "completed" ? "运行完成" : "运行已取消",
+        status: result === "failed" ? "failed" : result === "cancelled" ? "cancelled" : "completed",
+        localTime,
+        eventType: event.type,
+      })
+      }
     case "session.completed": {
       const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
       return appendChatItem(
@@ -2193,6 +2299,30 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
 
 function compactSummary(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, 120)
+}
+
+/**
+ * 将协议事件数据收窄为应用层可安全读取的对象。
+ *
+ * @param data - 协议事件数据
+ * @returns 非数组对象或空对象
+ * @author lvdaxianer@yeah.net
+ */
+function eventDataOf(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return {}
+  return data as Record<string, unknown>
+}
+
+/**
+ * 读取并校验运行结算结果。
+ *
+ * @param data - 已收窄的事件数据
+ * @returns 有效的运行结果或 undefined
+ * @author lvdaxianer@yeah.net
+ */
+function runResultFromEvent(data: Record<string, unknown>): "completed" | "failed" | "cancelled" | undefined {
+  if (data.result === "completed" || data.result === "failed" || data.result === "cancelled") return data.result
+  return undefined
 }
 
 /**
