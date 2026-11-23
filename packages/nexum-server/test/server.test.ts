@@ -251,7 +251,11 @@ test("pages canonical session messages without exposing credential-shaped values
         },
       ],
     },
-    { role: "tool", toolCallID: "tool-call-001", content: '{"access_token":"json-secret","private_key":"private-secret"}' },
+    {
+      role: "tool",
+      toolCallID: "tool-call-001",
+      content: 'tool output: {"access_token":"json secret","private_key":"private secret"}',
+    },
     { role: "system", sourceID: "context:summary", content: "Context summary:\n已完成目录检查" },
     { role: "system", sourceID: "runtime:default-role", content: "内部角色提示词：必须隐藏" },
     { role: "user", content: "最新 Prompt" },
@@ -268,11 +272,13 @@ test("pages canonical session messages without exposing credential-shaped values
       total: number
       hasMore: boolean
       nextBefore?: number
+      snapshotID: string
     }
   }
 
   expect(firstResponse.status).toBe(200)
   expect(firstBody.data.total).toBe(7)
+  expect(firstBody.data.snapshotID).toHaveLength(64)
   expect(firstBody.data.messages.map((item) => item.index)).toEqual([4, 5, 6])
   expect(firstBody.data.messages[0]?.message).toMatchObject({ role: "system", sourceID: "context:summary" })
   expect(firstBody.data.messages[1]?.message).toMatchObject({
@@ -306,10 +312,16 @@ test("pages canonical session messages without exposing credential-shaped values
   })
   expect(secondBody.data.messages[2]?.message).toMatchObject({
     role: "tool",
-    content: '{"access_token":"[REDACTED]","private_key":"[REDACTED]"}',
+    content: 'tool output: {"access_token":[REDACTED],"private_key":[REDACTED]}',
   })
   expect(JSON.stringify(secondBody.data.messages)).not.toContain("内部角色提示词")
   expect(secondBody.data.nextBefore).toBe(1)
+
+  const expiredResponse = await fetch(
+    new URL(`/api/experimental/nexum/session/${session.sessionID}/messages?before=4&snapshot=stale`, server.url),
+  )
+  expect(expiredResponse.status).toBe(409)
+  expect(((await expiredResponse.json()) as { errorCode: string }).errorCode).toBe("NEXUM_HISTORY_SNAPSHOT_EXPIRED")
 
   const invalidResponse = await fetch(
     new URL(`/api/experimental/nexum/session/${session.sessionID}/messages?limit=0`, server.url),

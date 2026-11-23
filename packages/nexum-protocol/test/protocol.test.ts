@@ -106,6 +106,7 @@ test("types canonical session messages and pagination metadata", () => {
     total: 4,
     hasMore: true,
     nextBefore: 3,
+    snapshotID: "snapshot_001",
   }
 
   expect(page.messages[0]?.message).toEqual(message)

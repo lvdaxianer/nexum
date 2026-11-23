@@ -104,10 +104,16 @@ export const Nexum = {
               request<NexumSession>("/session", { method: "POST", body: JSON.stringify(input) }),
             list: () => request<readonly NexumSession[]>("/session"),
             state: (input: { readonly sessionID: string }) => request<NexumSessionState>(`/session/${encodeURIComponent(input.sessionID)}/state`),
-            messages: (input: { readonly sessionID: string; readonly before?: number; readonly limit?: number }) => {
+            messages: (input: {
+              readonly sessionID: string
+              readonly before?: number
+              readonly limit?: number
+              readonly snapshotID?: string
+            }) => {
               const query = new URLSearchParams()
               if (input.before !== undefined) query.set("before", String(input.before))
               if (input.limit !== undefined) query.set("limit", String(input.limit))
+              if (input.snapshotID !== undefined) query.set("snapshot", input.snapshotID)
               const suffix = query.size > 0 ? `?${query.toString()}` : ""
               return experimentalRequest<NexumSessionMessages>(
                 `/session/${encodeURIComponent(input.sessionID)}/messages${suffix}`,

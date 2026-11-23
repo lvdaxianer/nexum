@@ -169,6 +169,7 @@ export type NexumSessionMessages = {
   readonly total: number
   readonly hasMore: boolean
   readonly nextBefore?: number
+  readonly snapshotID: string
 }
 
 export type NexumPermission = {

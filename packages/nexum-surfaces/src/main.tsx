@@ -92,6 +92,7 @@ function App() {
   const [events, setEvents] = createSignal<TimelineEvent[]>([])
   const [chatItems, setChatItems] = createSignal<ChatItem[]>([])
   const [historyBefore, setHistoryBefore] = createSignal<number | undefined>()
+  const [historySnapshot, setHistorySnapshot] = createSignal<string | undefined>()
   const [historyHasMore, setHistoryHasMore] = createSignal(false)
   const [historyLoading, setHistoryLoading] = createSignal(false)
   const [historyError, setHistoryError] = createSignal("")
@@ -161,6 +162,7 @@ function App() {
   let sessionSelectSequence = 0
   let historyRequestSequence = 0
   const eventCursors = new Map<string, string>()
+  const eventStartSequences = new Map<string, number>()
   const seenEventKeys = new Set<string>()
 
   /** Agent 回答期间（运行中/等待权限/等待回答）锁定输入，避免打断本轮执行。 */
@@ -699,6 +701,7 @@ function App() {
     setEvents([])
     setChatItems(snapshot.data.session.status === "running" ? [thinkingChatItem(session.id)] : [])
     setHistoryBefore(undefined)
+    setHistorySnapshot(undefined)
     setHistoryHasMore(false)
     setHistoryError("")
     followTail = true
@@ -710,6 +713,7 @@ function App() {
     seenEventKeys.clear()
     sessionStorage.setItem("nexum.sessionID", session.id)
     eventCursors.delete(session.id)
+    eventStartSequences.set(session.id, snapshot.data.lastSequence)
     await loadSessionMessages(session.id, undefined, sequence)
     if (sequence !== sessionSelectSequence) return
     connectEvents(session.id, snapshot.data.lastSequence)
@@ -762,6 +766,10 @@ function App() {
    * @author lvdaxianer@yeah.net
    */
   function applyCreatedSession(created: SessionSummary) {
+    ++sessionSelectSequence
+    streamController?.abort()
+    streamController = undefined
+    setConnected(false)
     setSessionID(created.id)
     setSessionName(created.name)
     setSessionStatus(created.status)
@@ -771,6 +779,7 @@ function App() {
     setEvents([])
     setChatItems([])
     setHistoryBefore(undefined)
+    setHistorySnapshot(undefined)
     setHistoryHasMore(false)
     setHistoryError("")
     followTail = true
@@ -780,6 +789,8 @@ function App() {
     setCompactionStatus("idle")
     setContextSources([])
     seenEventKeys.clear()
+    eventCursors.delete(created.id)
+    eventStartSequences.set(created.id, 0)
     connectEvents(created.id)
     setSessionDrawerOpen(false)
     setSessionNameError("")
@@ -889,6 +900,7 @@ function App() {
   }
 
   function clearSelectedSession() {
+    const id = sessionID()
     setSessionID("")
     setSessionName("")
     setDirectory("")
@@ -896,8 +908,11 @@ function App() {
     setEvents([])
     setChatItems([])
     setHistoryBefore(undefined)
+    setHistorySnapshot(undefined)
     setHistoryHasMore(false)
     setHistoryError("")
+    eventCursors.delete(id)
+    eventStartSequences.delete(id)
     setPermissions([])
     setQuestions([])
     setQuestionAnswers({})
@@ -918,9 +933,10 @@ function App() {
     setConnected(true)
     try {
       const lastEventID = eventCursors.get(id)
+      const initialSequence = afterSequence ?? eventStartSequences.get(id)
       const eventOptions = lastEventID
         ? { signal: controller.signal, headers: { "Last-Event-ID": lastEventID } }
-        : { signal: controller.signal, ...(afterSequence !== undefined ? { afterSequence } : {}) }
+        : { signal: controller.signal, ...(initialSequence !== undefined ? { afterSequence: initialSequence } : {}) }
       for await (const event of client.experimental.nexum.session.events(
         { sessionID: id },
         eventOptions,
@@ -1022,9 +1038,11 @@ function App() {
         sessionID: id,
         before,
         limit: historyPageSize,
+        ...(before !== undefined && historySnapshot() ? { snapshotID: historySnapshot() } : {}),
       })
       if (selectionSequence !== sessionSelectSequence || id !== sessionID()) return undefined
       setHistoryBefore(response.data.nextBefore)
+      setHistorySnapshot(response.data.snapshotID)
       setHistoryHasMore(response.data.hasMore)
       const nextItems = historyItemsFromMessages(response.data.messages)
       setChatItems((current) => (before === undefined ? nextItems : prependHistoryItems(current, nextItems)))
@@ -1034,7 +1052,7 @@ function App() {
         before !== undefined &&
         error instanceof Error &&
         "code" in error &&
-        error.code === "NEXUM_INVALID_REQUEST"
+        (error.code === "NEXUM_INVALID_REQUEST" || error.code === "NEXUM_HISTORY_SNAPSHOT_EXPIRED")
       ) {
         setHistoryBefore(undefined)
         setHistoryHasMore(false)
@@ -2557,6 +2575,13 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
       const activeItems = items.filter((item) => !item.thinking)
       const last = activeItems.at(-1)
       const reasoningPrefix = `reasoning:${event.runID}:`
+      if (
+        last?.kind === "reasoning" &&
+        last.id.startsWith("history:reasoning:") &&
+        last.content?.includes(value("content"))
+      ) {
+        return activeItems
+      }
       if (last?.kind === "reasoning" && last.id.startsWith(reasoningPrefix)) {
         return updateChatItem(activeItems, last.id, {
           content: `${last.content ?? ""}${value("content")}`,
@@ -2579,6 +2604,13 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
       const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
       const idPrefix = `assistant:${event.runID}:`
       const last = activeItems.at(-1)
+      if (
+        last?.kind === "assistant" &&
+        last.id.startsWith("history:assistant:") &&
+        last.content?.includes(value("content"))
+      ) {
+        return activeItems
+      }
       if (last?.kind === "assistant" && last.id.startsWith(idPrefix)) {
         return updateChatItem(activeItems, last.id, {
           content: `${last.content ?? ""}${value("content")}`,
@@ -2599,8 +2631,12 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
     }
     case "tool.request": {
       const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
+      const toolCallID = value("toolCallID")
+      if (activeItems.some((item) => item.id.endsWith(`:${toolCallID}`) && item.id.startsWith("history:tool-call:"))) {
+        return activeItems
+      }
       return upsertChatItem(activeItems, {
-        id: `tool:${value("toolCallID")}`,
+        id: `tool:${toolCallID}`,
         kind: "execution",
         title: `工具调用 · ${value("toolName") || value("action") || "unknown"}`,
         content: "Core 正在执行工具",
@@ -2612,8 +2648,12 @@ function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
     }
     case "tool.result": {
       const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
+      const toolCallID = value("toolCallID")
+      if (activeItems.some((item) => item.id.endsWith(`:${toolCallID}`) && item.id.startsWith("history:tool-result:"))) {
+        return activeItems
+      }
       return upsertChatItem(activeItems, {
-        id: `tool:${value("toolCallID")}`,
+        id: `tool:${toolCallID}`,
         kind: "execution",
         title: `工具结果 · ${value("toolName") || value("toolCallID").slice(0, 12) || "工具"}`,
         content: data.ok === false ? "工具执行失败" : compactSummary(value("output")) || "工具执行完成",

@@ -43,6 +43,7 @@ import {
   type NexumSessionMessages,
 } from "@nexum/protocol"
 import { resolve } from "node:path"
+import { createHash } from "node:crypto"
 import type { NexumEventHub } from "./events.ts"
 
 const DEFAULT_HOSTNAME = "127.0.0.1"
@@ -814,6 +815,7 @@ async function listSessionMessages(
 
   const limit = parseMessagePageParameter(url.searchParams.get("limit"), 50)
   const before = parseMessagePageParameter(url.searchParams.get("before"), undefined)
+  const snapshot = url.searchParams.get("snapshot")
   if (limit === undefined || limit < 1 || limit > 100) {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "limit 必须是 1 到 100 的整数", traceId)
   }
@@ -822,6 +824,10 @@ async function listSessionMessages(
   }
 
   const history = await messageStore.load(sessionID)
+  const snapshotID = messageSnapshot(history)
+  if (before !== undefined && snapshot !== null && snapshot !== snapshotID) {
+    return errorResponse(409, "NEXUM_HISTORY_SNAPSHOT_EXPIRED", "历史消息快照已过期，请重新加载", traceId)
+  }
   const end = before ?? history.length
   if (end > history.length) {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "before 超出消息历史范围", traceId)
@@ -834,6 +840,7 @@ async function listSessionMessages(
     })),
     total: history.length,
     hasMore: start > 0,
+    snapshotID,
     ...(start > 0 ? { nextBefore: start } : {}),
   }
   return jsonResponse({ data }, traceId)
@@ -845,6 +852,11 @@ function parseMessagePageParameter(value: string | null, fallback: number | unde
   if (!/^\d+$/.test(value)) return undefined
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) ? parsed : undefined
+}
+
+/** 为分页历史生成当前 canonical 消息快照标识。 */
+function messageSnapshot(history: readonly ModelMessage[]): string {
+  return createHash("sha256").update(JSON.stringify(history)).digest("hex")
 }
 
 /** 将 Core canonical 消息转换成可供页面读取的脱敏消息。 */

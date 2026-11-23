@@ -75,7 +75,7 @@ Content-Type: application/json
 | --- | --- |
 | 调用方 | Nexum Web UI 或需要恢复对话的 Runtime 客户端 |
 | 前置条件 | `sessionID` 对应现存 Session |
-| 分页 | `limit` 为 1-100 的整数，默认 50；`before` 为非负消息索引，返回其之前的一页 |
+| 分页 | `limit` 为 1-100 的整数，默认 50；`before` 为非负消息索引，返回其之前的一页；继续翻页时带上上页的 `snapshot` |
 | 排序 | 按 canonical 消息写入顺序升序返回；`index` 是当前历史快照中的零基索引 |
 | 脱敏 | 文本和结构化工具输入在响应边界脱敏；内部模型历史不被修改 |
 | 认证 | 当前认证约定待确认；服务实现未校验认证信息 |
@@ -100,6 +100,7 @@ GET http://127.0.0.1:4097/api/experimental/nexum/session/{sessionID}/messages?li
 | --- | --- | --- | --- | --- | --- |
 | `limit` | integer | 否 | `50` | `1-100` | 本页最多返回的消息数 |
 | `before` | integer | 否 | 历史长度 | `>=0` 且不超过历史长度 | 返回索引小于该值的最近一页；使用上次响应的 `nextBefore` |
+| `snapshot` | string | 翻页时必填 | 无 | 上页响应的 `snapshotID` | `8d3f…` | 校验分页期间 canonical 历史未被重写 |
 
 #### Request headers and cookies
 
@@ -126,7 +127,8 @@ GET http://127.0.0.1:4097/api/experimental/nexum/session/{sessionID}/messages?li
     ],
     "total": 100,
     "hasMore": true,
-    "nextBefore": 98
+    "nextBefore": 98,
+    "snapshotID": "8d3f0f5c…"
   },
   "meta": {
     "protocolVersion": "nexum.runtime.v1",
@@ -143,6 +145,7 @@ GET http://127.0.0.1:4097/api/experimental/nexum/session/{sessionID}/messages?li
 | `data.total` | integer | 必有 | 当前历史快照的消息总数 |
 | `data.hasMore` | boolean | 必有 | 是否还有更早消息 |
 | `data.nextBefore` | integer | 可选 | 下一次请求使用的 `before`；没有更早消息时省略 |
+| `data.snapshotID` | string | 必有 | 当前 canonical 历史快照标识；向上翻页时原样作为 `snapshot` 传回 |
 | `meta.protocolVersion` | string | 必有 | 固定为 `nexum.runtime.v1` |
 | `meta.traceId` | string | 必有 | 请求链路标识 |
 
@@ -156,6 +159,7 @@ GET http://127.0.0.1:4097/api/experimental/nexum/session/{sessionID}/messages?li
 | --- | --- | --- | --- |
 | `400` | `NEXUM_INVALID_REQUEST` | `limit`、`before` 缺失格式错误或超出范围 | 修正分页参数后重试 |
 | `404` | `NEXUM_SESSION_NOT_FOUND` | Session 不存在 | 清除本地 Session 选择并重新加载列表 |
+| `409` | `NEXUM_HISTORY_SNAPSHOT_EXPIRED` | 翻页期间历史被压缩或重写 | 丢弃旧游标，从最新页重新加载 |
 | `405` | `NEXUM_METHOD_NOT_ALLOWED` | 使用非 GET 方法 | 改用 GET |
 | `500` | `NEXUM_INTERNAL_ERROR` | MessageStore 不可读或服务内部失败 | 使用 `traceId` 排障，保留当前页面内容并稍后重试 |
 
