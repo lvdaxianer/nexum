@@ -28,7 +28,7 @@ import {
 import { createNexumEventHub } from "../src/events.ts"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
 
-const FORBIDDEN_UI_PACKAGES = ["@opencode/app", "@opencode/tui", "@opencode/desktop", "@opencode/cli"]
+const FORBIDDEN_SURFACE_PACKAGES = ["@nexum/surfaces"]
 const servers: NexumServer[] = []
 const upstreamServers: Array<ReturnType<typeof Bun.serve>> = []
 const temporaryDirectories: string[] = []
@@ -1407,7 +1407,7 @@ test("nexum-server package stays independent from UI packages", async () => {
   }
   const dependencies = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
 
-  expect(dependencies).not.toEqual(expect.arrayContaining(FORBIDDEN_UI_PACKAGES))
+  expect(dependencies).not.toEqual(expect.arrayContaining(FORBIDDEN_SURFACE_PACKAGES))
 })
 
 test("recovers persisted interaction requests as orphaned and rejects their old reply IDs", async () => {

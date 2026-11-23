@@ -5,7 +5,7 @@
 ## 目录职责
 
 - `nexum.md`：Nexum Runtime API 的人工可读说明，适合 UI、集成方和联调人员查阅。
-- 协议字段的权威定义仍在 [`packages/protocol`](../packages/protocol/README.md)；这里用于补充使用场景和示例。
+- 协议字段的权威定义仍在 [`packages/nexum-protocol`](../packages/nexum-protocol/README.md)；这里用于补充使用场景和示例。
 - Nexum 的独立协议模型位于 [`packages/nexum-protocol`](../packages/nexum-protocol/README.md)，HTTP/SSE 实现位于 [`packages/nexum-server`](../packages/nexum-server/README.md)。
 
 ## 维护边界
@@ -17,6 +17,6 @@
 从仓库根目录运行：
 
 ```bash
-bun run --cwd packages/protocol check:generated
+bun run --cwd packages/nexum-protocol typecheck
 bun test --cwd packages/nexum-server
 ```
