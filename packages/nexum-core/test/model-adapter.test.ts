@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { createNexumModelConfigStore, createOpenAICompatibleModelPort } from "../../nexum-adapters/src/index.ts"
+import { createNexumModelConfigStore } from "../../nexum-persistence/src/index.ts"
+import { createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
 
 async function collect(model: ReturnType<typeof createOpenAICompatibleModelPort>) {
   const chunks = []

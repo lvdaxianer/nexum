@@ -1,9 +1,9 @@
 export {
   createNexumEventHub,
   NexumEventStoreError,
-} from "@nexum/adapters/events"
+} from "@nexum/application"
 export type {
   NexumEventHub,
   NexumEventHubOptions,
   NexumEventSubscriptionOptions,
-} from "@nexum/adapters/events"
+} from "@nexum/application"

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { createNexumSessionService, createNexumRuntime, NexumRuntimeError, type EventSink } from "../src/index.ts"
+import { createNexumRuntime, NexumRuntimeError, type EventSink } from "../src/index.ts"
+import { createNexumSessionService } from "./test-ports.ts"
 
 test("discovers optional capabilities and rejects work after close", async () => {
   const sessions = createNexumSessionService()

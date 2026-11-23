@@ -13,7 +13,9 @@
   },
   "dependencies": {
     "@kobalte/core": "catalog:",
+    "@nexum/application": "workspace:*",
     "@nexum/client": "workspace:*",
+    "@nexum/integrations": "workspace:*",
     "dompurify": "catalog:",
     "marked": "catalog:",
     "solid-js": "catalog:"

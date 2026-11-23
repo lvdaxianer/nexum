@@ -23,10 +23,36 @@ export interface NexumSkillPackage extends NexumSkillSummary {
   readonly read: (relativePath: string) => Promise<string>
 }
 
-export interface NexumSkillRegistryOptions {
-  readonly roots: readonly string[]
-  readonly maxFileBytes?: number
-  readonly filePath?: string
+/** Skill 来源扫描后交给应用层编排的候选。 */
+export interface NexumSkillCandidate extends NexumSkillSummary {
+  readonly address: string
+  readonly read: (relativePath: string) => Promise<string>
+}
+
+/** Skill 注册记录的持久化形态。 */
+export interface NexumSkillRegistration {
+  readonly address: string
+  readonly sourceType: NexumSkillSourceType
+  readonly skillID?: string
+  readonly registeredAt: string
+  readonly updatedAt: string
+  readonly digest?: string
+  readonly status?: NexumSkillStatus
+  readonly diagnostics?: readonly string[]
+}
+
+/** Skill 注册状态存储端口。 */
+export interface NexumSkillRegistrationStore {
+  readonly list: () => Promise<readonly NexumSkillRegistration[]>
+  readonly save: (registration: NexumSkillRegistration) => Promise<void>
+  readonly remove: (address: string) => Promise<void>
+}
+
+/** 外部 Skill 来源端口；不负责注册生命周期和冲突决策。 */
+export interface NexumSkillSource {
+  readonly discover: () => Promise<readonly NexumSkillCandidate[]>
+  readonly scan: (registration: NexumSkillRegistration) => Promise<NexumSkillCandidate>
+  readonly normalizeAddress: (address: string) => string
 }
 
 export interface NexumSkillRegistry {

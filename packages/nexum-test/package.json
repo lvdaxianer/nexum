@@ -11,7 +11,7 @@
     "typecheck:tsc": "tsc --noEmit"
   },
   "dependencies": {
-    "@nexum/adapters": "workspace:*",
+    "@nexum/application": "workspace:*",
     "@nexum/client": "workspace:*",
     "@nexum/core": "workspace:*",
     "@nexum/server": "workspace:*"

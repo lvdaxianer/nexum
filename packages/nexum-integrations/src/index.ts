@@ -1,2 +1,12 @@
-/** External system integrations for Nexum Core ports. */
-export {}
+/** Nexum Core 端口的外部系统集成。 */
+export { createLocalDirectoryValidator } from "./directory.ts"
+export { createLocalHostAdapter } from "./local-host.ts"
+export type { LocalHostOptions } from "./local-host.ts"
+export { createHttpMcpAdapter, createMcpAdapter, createStdioMcpAdapter } from "./mcp.ts"
+export type { McpAdapterOptions, McpRpcTransport } from "./mcp.ts"
+export { createOpenAICompatibleModelPort } from "./openai-model.ts"
+export type { NexumFetch, OpenAICompatibleModelPortOptions } from "./openai-model.ts"
+export { createNexumProjectContextPort } from "./project-context.ts"
+export type { NexumFileProjectContextOptions } from "./project-context.ts"
+export { createLocalSkillSource } from "./local-skill-source.ts"
+export type { LocalSkillSourceOptions } from "./local-skill-source.ts"

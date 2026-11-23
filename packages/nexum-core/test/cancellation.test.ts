@@ -3,14 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  createNexumCodingLoop,
-  createNexumSessionService,
   type EventSink,
   type MessageStore,
   type ModelPort,
   type PermissionPort,
   type ToolPort,
 } from "../src/index.ts"
+import { createNexumCodingLoop, createNexumSessionService } from "./test-ports.ts"
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void

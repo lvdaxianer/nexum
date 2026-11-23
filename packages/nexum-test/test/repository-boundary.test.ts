@@ -100,7 +100,9 @@ test("活动代码不再引用旧的聚合适配器包", async () => {
   const references = await Promise.all(
     files.map(async (file) => {
       const content = await Bun.file(resolve(repositoryRoot, file)).text()
-      return content.includes("@nexum/adapters") || content.includes("nexum-adapters") ? file : undefined
+      const legacyPackage = `@nexum/${"adapters"}`
+      const legacyDirectory = `nexum-${"adapters"}`
+      return content.includes(legacyPackage) || content.includes(legacyDirectory) ? file : undefined
     }),
   )
   expect(references.filter((file): file is string => file !== undefined)).toEqual([])

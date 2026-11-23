@@ -3,14 +3,14 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
-  createNexumCodingLoop,
-  createNexumSessionService,
   type EventSink,
   type ModelPort,
   type PermissionPort,
   type ToolPort,
 } from "../src/index.ts"
-import { createFileInteractionStore, createNexumQuestionPort } from "../../nexum-adapters/src/index.ts"
+import { createNexumCodingLoop, createNexumSessionService } from "./test-ports.ts"
+import { createNexumQuestionPort } from "../../nexum-application/src/index.ts"
+import { createFileInteractionStore } from "../../nexum-persistence/src/index.ts"
 
 const temporaryDirectories: string[] = []
 

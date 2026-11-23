@@ -3,15 +3,14 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
-  createNexumCodingLoop,
-  createNexumPermissionBroker,
-  createNexumSessionService,
   type EventSink,
   type ModelPort,
   type PermissionPort,
   type ToolPort,
 } from "../src/index.ts"
-import { createNexumModelConfigStore, createOpenAICompatibleModelPort } from "../../nexum-adapters/src/index.ts"
+import { createNexumCodingLoop, createNexumPermissionBroker, createNexumSessionService } from "./test-ports.ts"
+import { createNexumModelConfigStore } from "../../nexum-persistence/src/index.ts"
+import { createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
 
 test("rejects malformed OpenAI Function Calling arguments without emitting a tool chunk", async () => {
   const config = createNexumModelConfigStore()

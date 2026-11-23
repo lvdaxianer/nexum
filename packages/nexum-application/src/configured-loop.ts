@@ -1,4 +1,4 @@
-/** 按适配器模型配置组合 Core Coding Loop。 */
+/** 按外部模型配置组合 Core Coding Loop。 */
 
 import {
   createNexumCodingLoop,
@@ -6,7 +6,7 @@ import {
   type NexumCodingLoopOptions,
   type NexumModelConfigStore,
 } from "@nexum/core"
-import { createOpenAICompatibleModelPort } from "./openai-model.ts"
+import { createOpenAICompatibleModelPort } from "@nexum/integrations"
 
 /** 使用活动模型配置创建 Coding Loop。 */
 export function createNexumConfiguredCodingLoop(

@@ -12,60 +12,10 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import type { NexumQuestionItem } from "@nexum/core"
+import type { NexumInteractionRecord, NexumInteractionStore, NexumQuestionItem, NexumInteractionStatus } from "@nexum/core"
 import { NexumInteractionStoreError, redactNexumSensitiveText } from "@nexum/core"
 
 const interactionStatuses = ["pending", "orphaned"] as const
-
-/** 交互请求所属能力。 */
-export type NexumInteractionKind = "permission" | "question"
-
-/**
- * 交互请求的生命周期状态。
- *
- * - `pending`：当前进程内存在等待者，可以查询、回复和取消。
- * - `orphaned`：等待者已随进程退出，只能查询和清理，不能回复。
- */
-export type NexumInteractionStatus = (typeof interactionStatuses)[number]
-
-interface InteractionIdentity {
-  readonly requestID: string
-  readonly sessionID: string
-  readonly status: NexumInteractionStatus
-  readonly createdAt: string
-  readonly updatedAt: string
-}
-
-/** 一条已持久化的交互请求摘要。 */
-export type NexumInteractionRecord =
-  | (InteractionIdentity & {
-      readonly kind: "permission"
-      readonly action: string
-      readonly resource: string
-      readonly reason?: string
-    })
-  | (InteractionIdentity & {
-      readonly kind: "question"
-      readonly toolCallID: string
-      readonly questions: readonly NexumQuestionItem[]
-    })
-
-/** 交互请求持久化端口。 */
-export interface NexumInteractionStore {
-  /**
-   * 列出全部已持久化交互。
-   *
-   * 文件 Store 在首次读取时把遗留的 `pending` 视为孤儿，标记为 `orphaned` 并落盘。
-   */
-  readonly list: () => Promise<readonly NexumInteractionRecord[]>
-  readonly get: (requestID: string) => Promise<NexumInteractionRecord | undefined>
-  readonly save: (record: NexumInteractionRecord) => Promise<void>
-  readonly delete: (requestID: string) => Promise<void>
-  readonly deleteSession: (sessionID: string) => Promise<void>
-}
-
-export { NexumInteractionStoreError }
-export type { NexumInteractionStoreErrorCode } from "@nexum/core"
 
 /** 文件交互 Store 配置。 */
 export interface FileInteractionStoreOptions {

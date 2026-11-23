@@ -3,15 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  createNexumCodingLoop,
-  createNexumPermissionBroker,
-  createNexumSessionService,
   type EventSink,
   type ModelPort,
   type ToolRequest,
   type ToolPort,
 } from "../src/index.ts"
-import { createFileInteractionStore } from "../../nexum-adapters/src/index.ts"
+import { createNexumCodingLoop, createNexumPermissionBroker, createNexumSessionService } from "./test-ports.ts"
+import { createFileInteractionStore } from "../../nexum-persistence/src/index.ts"
 
 async function makeSession() {
   const directory = await mkdtemp(join(tmpdir(), "nexum-permission-"))

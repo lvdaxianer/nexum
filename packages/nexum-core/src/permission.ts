@@ -13,7 +13,6 @@
 import type { PermissionEffect, PermissionPort, PermissionRequestSnapshot, ToolRequest } from "./index.js"
 import type { NexumInteractionStore } from "./interaction-store.js"
 import {
-  createInMemoryPermissionPolicyStore,
   evaluateNexumPermissionPolicy,
   nexumAnyToolAction,
   type NexumPermissionPolicyStore,
@@ -66,8 +65,8 @@ export interface NexumPermissionBroker extends PermissionPort {
 
 export interface NexumPermissionBrokerOptions {
   readonly interactionStore?: NexumInteractionStore
-  /** 缺省使用进程内策略 Store；服务端注入文件 Store 以支持重启恢复。 */
-  readonly policyStore?: NexumPermissionPolicyStore
+  /** 必须显式注入策略 Store，避免权限策略默默退化为进程内状态。 */
+  readonly policyStore: NexumPermissionPolicyStore
 }
 
 interface PendingPermission {
@@ -84,12 +83,12 @@ interface PendingPermission {
  * @author lvdaxianer@yeah.net
  * @date 2026-11-19
  */
-export function createNexumPermissionBroker(options: NexumPermissionBrokerOptions = {}): NexumPermissionBroker {
+export function createNexumPermissionBroker(options: NexumPermissionBrokerOptions): NexumPermissionBroker {
   const pending = new Map<string, PendingPermission>()
   const resolved = new Map<string, { sessionID: string; decision: NexumPermissionDecision }>()
   const allowAlways = new Set<string>()
   const observers = new Set<(request: PermissionRequestSnapshot) => Promise<void> | void>()
-  const policy = options.policyStore ?? createInMemoryPermissionPolicyStore()
+  const policy = options.policyStore
 
   return {
     policy,

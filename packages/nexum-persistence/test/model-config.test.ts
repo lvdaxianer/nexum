@@ -2,8 +2,8 @@ import { expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createFileModelConfigStore, createNexumModelConfigStore } from "../../nexum-adapters/src/index.ts"
-import { NexumModelConfigError } from "../src/index.ts"
+import { createFileModelConfigStore, createNexumModelConfigStore } from "../src/index.ts"
+import { NexumModelConfigError } from "@nexum/core"
 
 test("stores one safe OpenAI-compatible model configuration", async () => {
   const store = createNexumModelConfigStore()

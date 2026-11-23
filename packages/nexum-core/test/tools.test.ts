@@ -2,8 +2,9 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createNexumCodingLoop, createNexumSessionService, normalizeNexumToolRequest, type PermissionPort } from "../src/index.ts"
-import { createNexumToolRegistry } from "../../nexum-adapters/src/index.ts"
+import { normalizeNexumToolRequest, type PermissionPort } from "../src/index.ts"
+import { createNexumCodingLoop, createNexumSessionService } from "./test-ports.ts"
+import { createNexumToolRegistry } from "../../nexum-application/src/index.ts"
 
 const temporaryDirectories: string[] = []
 

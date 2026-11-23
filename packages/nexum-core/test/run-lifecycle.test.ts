@@ -3,8 +3,6 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  createNexumCodingLoop,
-  createNexumSessionService,
   NexumModelError,
   NexumRunError,
   type EventSink,
@@ -13,6 +11,7 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "../src/index.ts"
+import { createNexumCodingLoop, createNexumSessionService } from "./test-ports.ts"
 
 function dependencies(events: EventSink, model: ModelPort, options: Record<string, unknown> = {}) {
   return createNexumCodingLoop({

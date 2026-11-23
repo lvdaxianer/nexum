@@ -13,7 +13,8 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "@nexum/core"
-import { createNexumProjectContextPort, createNexumQuestionPort, createNexumSkillRegistry } from "../../nexum-adapters/src/index.ts"
+import { createNexumQuestionPort, createNexumSkillRegistry } from "@nexum/application"
+import { createNexumProjectContextPort } from "@nexum/integrations"
 import { createNexumEventHub } from "../../nexum-server/src/events.ts"
 import { startNexumServer, type NexumServer } from "../../nexum-server/src/index.ts"
 

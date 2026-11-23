@@ -5,7 +5,7 @@
  * @date 2026-11-19
  */
 
-import { createEmbeddedRuntime, type NexumDefaultRuntime } from "@nexum/adapters"
+import { createEmbeddedRuntime, type NexumDefaultRuntime } from "@nexum/application"
 import {
   NexumModelConfigError,
   NexumPermissionError,
@@ -36,7 +36,7 @@ import {
 } from "@nexum/core"
 import { NEXUM_EVENT_TYPES, NEXUM_EXPERIMENTAL_API_PREFIX } from "@nexum/protocol"
 import { resolve } from "node:path"
-import type { NexumEventHub } from "./events.ts"
+import type { NexumEventHub } from "@nexum/application"
 
 const DEFAULT_HOSTNAME = "127.0.0.1"
 const DEFAULT_PORT = 4097

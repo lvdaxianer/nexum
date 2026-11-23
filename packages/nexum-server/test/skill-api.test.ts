@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createNexumPermissionBroker, createNexumSessionService } from "@nexum/core"
-import { createNexumSkillRegistry } from "@nexum/adapters"
+import { createNexumSkillRegistry } from "@nexum/application"
+import { createNexumPermissionBroker, createNexumSessionService } from "./test-ports.ts"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
 
 const servers: NexumServer[] = []
