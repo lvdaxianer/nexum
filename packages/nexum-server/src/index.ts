@@ -5,7 +5,7 @@
  * @date 2026-11-19
  */
 
-import { createEmbeddedRuntime, type NexumDefaultRuntime } from "@nexum/adapters"
+import { createEmbeddedRuntime, type NexumDefaultRuntime } from "@nexum/application"
 import {
   NexumModelConfigError,
   NexumPermissionError,

@@ -2,8 +2,9 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
-import { createNexumSessionService } from "../src/index.ts"
-import { createInMemorySessionStore, createLocalDirectoryValidator } from "../../nexum-adapters/src/index.ts"
+import { createNexumSessionService } from "./test-ports.ts"
+import { createLocalDirectoryValidator } from "../../nexum-integrations/src/index.ts"
+import { createInMemorySessionStore } from "../../nexum-persistence/src/index.ts"
 
 const temporaryDirectories: string[] = []
 

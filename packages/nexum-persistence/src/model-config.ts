@@ -9,35 +9,11 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import { NexumModelConfigError } from "@nexum/core"
-
-/** 模型配置输入，凭据可以直接传值或引用环境变量名。 */
-export interface NexumModelConfigInput {
-  readonly baseUrl: string
-  readonly model: string
-  readonly credential?: string
-  readonly credentialRef?: string
-}
-
-/** 对外安全返回的模型配置。 */
-export interface NexumModelConfig {
-  readonly baseUrl: string
-  readonly model: string
-  readonly credentialConfigured: boolean
-  readonly credentialRef?: string
-}
-
-/** 模型配置存储端口。 */
-export interface NexumModelConfigStore {
-  readonly get: () => Promise<NexumModelConfig | undefined>
-  readonly update: (input: NexumModelConfigInput) => Promise<NexumModelConfig>
-  readonly resolveCredential: () => Promise<string | undefined>
-}
+import type { NexumModelConfig, NexumModelConfigInput, NexumModelConfigStore } from "@nexum/core"
 
 export interface FileModelConfigStoreOptions {
   readonly filePath: string
 }
-
-export { NexumModelConfigError }
 
 /**
  * 创建单一活动模型配置存储。

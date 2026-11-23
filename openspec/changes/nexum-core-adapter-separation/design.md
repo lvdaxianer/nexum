@@ -9,7 +9,7 @@ Nexum 的第一阶段迁移已经建立了 `@nexum/*` 包入口，但 Core 中�
 **Goals:**
 
 - Core 不直接依赖文件、进程、网络、OpenAI-compatible、MCP transport 或具体持久化实现。
-- Adapter 提供 embedded 和 local 两种组合；local 默认使用 `.nexum` 文件持久化。
+- Application 提供 embedded 和 local 两种组合；local 默认使用 `.nexum` 文件持久化。
 - `@nexum/test` 的 POC 默认使用独立 `.nexum-test` 目录，不使用内存作为真实运行时存储。
 - Server 只消费 Runtime；Protocol 只定义 wire contract；Surfaces 只负责场景化交互映射。
 - 允许以后增加 `@nexum/surfaces/web`、`/tui`、`/cli`、`/desktop`、`/headless`，而不修改 Core。
@@ -17,7 +17,7 @@ Nexum 的第一阶段迁移已经建立了 `@nexum/*` 包入口，但 Core 中�
 **Non-Goals:**
 
 - 本变更不实现分布式 Session ownership、集群调度或 exactly-once 执行。
-- 本变更不把所有 Adapter 拆成独立发布包。
+- 本变更将按职责拆成 Persistence、Integrations 和 Application 三个私有 workspace 包，不保留旧聚合包。
 - 本变更不把 UI 框架组件放入 Protocol 或 Core。
 - 本变更不要求 POC 默认连接真实模型；Fake Model 只替换 ModelPort，不能替换持久化、Protocol 或 Surface 链路。
 
@@ -25,7 +25,7 @@ Nexum 的第一阶段迁移已经建立了 `@nexum/*` 包入口，但 Core 中�
 
 ### 1. Core 只接收显式依赖
 
-Core 的 Coding Loop、Session Service 和 Runtime 通过 `NexumCoreDependencies` 接收 Model、Tools、Permission、Session、Message、Event、Context、Question、Skill、Memory 和 MCP Port。缺少必需 Port 时在构造或 start 阶段返回稳定配置错误，不创建 fallback。
+Core 的 Coding Loop、Session Service 和 Runtime 通过显式参数接收 Model、Tools、Permission、Session、Message、Event、Context、Question、Skill、Memory 和 MCP Port。缺少必需 Port 时在构造或 start 阶段返回稳定配置错误，不创建 fallback。内存/文件实现由 Persistence 提供。
 
 ### 2. 文件持久化是 POC 的默认运行时
 
@@ -49,12 +49,14 @@ Server 接受 `NexumRuntime`，将 HTTP/SSE request/response/event 映射到 Pro
 @nexum/core
   └── pure contracts + execution semantics
 
-@nexum/adapters ────────> @nexum/core
+@nexum/persistence ─────> @nexum/core
+@nexum/integrations ────> @nexum/core
+@nexum/application ─────> @nexum/core + @nexum/persistence + @nexum/integrations
 @nexum/protocol            schema / wire contract only
 @nexum/client ───────────> @nexum/protocol
-@nexum/server ───────────> @nexum/core + @nexum/adapters + @nexum/protocol
+@nexum/server ───────────> @nexum/core + @nexum/application + @nexum/protocol
 @nexum/surfaces ─────────> @nexum/client
-@nexum/test ─────────────> core + adapters + protocol + client + surfaces
+@nexum/test ─────────────> core + application + persistence + integrations + protocol + client + surfaces
 ```
 
 `@nexum/test` 只能是 test/dev 组合包，任何生产包不得依赖它。

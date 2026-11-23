@@ -9,31 +9,6 @@ export interface MessageStore {
   readonly delete: (sessionID: string) => Promise<void>
 }
 
-/** 可供 Core 单元测试使用的进程内消息 Store。 */
-export function createInMemoryMessageStore(): MessageStore {
-  const sessions = new Map<string, readonly ModelMessage[]>()
-  return {
-    async load(sessionID) {
-      return copyMessages(sessions.get(sessionID) ?? [])
-    },
-    async save(sessionID, messages) {
-      sessions.set(sessionID, copyMessages(messages))
-    },
-    async delete(sessionID) {
-      sessions.delete(sessionID)
-    },
-  }
-}
-
-function copyMessages(messages: readonly ModelMessage[]): readonly ModelMessage[] {
-  return messages.map((message) => ({
-    ...message,
-    ...(message.role === "assistant" && message.toolCalls
-      ? { toolCalls: message.toolCalls.map((toolCall) => ({ ...toolCall, input: { ...toolCall.input } })) }
-      : {}),
-  }))
-}
-
 /** 消息 Store 领域错误码。 */
 export type NexumMessageStoreErrorCode = "invalid_file" | "corrupt_file" | "invalid_messages" | "write_failed"
 

@@ -1,129 +1,32 @@
-/**
- * Nexum Core 的权限策略存储与判定。
- *
- * 语义对齐 CLI 的 allow / ask / deny：规则按 action 和 resource 的通配模式匹配，
- * `action` 为 `*` 时只按 resource 匹配所有工具调用。判定顺序固定为「始终拒绝 →
- * Session 覆盖 → 全局策略 → 每次询问」。因此 Session 覆盖可以收紧或放宽全局允许，
- * 但不能解除拒绝；危险操作只接受精确匹配的允许规则，避免 `* + *` 这类宽泛规则误放行
- * `rm -rf` 或越界写入。
- *
- * @author lvdaxianer@yeah.net
- * @date 2026-11-22
- */
+/** 权限策略规则的内存和文件持久化实现。 */
 
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import { NexumPermissionPolicyError, redactNexumSensitiveText } from "@nexum/core"
-import type { ToolRequest } from "@nexum/core"
+import {
+  NexumPermissionPolicyError,
+  nexumAnyToolAction,
+  redactNexumSensitiveText,
+} from "@nexum/core"
+import type {
+  NexumPermissionPolicyEffect,
+  NexumPermissionPolicyFilter,
+  NexumPermissionPolicyRule,
+  NexumPermissionPolicyRuleInput,
+  NexumPermissionPolicyScope,
+  NexumPermissionPolicyStore,
+} from "@nexum/core"
 
 const policyEffects = ["allow", "ask", "deny"] as const
 const policyScopes = ["global", "session"] as const
 const policyFileVersion = 1
-const exactResourceBoost = 1_000
-
-/** action-agnostic 规则使用的 action：该规则只按 resource 匹配所有工具调用。 */
-export const nexumAnyToolAction = "*"
-
-/** 工具层的 edit 会归一化成 write，策略匹配时两者互通。 */
-const actionAliases: Readonly<Record<string, readonly string[]>> = {
-  write: ["write", "edit"],
-  edit: ["write", "edit"],
-}
-
-/** 文件路径类 action：资源越出工作目录时按危险操作处理。 */
-const pathActions: readonly string[] = ["read", "write", "edit"]
-
-/** 危险 shell 命令模式：只允许被精确匹配的规则放行。 */
-const destructiveShellPatterns: readonly RegExp[] = [
-  /\brm\b/,
-  /\bmkfs\b/,
-  /\bdd\b[^\n]*\bof=/,
-  /\bshutdown\b/,
-  /\breboot\b/,
-  /\bpoweroff\b/,
-  /\bsudo\b/,
-  /\bchmod\s+-[a-z]*r/i,
-  /\bchown\s+-[a-z]*r/i,
-  /:\s*\(\s*\)\s*\{/,
-  /\|\s*(?:sh|bash|zsh|fish)\b/,
-  />\s*\/dev\/(?:sd|disk|nvme)/,
-]
-
-/** 策略效果：allow 始终允许，ask 每次询问，deny 始终拒绝。 */
-export type NexumPermissionPolicyEffect = (typeof policyEffects)[number]
-
-/** 策略作用域：global 是全局默认策略，session 是当前 Session 覆盖策略。 */
-export type NexumPermissionPolicyScope = (typeof policyScopes)[number]
-
-/** 一条可持久化、可修改和删除的权限策略规则。 */
-export interface NexumPermissionPolicyRule {
-  readonly id: string
-  readonly action: string
-  readonly resource: string
-  readonly effect: NexumPermissionPolicyEffect
-  readonly scope: NexumPermissionPolicyScope
-  readonly sessionID?: string
-  readonly createdAt: string
-  readonly updatedAt: string
-}
-
-/** 新建策略规则的输入。 */
-export interface NexumPermissionPolicyRuleInput {
-  readonly action: string
-  readonly resource: string
-  readonly effect: string
-  readonly scope?: string
-  readonly sessionID?: string
-}
-
-/** 修改策略规则的输入；未提供的字段保留原值。 */
-export interface NexumPermissionPolicyRuleUpdate {
-  readonly action?: string
-  readonly resource?: string
-  readonly effect?: string
-}
-
-/** 策略查询过滤条件。 */
-export interface NexumPermissionPolicyFilter {
-  readonly sessionID?: string
-}
-
-/** 策略判定来源。 */
-export type NexumPermissionPolicySource = NexumPermissionPolicyScope | "default"
-
-/** 一次策略判定的结果，reason 用于向 UI 解释判定依据。 */
-export interface NexumPermissionPolicyDecision {
-  readonly effect: NexumPermissionPolicyEffect
-  readonly source: NexumPermissionPolicySource
-  readonly ruleID?: string
-  readonly reason: string
-}
-
-export { NexumPermissionPolicyError }
-export type { NexumPermissionPolicyErrorCode } from "@nexum/core"
-
-/** 可持久化的权限策略 CRUD 端口。 */
-export interface NexumPermissionPolicyStore {
-  readonly list: (filter?: NexumPermissionPolicyFilter) => Promise<readonly NexumPermissionPolicyRule[]>
-  readonly get: (ruleID: string) => Promise<NexumPermissionPolicyRule | undefined>
-  readonly add: (input: NexumPermissionPolicyRuleInput) => Promise<NexumPermissionPolicyRule>
-  readonly update: (ruleID: string, input: NexumPermissionPolicyRuleUpdate) => Promise<NexumPermissionPolicyRule>
-  readonly remove: (ruleID: string) => Promise<NexumPermissionPolicyRule>
-}
 
 /** 文件策略 Store 配置。 */
 export interface FilePermissionPolicyStoreOptions {
   readonly filePath: string
 }
 
-/**
- * 创建进程内策略 Store。
- *
- * @returns 进程退出即失效的策略端口
- * @author lvdaxianer@yeah.net
- * @date 2026-11-22
- */
+/** 创建进程内策略 Store。 */
 export function createInMemoryPermissionPolicyStore(): NexumPermissionPolicyStore {
   let rules = new Map<string, NexumPermissionPolicyRule>()
   return createPolicyStore({
@@ -134,17 +37,7 @@ export function createInMemoryPermissionPolicyStore(): NexumPermissionPolicyStor
   })
 }
 
-/**
- * 创建基于 JSON 文件的策略 Store。
- *
- * 写入使用临时文件加 rename 保证原子性，文件不可解析时抛出稳定的 `invalid_file`
- * 错误且不覆盖原文件；规则在落盘前统一脱敏，避免凭据形状的命令被写入磁盘。
- *
- * @param options - 策略文件路径
- * @returns 可跨进程重启恢复的策略端口
- * @author lvdaxianer@yeah.net
- * @date 2026-11-22
- */
+/** 创建基于 JSON 文件的策略 Store。 */
 export function createFilePermissionPolicyStore(options: FilePermissionPolicyStoreOptions): NexumPermissionPolicyStore {
   let loaded: Promise<Map<string, NexumPermissionPolicyRule>> | undefined
   let writeQueue: Promise<void> = Promise.resolve()
@@ -168,72 +61,6 @@ export function createFilePermissionPolicyStore(options: FilePermissionPolicySto
       await operation
     },
   })
-}
-
-/**
- * 按固定顺序判定一次工具请求。
- *
- * @param request - 归一化后的工具请求
- * @param rules - 当前全部策略规则
- * @returns 最终效果、命中来源和可展示的判定依据
- * @author lvdaxianer@yeah.net
- * @date 2026-11-22
- */
-export function evaluateNexumPermissionPolicy(
-  request: ToolRequest,
-  rules: readonly NexumPermissionPolicyRule[],
-): NexumPermissionPolicyDecision {
-  const applicable = rules.filter((rule) => rule.scope === "global" || rule.sessionID === request.sessionID)
-  const matched = matchingRules(applicable, request)
-  const denied = matched.find((rule) => rule.effect === "deny")
-  if (denied) return decisionFor(denied)
-
-  const dangerous = isDangerousNexumToolRequest(request)
-  const usable = matched.filter(
-    (rule) => rule.effect === "ask" || !dangerous || isExactResourceRule(rule, request.resource),
-  )
-  const session = usable.find((rule) => rule.scope === "session")
-  if (session) return decisionFor(session)
-  const global = usable.find((rule) => rule.scope === "global")
-  if (global) return decisionFor(global)
-  if (dangerous && matched.some((rule) => rule.effect === "allow")) {
-    return { effect: "ask", source: "default", reason: "危险操作只能由精确匹配的允许规则放行" }
-  }
-  return { effect: "ask", source: "default", reason: "未命中策略，默认每次询问" }
-}
-
-/**
- * 判断请求是否属于危险操作。
- *
- * 危险操作不会因为宽泛通配规则被自动放行；调用方仍需精确规则或逐次批准。
- *
- * @param request - 归一化后的工具请求
- * @returns 是否属于危险操作
- * @author lvdaxianer@yeah.net
- * @date 2026-11-22
- */
-export function isDangerousNexumToolRequest(request: ToolRequest): boolean {
-  if (request.action === "shell") return destructiveShellPatterns.some((pattern) => pattern.test(request.resource))
-  if (!pathActions.includes(request.action)) return false
-  return escapesSessionDirectory(request.resource)
-}
-
-/**
- * 与 CLI 一致的通配匹配：`*` 匹配任意字符，`?` 匹配单个字符，忽略大小写。
- *
- * @param value - 待匹配的 action 或 resource
- * @param pattern - 规则中的通配模式
- * @returns 是否命中
- * @author lvdaxianer@yeah.net
- * @date 2026-11-22
- */
-export function matchNexumPermissionPattern(value: string, pattern: string): boolean {
-  const escaped = pattern
-    .replaceAll("\\", "/")
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*/g, ".*")
-    .replace(/\?/g, ".")
-  return new RegExp(`^${escaped}$`, "si").test(value.replaceAll("\\", "/"))
 }
 
 interface PolicySource {
@@ -350,7 +177,7 @@ function requirePolicyScope(value: string): NexumPermissionPolicyScope {
 
 function assertNoDuplicateRule(
   rules: ReadonlyMap<string, NexumPermissionPolicyRule>,
-  candidate: NormalizedRule,
+  candidate: NormalizedRule | NexumPermissionPolicyRule,
   ignoreRuleID?: string,
 ): void {
   const duplicated = Array.from(rules.values()).some(
@@ -363,61 +190,6 @@ function assertNoDuplicateRule(
       rule.sessionID === candidate.sessionID,
   )
   if (duplicated) throw new NexumPermissionPolicyError("duplicate_rule", "已存在相同的权限策略")
-}
-
-function matchingRules(
-  rules: readonly NexumPermissionPolicyRule[],
-  request: ToolRequest,
-): NexumPermissionPolicyRule[] {
-  const actions = actionAliases[request.action] ?? [request.action]
-  return rules
-    .filter(
-      (rule) =>
-        (rule.action === nexumAnyToolAction ||
-          actions.some((action) => matchNexumPermissionPattern(action, rule.action))) &&
-        matchNexumPermissionPattern(request.resource, rule.resource),
-    )
-    .sort(comparePolicyRules)
-}
-
-/** 精确资源规则优先于通配规则，其次按最近修改时间倒序，最后用 ID 保证稳定。 */
-function comparePolicyRules(left: NexumPermissionPolicyRule, right: NexumPermissionPolicyRule): number {
-  const specificity = policySpecificity(right) - policySpecificity(left)
-  if (specificity !== 0) return specificity
-  const updated = right.updatedAt.localeCompare(left.updatedAt)
-  if (updated !== 0) return updated
-  return left.id.localeCompare(right.id)
-}
-
-function policySpecificity(rule: NexumPermissionPolicyRule): number {
-  const literalLength = rule.resource.replaceAll("*", "").replaceAll("?", "").length
-  return containsWildcard(rule.resource) ? literalLength : literalLength + exactResourceBoost
-}
-
-function isExactResourceRule(rule: NexumPermissionPolicyRule, resource: string): boolean {
-  return !containsWildcard(rule.resource) && rule.resource === resource.trim()
-}
-
-function containsWildcard(value: string): boolean {
-  return value.includes("*") || value.includes("?")
-}
-
-function escapesSessionDirectory(resource: string): boolean {
-  const normalized = resource.replaceAll("\\", "/").trim()
-  if (!normalized) return true
-  if (normalized.startsWith("/") || normalized.startsWith("~")) return true
-  return normalized.split("/").some((segment) => segment === "..")
-}
-
-function decisionFor(rule: NexumPermissionPolicyRule): NexumPermissionPolicyDecision {
-  const scope = rule.scope === "session" ? "Session 覆盖策略" : "全局默认策略"
-  const tools = rule.action === nexumAnyToolAction ? "所有工具" : rule.action
-  return {
-    effect: rule.effect,
-    source: rule.scope,
-    ruleID: rule.id,
-    reason: `命中${scope}：${tools} ${rule.resource}`,
-  }
 }
 
 function filterPolicyRules(
@@ -446,6 +218,10 @@ function nextPolicyTimestamp(previous: string): string {
   const current = Date.now()
   const previousTime = Date.parse(previous)
   return new Date(Math.max(current, Number.isNaN(previousTime) ? current : previousTime + 1)).toISOString()
+}
+
+function containsWildcard(value: string): boolean {
+  return value.includes("*") || value.includes("?")
 }
 
 function isPolicyEffect(value: string): value is NexumPermissionPolicyEffect {

@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test"
 import {
-  createNexumCodingLoop,
-  createNexumPermissionBroker,
-  createNexumSessionService,
   createNexumSkillInvocationPort,
   type EventSink,
   type NexumSkillRegistry,
@@ -10,6 +7,7 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "../src/index.ts"
+import { createNexumCodingLoop, createNexumPermissionBroker, createNexumSessionService } from "./test-ports.ts"
 
 function registryFor(ids: readonly string[]): NexumSkillRegistry {
   const packages = new Map(

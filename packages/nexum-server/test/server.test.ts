@@ -3,9 +3,6 @@ import { mkdtemp, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  createNexumCodingLoop,
-  createNexumPermissionBroker,
-  createNexumSessionService,
   NEXUM_DEFAULT_ROLE_PROMPT,
   NexumSessionError,
   type MessageStore,
@@ -17,14 +14,15 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "@nexum/core"
+import { createNexumCodingLoop, createNexumPermissionBroker, createNexumSessionService } from "./test-ports.ts"
 import {
   createFileInteractionStore,
   createFileSessionStore,
   createInMemoryMessageStore,
   createInMemorySessionStore,
   createNexumModelConfigStore,
-  createNexumQuestionPort,
-} from "@nexum/adapters"
+} from "../../nexum-persistence/src/index.ts"
+import { createNexumQuestionPort } from "@nexum/application"
 import { createNexumEventHub } from "../src/events.ts"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
 

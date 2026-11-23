@@ -3,8 +3,6 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  createNexumCodingLoop,
-  createNexumSessionService,
   NexumModelError,
   type EventSink,
   type ModelPort,
@@ -12,7 +10,9 @@ import {
   type ToolRequest,
   type ToolPort,
 } from "../src/index.ts"
-import { createFileMessageStore, createInMemoryMessageStore, createNexumProjectContextPort } from "../../nexum-adapters/src/index.ts"
+import { createNexumCodingLoop, createNexumSessionService } from "./test-ports.ts"
+import { createNexumProjectContextPort } from "../../nexum-integrations/src/index.ts"
+import { createFileMessageStore, createInMemoryMessageStore } from "../../nexum-persistence/src/index.ts"
 import type { ContextCompactionPort } from "../src/context.ts"
 
 const temporaryDirectories: string[] = []

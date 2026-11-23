@@ -2,7 +2,8 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { createFileRolePromptStore, createLocalRuntime } from "@nexum/adapters"
+import { createLocalRuntime } from "@nexum/application"
+import { createFileRolePromptStore } from "../../nexum-persistence/src/index.ts"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
 
 const servers: NexumServer[] = []

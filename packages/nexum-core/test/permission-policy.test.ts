@@ -3,13 +3,13 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  createNexumPermissionBroker,
   evaluateNexumPermissionPolicy,
   isDangerousNexumToolRequest,
   type NexumPermissionPolicyRule,
   type ToolRequest,
 } from "../src/index.ts"
-import { createFilePermissionPolicyStore, createInMemoryPermissionPolicyStore } from "../../nexum-adapters/src/index.ts"
+import { createNexumPermissionBroker } from "./test-ports.ts"
+import { createFilePermissionPolicyStore, createInMemoryPermissionPolicyStore } from "../../nexum-persistence/src/index.ts"
 
 function request(action: string, resource: string, sessionID = "session-a"): ToolRequest {
   return { sessionID, toolName: action === "shell" ? "shell" : action, action, resource, input: {} }

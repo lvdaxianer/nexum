@@ -18,13 +18,15 @@ import type {
 import { redactNexumSensitiveValue } from "./permission.js"
 export {
   type NexumSkillPackage,
+  type NexumSkillCandidate,
+  type NexumSkillRegistration,
+  type NexumSkillRegistrationStore,
   type NexumSkillRegistry,
-  type NexumSkillRegistryOptions,
+  type NexumSkillSource,
   type NexumSkillSourceType,
   type NexumSkillStatus,
   type NexumSkillSummary,
 } from "./skill-registry.js"
-import { createInMemoryMessageStore } from "./message-store.js"
 import type { MessageStore } from "./message-store.js"
 import { normalizeNexumToolRequest } from "./tools.js"
 import { NexumSkillInvocationError } from "./skill-invocation.js"
@@ -198,12 +200,9 @@ export interface NexumSessionService {
 
 /** Nexum Session Service 的依赖配置。 */
 export interface NexumSessionServiceOptions {
-  readonly store?: SessionStore
+  readonly store: SessionStore
   readonly directoryValidator?: NexumDirectoryValidator
 }
-
-/** 可供测试和 POC 使用的内存 SessionStore。 */
-export interface InMemorySessionStore extends SessionStore {}
 
 /** Session 领域错误，包含稳定的机器可读错误码。 */
 export class NexumSessionError extends Error {
@@ -229,33 +228,6 @@ export class NexumRunError extends Error {
   ) {
     super(message)
     this.name = "NexumRunError"
-  }
-}
-
-/**
- * 创建进程内 SessionStore。
- *
- * @returns 可读写的内存 SessionStore
- * @author lvdaxianer@yeah.net
- * @date 2026-11-19
- */
-function createInMemorySessionStore(): InMemorySessionStore {
-  const sessions = new Map<string, SessionRecord>()
-
-  return {
-    async get(sessionID) {
-      const session = sessions.get(sessionID)
-      return session ? { ...session } : undefined
-    },
-    async save(session) {
-      sessions.set(session.sessionID, { ...session })
-    },
-    async delete(sessionID) {
-      sessions.delete(sessionID)
-    },
-    async list() {
-      return sortSessions(Array.from(sessions.values(), (session) => ({ ...session })))
-    },
   }
 }
 
@@ -287,8 +259,8 @@ export async function validateNexumDirectory(directory: string): Promise<void> {
  * @author lvdaxianer@yeah.net
  * @date 2026-11-19
  */
-export function createNexumSessionService(options: NexumSessionServiceOptions = {}): NexumSessionService {
-  const store = options.store ?? createInMemorySessionStore()
+export function createNexumSessionService(options: NexumSessionServiceOptions): NexumSessionService {
+  const store = options.store
   const directoryValidator = options.directoryValidator ?? { validate: validateNexumDirectory }
   const sessionQueues = new Map<string, Promise<void>>()
 
@@ -394,14 +366,6 @@ function requireSessionName(name: string): string {
   return candidate
 }
 
-function sortSessions(sessions: SessionRecord[]): SessionRecord[] {
-  return sessions.sort((left, right) => {
-    const updated = right.updatedAt.localeCompare(left.updatedAt)
-    if (updated !== 0) return updated
-    return left.sessionID.localeCompare(right.sessionID)
-  })
-}
-
 function nextSessionTimestamp(previous: string): string {
   const current = Date.now()
   const previousTime = Date.parse(previous)
@@ -421,7 +385,7 @@ export interface NexumCodingLoopOptions {
   readonly permission: PermissionPort
   readonly sessions: NexumSessionService
   readonly events: EventSink
-  readonly messageStore?: MessageStore
+  readonly messageStore: MessageStore
   readonly tools?: readonly ModelToolDefinition[]
   readonly contextCompaction?: ContextCompactionPort
   readonly projectContext?: ProjectContextPort
@@ -484,7 +448,7 @@ export type NexumCodingLoopContinueStart =
 export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCodingLoop {
   const maxSteps = options.maxSteps
   const maxOutputContinuations = Math.max(1, options.maxOutputContinuations ?? 8)
-  const messageStore = options.messageStore ?? createInMemoryMessageStore()
+  const messageStore = options.messageStore
   const activeRuns = new Map<string, ActiveRun>()
   const continuationAdmissions = new Set<string>()
   const sessionSequences = new Map<string, number>()

@@ -1,6 +1,6 @@
 # Contributing to Nexum
 
-Nexum 的变更应保持 Core、Adapter、Protocol、Server、Surface 和 Test 的依赖方向清晰。新增能力先确认它属于运行语义、环境适配、公开协议还是具体交互 Surface，再选择对应包。
+Nexum 的变更应保持 Core、Persistence、Integrations、Application、Protocol、Server、Surface 和 Test 的依赖方向清晰。新增能力先确认它属于运行语义、持久化、外部集成、应用编排、公开协议还是具体交互 Surface，再选择对应包。
 
 ## Development
 
@@ -16,7 +16,9 @@ bun dev
 ## Packages
 
 - `packages/nexum-core`：领域语义、端口和生命周期
-- `packages/nexum-adapters`：默认模型、存储、Host、Tools、Skill 和 Runtime 组合
+- `packages/nexum-persistence`：文件/内存持久化实现
+- `packages/nexum-integrations`：模型、Host、目录和 MCP 外部集成
+- `packages/nexum-application`：Skill、Tool、Question 和 Runtime 组合
 - `packages/nexum-protocol`：公开协议模型和事件契约
 - `packages/nexum-client`：HTTP/SSE 协议客户端
 - `packages/nexum-server`：HTTP/SSE 服务绑定

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import type { NexumSessionService, SessionRecord } from "../src/index.ts"
-import { createNexumCodingLoop, type EventSink, type ModelPort, type PermissionPort } from "../src/index.ts"
+import { type EventSink, type ModelPort, type PermissionPort } from "../src/index.ts"
+import { createNexumCodingLoop } from "./test-ports.ts"
 
 test("gives events a run identity and keeps sequence monotonic across prompts", async () => {
   const session: SessionRecord = {

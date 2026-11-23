@@ -1,6 +1,4 @@
-/**
- * Nexum 默认适配器和 Runtime 组合器。
- */
+/** Nexum 应用编排和 Runtime 组合器。 */
 
 import {
   createNexumCodingLoop,
@@ -8,6 +6,7 @@ import {
   createNexumPermissionBroker,
   createNexumSessionService,
   createNexumRuntime,
+  createNexumSkillInvocationPort,
   type EventSink,
   type NexumCodingLoop,
   type NexumInteractionStore,
@@ -30,55 +29,37 @@ import {
   type SessionStore,
 } from "@nexum/core"
 import { createNexumQuestionPort } from "./context.ts"
-import { createNexumSkillInvocationPort } from "@nexum/core"
 import { createNexumSkillRegistry } from "./skill-registry.ts"
 import { createNexumToolRegistry } from "./local-tools.ts"
-import { createNexumModelConfigStore } from "./model-config.ts"
-import { createOpenAICompatibleModelPort } from "./openai-model.ts"
-import { createInMemoryMemory } from "./in-memory-memory.ts"
 import { createNexumConfiguredCodingLoop } from "./configured-loop.ts"
-import { createFileInteractionStore } from "./interaction-store.ts"
-import { createFileMessageStore, createInMemoryMessageStore } from "./message-store.ts"
-import { createFilePermissionPolicyStore } from "./permission-policy.ts"
-import { createFileSessionStore, createInMemorySessionStore } from "./session-store.ts"
-import { createFileModelConfigStore } from "./model-config.ts"
-import { createFileRolePromptStore, createNexumRolePromptStore } from "./role-prompt.ts"
-import { createNexumEventHub, type NexumEventHub } from "./events.ts"
-import { createLocalHostAdapter } from "./local-host.ts"
-import { createFileMemory } from "./memory.ts"
+import {
+  createFileInteractionStore,
+  createFileMessageStore,
+  createFileModelConfigStore,
+  createFileMemory,
+  createFilePermissionPolicyStore,
+  createFileRolePromptStore,
+  createFileSessionStore,
+  createInMemoryMemory,
+  createInMemoryMessageStore,
+  createInMemoryPermissionPolicyStore,
+  createInMemorySessionStore,
+  createNexumEventHub,
+  createNexumModelConfigStore,
+  createNexumRolePromptStore,
+  type NexumEventHub,
+} from "@nexum/persistence"
 import { join } from "node:path"
-import { createLocalDirectoryValidator } from "./directory.ts"
+import { createLocalDirectoryValidator, createLocalHostAdapter, createOpenAICompatibleModelPort } from "@nexum/integrations"
 
-export { createNexumEventHub, type NexumEventHub } from "./events.ts"
-export { createLocalHostAdapter } from "./local-host.ts"
-export type { LocalHostOptions } from "./local-host.ts"
-export { createFileMemory } from "./memory.ts"
-export type { FileMemoryOptions } from "./memory.ts"
-export { createHttpMcpAdapter, createMcpAdapter, createStdioMcpAdapter } from "./mcp.ts"
-export type { McpAdapterOptions, McpRpcTransport } from "./mcp.ts"
-export { createFileInteractionStore } from "./interaction-store.ts"
-export type { FileInteractionStoreOptions } from "./interaction-store.ts"
-export { createFileMessageStore } from "./message-store.ts"
-export { createInMemoryMessageStore } from "./message-store.ts"
-export type { FileMessageStoreOptions, InMemoryMessageStore } from "./message-store.ts"
-export { createFileModelConfigStore, createNexumModelConfigStore } from "./model-config.ts"
-export type { FileModelConfigStoreOptions } from "./model-config.ts"
-export { createFileRolePromptStore, createNexumRolePromptStore } from "./role-prompt.ts"
-export type { FileRolePromptStoreOptions } from "./role-prompt.ts"
-export { createOpenAICompatibleModelPort } from "./openai-model.ts"
-export type { NexumFetch, OpenAICompatibleModelPortOptions } from "./openai-model.ts"
-export { createFilePermissionPolicyStore } from "./permission-policy.ts"
-export { createInMemoryPermissionPolicyStore } from "./permission-policy.ts"
-export type { FilePermissionPolicyStoreOptions } from "./permission-policy.ts"
-export { createFileSessionStore } from "./session-store.ts"
-export { createInMemorySessionStore } from "./session-store.ts"
-export type { FileSessionStoreOptions } from "./session-store.ts"
-export { createLocalDirectoryValidator } from "./directory.ts"
-export { createNexumProjectContextPort, createNexumQuestionPort } from "./context.ts"
+export { createNexumQuestionPort } from "./context.ts"
+export type { NexumQuestionPortOptions } from "./context.ts"
 export { createNexumSkillRegistry } from "./skill-registry.ts"
+export type { NexumSkillRegistryOptions } from "./skill-registry.ts"
 export { createNexumToolRegistry } from "./local-tools.ts"
-export { createInMemoryMemory } from "./in-memory-memory.ts"
-export type { InMemoryMemoryOptions } from "./in-memory-memory.ts"
+export { createNexumConfiguredCodingLoop } from "./configured-loop.ts"
+export { createNexumEventHub, NexumEventStoreError } from "@nexum/persistence"
+export type { NexumEventHub, NexumEventHubOptions, NexumEventSubscriptionOptions } from "@nexum/persistence"
 
 export interface NexumRuntimeStorageOptions {
   readonly dataDirectory?: string
@@ -145,10 +126,10 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   const eventHub = options.eventHub ?? createNexumEventHub()
   const permissionPolicyStore = options.permissionPolicyStore ?? (options.permissionPolicyFile
     ? createFilePermissionPolicyStore({ filePath: options.permissionPolicyFile })
-    : undefined)
+    : createInMemoryPermissionPolicyStore())
   const permission = options.permissionBroker ?? createNexumPermissionBroker({
     ...(interactionStore ? { interactionStore } : {}),
-    ...(permissionPolicyStore ? { policyStore: permissionPolicyStore } : {}),
+    policyStore: permissionPolicyStore,
   })
   const question = options.questionPort ?? createNexumQuestionPort({ ...(interactionStore ? { interactionStore } : {}) })
   const skills = options.skillRegistry ?? createNexumSkillRegistry({

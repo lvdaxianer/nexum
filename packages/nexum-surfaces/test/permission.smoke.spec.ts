@@ -13,12 +13,9 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "@nexum/core"
-import {
-  createInMemoryMessageStore,
-  createNexumProjectContextPort,
-  createNexumQuestionPort,
-  createNexumSkillRegistry,
-} from "../../nexum-adapters/src/index.ts"
+import { createInMemoryMessageStore, createInMemoryPermissionPolicyStore, createInMemorySessionStore } from "@nexum/persistence"
+import { createNexumQuestionPort, createNexumSkillRegistry } from "@nexum/application"
+import { createNexumProjectContextPort } from "@nexum/integrations"
 import { createNexumEventHub } from "../../nexum-server/src/events.ts"
 import { startNexumServer, type NexumServer } from "../../nexum-server/src/index.ts"
 
@@ -77,7 +74,7 @@ describe.serial("Nexum UI smoke", () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
     const eventHub = createNexumEventHub()
-    const sessionService = createNexumSessionService()
+    const sessionService = createNexumSessionService({ store: createInMemorySessionStore() })
     const messageStore = createInMemoryMessageStore()
     directory = await mkdtemp(join(tmpdir(), "nexum-ui-history-"))
     const session = await sessionService.create({ directory, name: "历史恢复" })
@@ -171,7 +168,7 @@ describe.serial("Nexum UI smoke", () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
     const eventHub = createNexumEventHub()
-    const sessionService = createNexumSessionService()
+    const sessionService = createNexumSessionService({ store: createInMemorySessionStore() })
     let continueCalls = 0
     apiServer = await startNexumServer({
       port: apiPort,
@@ -487,6 +484,7 @@ describe.serial("Nexum UI smoke", () => {
       const page = await browser.newPage()
       let validations = 0
       const sessions = createNexumSessionService({
+        store: createInMemorySessionStore(),
         directoryValidator: {
           async validate() {
             validations += 1
@@ -827,7 +825,7 @@ describe.serial("Nexum UI smoke", () => {
   test.serial("answers a Question and shows compaction plus project context states", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
-    const sessions = createNexumSessionService()
+    const sessions = createNexumSessionService({ store: createInMemorySessionStore() })
     const questions = createNexumQuestionPort()
     const eventHub = createNexumEventHub()
     const projectContext = createNexumProjectContextPort({
@@ -881,6 +879,7 @@ describe.serial("Nexum UI smoke", () => {
       permission,
       sessions,
       events: eventHub,
+      messageStore: createInMemoryMessageStore(),
       question: questions,
       projectContext,
       contextCompaction: compaction,
@@ -1050,9 +1049,9 @@ describe.serial("Nexum UI smoke", () => {
   test.serial("runs a configured Skill from page mention through Core permission", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
-    const sessions = createNexumSessionService()
+    const sessions = createNexumSessionService({ store: createInMemorySessionStore() })
     const eventHub = createNexumEventHub()
-    const permission = createNexumPermissionBroker()
+    const permission = createNexumPermissionBroker({ policyStore: createInMemoryPermissionPolicyStore() })
     skillRoot = await mkdtemp(join(tmpdir(), "nexum-ui-project-skill-root-"))
     const projectSkillDirectory = join(skillRoot, "example-skill")
     await mkdir(projectSkillDirectory)
@@ -1083,6 +1082,7 @@ describe.serial("Nexum UI smoke", () => {
       permission,
       sessions,
       events: eventHub,
+      messageStore: createInMemoryMessageStore(),
       skills,
     })
     apiServer = await startNexumServer({
@@ -1114,7 +1114,7 @@ describe.serial("Nexum UI smoke", () => {
   test.serial("streams reasoning as a transcript before the final assistant response", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
-    const sessions = createNexumSessionService()
+    const sessions = createNexumSessionService({ store: createInMemorySessionStore() })
     const eventHub = createNexumEventHub()
     let releaseRun: (() => void) | undefined
     const runReleased = new Promise<void>((resolve) => {

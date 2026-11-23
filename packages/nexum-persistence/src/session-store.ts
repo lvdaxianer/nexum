@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { basename, dirname } from "node:path"
-import type { SessionRecord } from "@nexum/core"
+import type { SessionRecord, SessionStore } from "@nexum/core"
 
 const sessionStatuses = new Set<SessionRecord["status"]>(["idle", "running", "completed", "failed", "cancelled"])
 
@@ -21,7 +21,7 @@ interface StoredSessionFile {
 }
 
 /** 创建进程内 SessionStore，供默认 Runtime 与测试使用。 */
-export function createInMemorySessionStore() {
+export function createInMemorySessionStore(): SessionStore {
   const sessions = new Map<string, SessionRecord>()
 
   return {

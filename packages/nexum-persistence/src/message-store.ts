@@ -8,21 +8,8 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import type { ModelMessage, ModelToolCall } from "@nexum/core"
+import type { MessageStore, ModelMessage, ModelToolCall } from "@nexum/core"
 import { NexumMessageStoreError } from "@nexum/core"
-
-/** 按 Session 保存 canonical ModelMessage 历史的可替换端口。 */
-export interface MessageStore {
-  readonly load: (sessionID: string) => Promise<readonly ModelMessage[]>
-  readonly save: (sessionID: string, messages: readonly ModelMessage[]) => Promise<void>
-  readonly delete: (sessionID: string) => Promise<void>
-}
-
-/** 可供测试和 POC 使用的内存 MessageStore。 */
-export interface InMemoryMessageStore extends MessageStore {}
-
-export { NexumMessageStoreError }
-export type { NexumMessageStoreErrorCode } from "@nexum/core"
 
 /**
  * 创建进程内 MessageStore。
@@ -31,7 +18,7 @@ export type { NexumMessageStoreErrorCode } from "@nexum/core"
  * @author lvdaxianer@yeah.net
  * @date 2026-11-22
  */
-export function createInMemoryMessageStore(): InMemoryMessageStore {
+export function createInMemoryMessageStore(): MessageStore {
   const sessions = new Map<string, readonly ModelMessage[]>()
 
   return {

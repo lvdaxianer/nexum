@@ -1,12 +1,5 @@
-import {
-  createFileInteractionStore,
-  createFileMessageStore,
-  createFileModelConfigStore,
-  createFilePermissionPolicyStore,
-  createFileSessionStore,
-} from "@nexum/adapters"
+import { createLocalRuntime } from "@nexum/application"
 import { resolve } from "node:path"
-import { createNexumEventHub } from "@nexum/adapters"
 import { startNexumServer } from "./index"
 
 /**
@@ -27,23 +20,19 @@ async function main(): Promise<void> {
   const interactionFile = process.env.NEXUM_INTERACTION_FILE ?? resolve(dataDirectory, "interactions.json")
   const permissionPolicyFile =
     process.env.NEXUM_PERMISSION_POLICY_FILE ?? resolve(dataDirectory, "permission-policies.json")
-  const sessionStore = createFileSessionStore({ filePath: sessionFile })
-  const modelConfigStore = createFileModelConfigStore({ filePath: modelConfigFile })
-  const messageStore = createFileMessageStore({ filePath: messageFile })
-  const interactionStore = createFileInteractionStore({ filePath: interactionFile })
-  const permissionPolicyStore = createFilePermissionPolicyStore({ filePath: permissionPolicyFile })
-  const eventHub = createNexumEventHub({ filePath: eventFile })
-  await eventHub.ready?.()
-  const server = await startNexumServer({
-    sessionStore,
-    modelConfigStore,
+  const runtime = createLocalRuntime({
+    dataDirectory,
+    sessionFile,
+    modelConfigFile,
     rolePromptFile,
     skillRegistryFile,
-    messageStore,
-    interactionStore,
-    permissionPolicyStore,
-    eventHub,
+    eventFile,
+    messageFile,
+    interactionFile,
+    permissionPolicyFile,
   })
+  await runtime.eventHub.ready?.()
+  const server = await startNexumServer({ runtime })
   process.stdout.write(`Nexum Service listening at ${server.url}\n`)
 
   const shutdown = async (): Promise<void> => {

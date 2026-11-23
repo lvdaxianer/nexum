@@ -4,14 +4,10 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
   createEmbeddedRuntime,
-  createFileMemory,
-  createFileRolePromptStore,
-  createHttpMcpAdapter,
-  createLocalHostAdapter,
   createLocalRuntime,
-  createNexumModelConfigStore,
-  createOpenAICompatibleModelPort,
 } from "../src/index.ts"
+import { createFileMemory, createFileRolePromptStore, createNexumModelConfigStore } from "../../nexum-persistence/src/index.ts"
+import { createHttpMcpAdapter, createLocalHostAdapter, createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
 import type { ModelPort } from "@nexum/core"
 
 const directories: string[] = []
@@ -61,11 +57,11 @@ test("persists Skill registrations in the local runtime data directory", async (
   await mkdir(skillRoot, { recursive: true })
   await writeFile(join(skillRoot, "SKILL.md"), "---\nname: metric-view-lifecycle\ndescription: test\n---\n")
 
-  const first = createLocalRuntime({ dataDirectory })
+  const first = createLocalRuntime({ dataDirectory, skillRoots: [directory] })
   await expect(first.skillRegistry.register(skillRoot)).resolves.toMatchObject({ id: "metric-view-lifecycle", status: "ready" })
   await first.close()
 
-  const second = createLocalRuntime({ dataDirectory })
+  const second = createLocalRuntime({ dataDirectory, skillRoots: [directory] })
   await second.skillRegistry.refresh()
   await expect(second.skillRegistry.list()).resolves.toMatchObject([{ id: "metric-view-lifecycle", status: "ready" }])
   await second.close()
@@ -89,7 +85,7 @@ test("persists and resets the default role prompt", async () => {
   await expect(createFileRolePromptStore({ filePath }).get()).resolves.toMatchObject({ source: "default" })
 })
 
-test("persists memory through the local adapter and maps optional MCP resources", async () => {
+test("persists memory through the local runtime and maps optional MCP resources", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-memory-"))
   directories.push(directory)
   const memory = createFileMemory({ filePath: join(directory, "memory.json") })

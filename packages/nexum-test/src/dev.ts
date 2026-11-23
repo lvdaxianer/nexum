@@ -1,4 +1,4 @@
-import { createLocalRuntime } from "@nexum/adapters"
+import { createLocalRuntime } from "@nexum/application"
 import { startNexumServer } from "@nexum/server"
 import { resolve } from "node:path"
 
