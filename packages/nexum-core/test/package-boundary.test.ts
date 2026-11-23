@@ -31,3 +31,16 @@ test("nexum-core does not import infrastructure or export default adapters", asy
   const concreteExports = Object.keys(packageModule).filter((name) => FORBIDDEN_EXPORTS.some((prefix) => name.startsWith(prefix)))
   expect(concreteExports).toEqual([])
 })
+
+test("nexum-core package does not depend on implementation packages", async () => {
+  const manifest = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as {
+    dependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+  }
+  const dependencies = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
+  expect(dependencies).not.toEqual(expect.arrayContaining([
+    "@nexum/persistence",
+    "@nexum/integrations",
+    "@nexum/application",
+  ]))
+})

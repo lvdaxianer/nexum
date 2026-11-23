@@ -23,6 +23,19 @@
         "@types/bun": "catalog:",
       },
     },
+    "packages/nexum-application": {
+      "name": "@nexum/application",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nexum/core": "workspace:*",
+        "@nexum/integrations": "workspace:*",
+        "@nexum/persistence": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+      },
+    },
     "packages/nexum-client": {
       "name": "@nexum/client",
       "version": "0.1.0",
@@ -37,6 +50,28 @@
     "packages/nexum-core": {
       "name": "@nexum/core",
       "version": "0.0.1",
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+      },
+    },
+    "packages/nexum-integrations": {
+      "name": "@nexum/integrations",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nexum/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+      },
+    },
+    "packages/nexum-persistence": {
+      "name": "@nexum/persistence",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nexum/core": "workspace:*",
+      },
       "devDependencies": {
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
@@ -236,9 +271,15 @@
 
     "@nexum/adapters": ["@nexum/adapters@workspace:packages/nexum-adapters"],
 
+    "@nexum/application": ["@nexum/application@workspace:packages/nexum-application"],
+
     "@nexum/client": ["@nexum/client@workspace:packages/nexum-client"],
 
     "@nexum/core": ["@nexum/core@workspace:packages/nexum-core"],
+
+    "@nexum/integrations": ["@nexum/integrations@workspace:packages/nexum-integrations"],
+
+    "@nexum/persistence": ["@nexum/persistence@workspace:packages/nexum-persistence"],
 
     "@nexum/protocol": ["@nexum/protocol@workspace:packages/nexum-protocol"],
 

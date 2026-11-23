@@ -67,3 +67,41 @@ test("仓库不保留旧 workspace 包目录", async () => {
   expect(await Bun.file(resolve(repositoryRoot, "strobe.json")).exists()).toBe(false)
   expect(await Bun.file(resolve(repositoryRoot, ".dockerignore")).text()).not.toContain(".opencode")
 })
+
+test("运行时包按职责保持单向依赖", async () => {
+  const readManifest = async (directory: string) =>
+    (await Bun.file(resolve(repositoryRoot, "packages", directory, "package.json")).json()) as {
+      dependencies?: Record<string, string>
+    }
+  const core = await readManifest("nexum-core")
+  const persistence = await readManifest("nexum-persistence")
+  const integrations = await readManifest("nexum-integrations")
+  const application = await readManifest("nexum-application")
+
+  expect(core.dependencies ?? {}).not.toHaveProperty("@nexum/persistence")
+  expect(core.dependencies ?? {}).not.toHaveProperty("@nexum/integrations")
+  expect(core.dependencies ?? {}).not.toHaveProperty("@nexum/application")
+  expect(persistence.dependencies).toEqual({ "@nexum/core": "workspace:*" })
+  expect(integrations.dependencies).toEqual({ "@nexum/core": "workspace:*" })
+  expect(application.dependencies).toEqual({
+    "@nexum/core": "workspace:*",
+    "@nexum/integrations": "workspace:*",
+    "@nexum/persistence": "workspace:*",
+  })
+})
+
+test("活动代码不再引用旧的聚合适配器包", async () => {
+  const files = await Array.fromAsync(
+    new Bun.Glob("{packages,README.md,CONTRIBUTING.md,package.json,bun.lock}/**/*.{ts,tsx,json,md,lock}").scan({
+      cwd: repositoryRoot,
+      onlyFiles: true,
+    }),
+  )
+  const references = await Promise.all(
+    files.map(async (file) => {
+      const content = await Bun.file(resolve(repositoryRoot, file)).text()
+      return content.includes("@nexum/adapters") || content.includes("nexum-adapters") ? file : undefined
+    }),
+  )
+  expect(references.filter((file): file is string => file !== undefined)).toEqual([])
+})

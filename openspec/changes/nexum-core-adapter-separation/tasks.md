@@ -2,8 +2,8 @@
 
 ## 1. Package boundaries
 
-- [ ] 1.1 建立 `@nexum/persistence`、`@nexum/integrations` 和 `@nexum/application` workspace 包及依赖边界测试。
-- [ ] 1.2 运行 OpenSpec 严格校验并记录新的 Core、Persistence、Integrations、Application、Server 和 Surface 依赖图。
+- [x] 1.1 建立 `@nexum/persistence`、`@nexum/integrations` 和 `@nexum/application` workspace 包及依赖边界测试。
+- [x] 1.2 运行 OpenSpec 严格校验并记录新的 Core、Persistence、Integrations、Application、Server 和 Surface 依赖图。
 
 ## 2. Persistence
 
