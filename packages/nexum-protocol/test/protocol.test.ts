@@ -7,10 +7,12 @@ import {
 } from "../src/index.ts"
 import type {
   NexumEvent,
+  NexumMessage,
   NexumModelAttemptEventData,
   NexumModelRetryEventData,
   NexumReasoningEventData,
   NexumRunSettledEventData,
+  NexumSessionMessages,
   NexumTextEventData,
   NexumThinkingEventData,
 } from "../src/index.ts"
@@ -91,4 +93,21 @@ test("types retry and settled lifecycle event payloads", () => {
   expect(attempt.data).toEqual(attemptData)
   expect(retry.data).toEqual(retryData)
   expect(settled.data).toEqual(settledData)
+})
+
+test("types canonical session messages and pagination metadata", () => {
+  const message: NexumMessage = {
+    role: "assistant",
+    reasoningContent: "先检查上下文",
+    toolCalls: [{ id: "tool-001", name: "read", input: { path: "README.md" } }],
+  }
+  const page: NexumSessionMessages = {
+    messages: [{ index: 3, message }],
+    total: 4,
+    hasMore: true,
+    nextBefore: 3,
+  }
+
+  expect(page.messages[0]?.message).toEqual(message)
+  expect(page.nextBefore).toBe(3)
 })

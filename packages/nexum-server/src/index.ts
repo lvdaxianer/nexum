@@ -18,6 +18,7 @@ import {
   NexumRolePromptError,
   NexumSkillInvocationError,
   nexumAnyToolAction,
+  redactNexumSensitiveValue,
   type NexumCodingLoop,
   type NexumModelConfigStore,
   type NexumPermissionBroker,
@@ -32,9 +33,15 @@ import {
   type NexumSkillInvocationPort,
   type NexumSkillRegistry,
   type MessageStore,
+  type ModelMessage,
   type NexumInteractionStore,
 } from "@nexum/core"
-import { NEXUM_EVENT_TYPES, NEXUM_EXPERIMENTAL_API_PREFIX } from "@nexum/protocol"
+import {
+  NEXUM_EVENT_TYPES,
+  NEXUM_EXPERIMENTAL_API_PREFIX,
+  type NexumMessage,
+  type NexumSessionMessages,
+} from "@nexum/protocol"
 import { resolve } from "node:path"
 import type { NexumEventHub } from "./events.ts"
 
@@ -334,6 +341,22 @@ async function handleRequest(
     )
   }
 
+  const messagesMatch = url.pathname.match(
+    new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/session/([^/]+)/messages$`),
+  )
+  if (messagesMatch) {
+    if (request.method !== "GET") {
+      return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return listSessionMessages(
+      url,
+      decodeURIComponent(messagesMatch[1]!),
+      sessionService,
+      messageStore,
+      traceId,
+    )
+  }
+
   const updateSessionMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)$/)
   if (updateSessionMatch) {
     const sessionID = decodeURIComponent(updateSessionMatch[1]!)
@@ -445,11 +468,16 @@ async function handleRequest(
     if (request.method !== "GET") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
     }
+    const afterSequence = parseMessagePageParameter(url.searchParams.get("afterSequence"), undefined)
+    if (url.searchParams.has("afterSequence") && afterSequence === undefined) {
+      return errorResponse(400, "NEXUM_INVALID_REQUEST", "afterSequence 必须是非负整数", traceId)
+    }
     return streamEvents(
       decodeURIComponent(eventsMatch[1]!),
       sessionService,
       eventHub,
       request.headers.get("last-event-id") ?? url.searchParams.get("after"),
+      afterSequence,
       traceId,
     )
   }
@@ -772,6 +800,124 @@ async function listSessions(sessionService: NexumSessionService, traceId: string
   return jsonResponse({ data }, traceId)
 }
 
+/** 返回 Session 的安全 canonical 消息分页。 */
+async function listSessionMessages(
+  url: URL,
+  sessionID: string,
+  sessionService: NexumSessionService,
+  messageStore: MessageStore,
+  traceId: string,
+): Promise<Response> {
+  if (!(await sessionService.get(sessionID))) {
+    return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+
+  const limit = parseMessagePageParameter(url.searchParams.get("limit"), 50)
+  const before = parseMessagePageParameter(url.searchParams.get("before"), undefined)
+  if (limit === undefined || limit < 1 || limit > 100) {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "limit 必须是 1 到 100 的整数", traceId)
+  }
+  if (url.searchParams.has("before") && before === undefined) {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "before 必须是非负整数", traceId)
+  }
+
+  const history = await messageStore.load(sessionID)
+  const end = before ?? history.length
+  if (end > history.length) {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "before 超出消息历史范围", traceId)
+  }
+  const start = Math.max(0, end - limit)
+  const data: NexumSessionMessages = {
+    messages: history.slice(start, end).map((message, offset) => ({
+      index: start + offset,
+      message: publicMessage(message),
+    })),
+    total: history.length,
+    hasMore: start > 0,
+    ...(start > 0 ? { nextBefore: start } : {}),
+  }
+  return jsonResponse({ data }, traceId)
+}
+
+/** 解析消息分页参数，未提供参数时使用调用方给定的默认值。 */
+function parseMessagePageParameter(value: string | null, fallback: number | undefined): number | undefined {
+  if (value === null) return fallback
+  if (!/^\d+$/.test(value)) return undefined
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) ? parsed : undefined
+}
+
+/** 将 Core canonical 消息转换成可供页面读取的脱敏消息。 */
+function publicMessage(message: ModelMessage): NexumMessage {
+  if (message.role === "system") {
+    if (message.sourceID !== "context:summary") {
+      return {
+        role: "system",
+        sourceID: "context:hidden",
+        content: "内部系统上下文未在对话历史中展示",
+      }
+    }
+    return {
+      role: "system",
+      content: redactNexumSensitiveValue(message.content) as string,
+      ...(message.sourceID ? { sourceID: message.sourceID } : {}),
+    }
+  }
+  if (message.role === "user") {
+    return { role: "user", content: redactNexumSensitiveValue(message.content) as string }
+  }
+  if (message.role === "tool") {
+    return {
+      role: "tool",
+      toolCallID: message.toolCallID,
+      content: redactNexumSensitiveValue(message.content) as string,
+    }
+  }
+  return {
+    role: "assistant",
+    ...(message.content !== undefined
+      ? { content: redactNexumSensitiveValue(message.content) as string }
+      : {}),
+    ...(message.reasoningContent !== undefined
+      ? { reasoningContent: redactNexumSensitiveValue(message.reasoningContent) as string }
+      : {}),
+    ...(message.toolCalls
+      ? {
+          toolCalls: message.toolCalls.map((toolCall) => ({
+            id: toolCall.id,
+            name: toolCall.name,
+            input: redactPublicRecord(toolCall.input),
+          })),
+        }
+      : {}),
+  }
+}
+
+/** 对消息中的结构化值按字段名和文本规则做展示层脱敏。 */
+function redactPublicRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      isSensitiveMessageKey(key) ? "[REDACTED]" : redactPublicValue(item),
+    ]),
+  )
+}
+
+/** 递归处理消息中的数组、对象和凭据形状文本。 */
+function redactPublicValue(value: unknown): unknown {
+  if (typeof value === "string") return redactNexumSensitiveValue(value)
+  if (Array.isArray(value)) return value.map(redactPublicValue)
+  if (isRecord(value)) return redactPublicRecord(value)
+  return value
+}
+
+/** 判断结构化消息字段是否可能直接承载凭据。 */
+function isSensitiveMessageKey(key: string): boolean {
+  return /(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|bearer[_-]?token|client[_-]?secret|private[_-]?key|token|password|secret|credential)/i.test(
+    key,
+  )
+}
+
 /** 执行安全模型能力 Probe，只返回能力状态。 */
 async function probeModel(
   request: Request,
@@ -1046,6 +1192,7 @@ async function streamEvents(
   sessionService: NexumSessionService,
   eventHub: NexumEventHub,
   afterEventID: string | null,
+  afterSequence: number | undefined,
   traceId: string,
 ): Promise<Response> {
   if (!(await sessionService.get(sessionID))) {
@@ -1053,7 +1200,15 @@ async function streamEvents(
   }
 
   const encoder = new TextEncoder()
-  const iterator = eventHub.subscribe(sessionID, afterEventID ? { afterEventID } : undefined)[Symbol.asyncIterator]()
+  const iterator = eventHub.subscribe(
+    sessionID,
+    afterEventID || afterSequence !== undefined
+      ? {
+          ...(afterEventID ? { afterEventID } : {}),
+          ...(afterSequence !== undefined ? { afterSequence } : {}),
+        }
+      : undefined,
+  )[Symbol.asyncIterator]()
   let closed = false
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {

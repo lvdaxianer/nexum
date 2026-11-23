@@ -147,6 +147,30 @@ export type NexumSessionDeleteResult = {
   readonly deleted: true
 }
 
+export type NexumMessageToolCall = {
+  readonly id: string
+  readonly name: string
+  readonly input: JsonObject
+}
+
+export type NexumMessage =
+  | { readonly role: "system"; readonly content: string; readonly sourceID?: string }
+  | { readonly role: "user"; readonly content: string }
+  | {
+      readonly role: "assistant"
+      readonly content?: string
+      readonly reasoningContent?: string
+      readonly toolCalls?: readonly NexumMessageToolCall[]
+    }
+  | { readonly role: "tool"; readonly toolCallID: string; readonly content: string }
+
+export type NexumSessionMessages = {
+  readonly messages: readonly { readonly index: number; readonly message: NexumMessage }[]
+  readonly total: number
+  readonly hasMore: boolean
+  readonly nextBefore?: number
+}
+
 export type NexumPermission = {
   readonly id: string
   readonly sessionID: string

@@ -1229,6 +1229,30 @@ input[aria-invalid="true"]:focus {
   align-content: start;
 }
 
+.history-load-status,
+.history-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: #74839a;
+  font-size: 11px;
+}
+
+.history-load-status {
+  background: #f3f7fa;
+}
+
+.history-load-error {
+  justify-content: space-between;
+  border: 1px solid #efc7c2;
+  background: #fff7f5;
+  color: #a34c47;
+}
+
 /* 轮次之间保持呼吸感；连续执行条聚成一组贴附上方轮次 */
 .chat-message {
   margin-top: 22px;

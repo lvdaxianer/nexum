@@ -8,7 +8,7 @@
 /** 对权限展示和运行事件中的文本做凭据值脱敏。 */
 export function redactNexumSensitiveText(value: string): string {
   return value.replace(
-    /((?:authorization|api[_-]?key|token|password|secret)\s*[:=]\s*(?:bearer\s+)?)([^\s'",;]+)/gi,
+    /((?:["']?)(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|bearer[_-]?token|client[_-]?secret|private[_-]?key|token|password|secret|credential)(?:["']?\s*[:=]\s*["']?\s*)(?:bearer\s+)?)([^\s'",;}]+)/gi,
     "$1[REDACTED]",
   )
 }

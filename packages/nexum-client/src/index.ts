@@ -16,6 +16,7 @@ import {
   type NexumResponse,
   type NexumSession,
   type NexumSessionDeleteResult,
+  type NexumSessionMessages,
   type NexumSessionState,
   type NexumSkillDeleteResult,
   type NexumSkillRegisterInput,
@@ -31,6 +32,8 @@ export type {
   NexumEvent,
   NexumModelConfig,
   NexumModelProbe,
+  NexumMessage,
+  NexumMessageToolCall,
   NexumPermission,
   NexumQuestion,
   NexumRolePrompt,
@@ -38,6 +41,7 @@ export type {
   NexumResponse,
   NexumSession,
   NexumSessionDeleteResult,
+  NexumSessionMessages,
   NexumSessionState,
   NexumSkillDeleteResult,
   NexumSkillRegisterInput,
@@ -54,6 +58,7 @@ export type NexumClientOptions = {
 
 export type NexumEventOptions = {
   readonly signal?: AbortSignal
+  readonly afterSequence?: number
   readonly headers?: Headers | ReadonlyArray<readonly [string, string]> | Record<string, string>
 }
 
@@ -99,6 +104,15 @@ export const Nexum = {
               request<NexumSession>("/session", { method: "POST", body: JSON.stringify(input) }),
             list: () => request<readonly NexumSession[]>("/session"),
             state: (input: { readonly sessionID: string }) => request<NexumSessionState>(`/session/${encodeURIComponent(input.sessionID)}/state`),
+            messages: (input: { readonly sessionID: string; readonly before?: number; readonly limit?: number }) => {
+              const query = new URLSearchParams()
+              if (input.before !== undefined) query.set("before", String(input.before))
+              if (input.limit !== undefined) query.set("limit", String(input.limit))
+              const suffix = query.size > 0 ? `?${query.toString()}` : ""
+              return experimentalRequest<NexumSessionMessages>(
+                `/session/${encodeURIComponent(input.sessionID)}/messages${suffix}`,
+              )
+            },
             update: (input: { readonly sessionID: string; readonly name: string }) =>
               request<NexumSession>(`/session/${encodeURIComponent(input.sessionID)}`, {
                 method: "PUT",
@@ -119,7 +133,11 @@ export const Nexum = {
             cancel: (input: { readonly sessionID: string }) =>
               request<{ readonly status: "cancelled" }>(`/session/${encodeURIComponent(input.sessionID)}/cancel`, { method: "POST" }),
             events: (input: { readonly sessionID: string }, eventOptions: NexumEventOptions = {}) =>
-              requestEvents(fetcher, `${baseUrl}${NEXUM_API_PREFIX}/session/${encodeURIComponent(input.sessionID)}/events`, eventOptions),
+              requestEvents(
+                fetcher,
+                eventStreamUrl(baseUrl, input.sessionID, eventOptions.afterSequence),
+                eventOptions,
+              ),
             permission: {
               list: (input: { readonly sessionID: string }) =>
                 request<readonly NexumPermission[]>(`/session/${encodeURIComponent(input.sessionID)}/permission`),
@@ -166,6 +184,12 @@ export const Nexum = {
   },
 }
 
+function eventStreamUrl(baseUrl: string, sessionID: string, afterSequence: number | undefined): URL {
+  const url = new URL(`${baseUrl}${NEXUM_API_PREFIX}/session/${encodeURIComponent(sessionID)}/events`)
+  if (afterSequence !== undefined) url.searchParams.set("afterSequence", String(afterSequence))
+  return url
+}
+
 async function requestJson<T>(fetcher: NexumFetch, url: string, init?: RequestInit): Promise<NexumResponse<T>> {
   const response = await fetcher(url, {
     ...init,
@@ -177,7 +201,7 @@ async function requestJson<T>(fetcher: NexumFetch, url: string, init?: RequestIn
   return payload as NexumResponse<T>
 }
 
-async function* requestEvents(fetcher: NexumFetch, url: string, options: NexumEventOptions): AsyncIterable<NexumEvent> {
+async function* requestEvents(fetcher: NexumFetch, url: string | URL, options: NexumEventOptions): AsyncIterable<NexumEvent> {
   const headers = new Headers()
   if (options.headers instanceof Headers) options.headers.forEach((value, key) => headers.set(key, value))
   else if (Array.isArray(options.headers)) {
