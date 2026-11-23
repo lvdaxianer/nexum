@@ -3,7 +3,7 @@
 ## 1. ChatSurface 协议适配器与包边界
 
 - [x] 1.1 新增 `@nexum/chat-surface` 包、公共类型和 `ChatProtocolAdapter` 契约，覆盖历史、状态、事件、Prompt、运行控制、Permission、Question 和 Skill 列表；先写契约测试并验证测试在缺少实现时按预期失败，再实现并运行该包测试与 `bun run typecheck:tsc`。
-- [ ] 1.2 基于 `@nexum/client` 实现默认协议适配器，验证历史分页、SSE sequence 恢复、Permission/Question 回复、Skill 列表和稳定错误映射测试通过。
+- [x] 1.2 基于 `@nexum/client` 实现默认协议适配器，验证历史分页、SSE sequence 恢复、Permission/Question 回复、Skill 列表和稳定错误映射测试通过。
 
 ## 2. 完整聊天组件与 Web Component
 

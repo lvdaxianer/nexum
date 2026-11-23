@@ -1,3 +1,4 @@
+import { Nexum, NexumClientError, type NexumClientOptions, type NexumResponse } from "@nexum/client"
 import type {
   NexumEvent,
   NexumEventOptions,
@@ -98,6 +99,88 @@ export interface ChatProtocolAdapter {
   cancelRun(sessionID: ChatSessionID): Promise<void>
   /** 继续一个可继续的会话运行。 */
   continueRun(sessionID: ChatSessionID): Promise<void>
+}
+
+/** ChatSurface 对外暴露的稳定协议错误。 */
+export class ChatProtocolError extends Error {
+  readonly status: number | undefined
+  readonly code: string
+  readonly traceId: string | undefined
+
+  constructor(options: { readonly code: string; readonly message: string; readonly status?: number; readonly traceId?: string }) {
+    super(options.message)
+    this.name = "ChatProtocolError"
+    this.status = options.status
+    this.code = options.code
+    this.traceId = options.traceId
+  }
+}
+
+/** 将 Client 或未知异常归一化为 ChatSurface 可识别的协议错误。 */
+export function normalizeChatProtocolError(error: unknown): ChatProtocolError {
+  if (error instanceof ChatProtocolError) return error
+  if (error instanceof NexumClientError) {
+    return new ChatProtocolError({
+      status: error.status,
+      code: error.code,
+      message: error.message,
+      traceId: error.traceId,
+    })
+  }
+  if (error instanceof Error) return new ChatProtocolError({ code: "CHAT_PROTOCOL_UNKNOWN_ERROR", message: error.message })
+  return new ChatProtocolError({ code: "CHAT_PROTOCOL_UNKNOWN_ERROR", message: "聊天协议请求失败" })
+}
+
+/** 创建基于 @nexum/client 的默认 ChatSurface 协议适配器。 */
+export function createChatProtocolAdapter(options: NexumClientOptions = {}): ChatProtocolAdapter {
+  const client = Nexum.make(options)
+  return {
+    loadHistory: (input) => readData(client.experimental.nexum.session.messages(input)),
+    loadState: (sessionID) => readData(client.experimental.nexum.session.state({ sessionID })),
+    subscribeEvents: (input) => subscribeEvents(client, input),
+    listSkills: () => readData(client.experimental.nexum.skill.list()),
+    sendMessage: async (input) => {
+      await readData(client.experimental.nexum.session.prompt(input))
+    },
+    replyPermission: async (input) => {
+      await readData(client.experimental.nexum.session.permission.reply(input))
+    },
+    replyQuestion: async (input) => {
+      await readData(client.experimental.nexum.session.question.reply(input))
+    },
+    cancelQuestion: async (input) => {
+      await readData(client.experimental.nexum.session.question.cancel(input))
+    },
+    cancelRun: async (sessionID) => {
+      await readData(client.experimental.nexum.session.cancel({ sessionID }))
+    },
+    continueRun: async (sessionID) => {
+      await readData(client.experimental.nexum.session.continue({ sessionID }))
+    },
+  }
+}
+
+type NexumClient = ReturnType<typeof Nexum.make>
+
+async function readData<T>(request: Promise<NexumResponse<T>>): Promise<T> {
+  try {
+    return (await request).data
+  } catch (error) {
+    throw normalizeChatProtocolError(error)
+  }
+}
+
+async function* subscribeEvents(client: NexumClient, input: ChatEventSubscription): AsyncIterable<NexumEvent> {
+  try {
+    for await (const event of client.experimental.nexum.session.events(
+      { sessionID: input.sessionID },
+      { afterSequence: input.afterSequence, signal: input.signal, headers: input.headers },
+    )) {
+      yield event
+    }
+  } catch (error) {
+    throw normalizeChatProtocolError(error)
+  }
 }
 
 export type {
