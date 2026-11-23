@@ -2,6 +2,16 @@
 
 本文是 Nexum Runtime 对外 API 的使用说明。协议模型的权威定义位于 [`packages/nexum-protocol`](../packages/nexum-protocol/README.md)，服务端装配位于 [`packages/nexum-server`](../packages/nexum-server/README.md)。
 
+本文档覆盖 Nexum Runtime 的模型、Session、Permission、Question、Skill 和事件路由；其中 Skill 管理路由归属 `Skill Registry` 模块，调用方是 Nexum Web UI 和 Session Agent。
+
+### 对外 route 覆盖表
+
+| 路由归属 | 对外端点 | 文档章节 | 覆盖状态 |
+| --- | --- | --- | --- |
+| Nexum Runtime | `GET /api/nexum/skills`、`GET /api/nexum/skills/:id` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
+| Nexum Runtime | `POST /api/nexum/skills/register`、`POST /api/nexum/skills/refresh`、`POST /api/nexum/skills/validate` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
+| Nexum Runtime | `DELETE /api/nexum/skills/:id`、`POST /api/nexum/skills/:id/activate` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
+
 ## 协议约定
 
 | 项目 | 约定 |
@@ -28,7 +38,7 @@
 | `GET` | `/api/nexum/session/:sessionID/events` | 订阅 SSE 事件流 |
 | `GET` / `POST` | `/api/nexum/session/:sessionID/permission...` | 查询和回复权限请求 |
 | `GET` / `POST` | `/api/nexum/session/:sessionID/question...` | 查询、回答和取消结构化反问 |
-| `GET` / `POST` | `/api/nexum/skills...` | Skill 列表、注册、刷新、校验和激活 |
+| `GET` / `POST` / `DELETE` | `/api/nexum/skills...` | Skill 列表、详情、按地址注册、刷新、校验、取消注册和激活 |
 
 ## Session 删除
 
@@ -191,6 +201,94 @@ curl --request DELETE 'http://127.0.0.1:4097/api/nexum/session/session_001' \
 }
 ```
 
+## Skill 注册管理
+
+Nexum 以注册表中的地址为 Skill 来源。默认本地 Runtime 将注册源和安全状态持久化到 `<dataDirectory>/skills.json`；显式配置可通过 `NEXUM_SKILL_REGISTRY_FILE` 覆盖。取消注册只删除 Nexum 注册记录，不删除、移动或修改源目录。
+
+### 通用约定
+
+| 项目 | 约定 |
+| --- | --- |
+| 权限 | 当前服务认证约定待确认；注册/刷新/取消注册由调用方的 Nexum 管理权限边界负责，服务端不读取 Cookie。 |
+| `Content-Type` | 有 JSON body 的 POST 使用 `application/json`；GET/DELETE 请求体不适用。 |
+| `Accept` | 可选，推荐 `application/json`。 |
+| `X-Trace-Id` | 可选，1-128 位安全字符；缺失或非法时服务生成新的 trace ID。 |
+| Cookie | 请求 Cookie 和响应 Cookie 均不适用。 |
+| 幂等性 | 同一规范化 address 重复注册不会创建重复记录；DELETE 重复执行返回 `404 NEXUM_SKILL_NOT_FOUND`。 |
+| 地址安全 | 只接受本地目录；拒绝 HTTP(S)、路径遍历、源目录符号链接和 Skill 内符号链接。 |
+
+### 端点覆盖
+
+| 方法 | URL | 请求体 | 成功响应 | 实际错误 |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/nexum/skills` | 不适用 | `200`，`data` 为 Skill 摘要数组 | `503 NEXUM_SKILL_REGISTRY_NOT_CONFIGURED` |
+| `GET` | `/api/nexum/skills/:id` | 不适用 | `200`，`data` 为单个摘要 | `404 NEXUM_SKILL_NOT_FOUND` |
+| `POST` | `/api/nexum/skills/register` | `{address}` | `200`，`data` 为注册后的摘要 | `400 NEXUM_INVALID_REQUEST` 或 `NEXUM_SKILL_REGISTER_FAILED` |
+| `POST` | `/api/nexum/skills/refresh` | `{id?}` | `200`，`data` 为刷新后的数组 | `400 NEXUM_INVALID_REQUEST` |
+| `POST` | `/api/nexum/skills/validate` | `{id?}` | `200`，`data.valid` 和摘要数组 | `400 NEXUM_INVALID_REQUEST` |
+| `DELETE` | `/api/nexum/skills/:id` | 不适用 | `200`，`data.deleted=true` | `404 NEXUM_SKILL_NOT_FOUND` |
+| `POST` | `/api/nexum/skills/:id/activate` | `{sessionID,text}` | `200`，`data` 为 Skill prompt attachment | `404`/`409` Skill 或 Session 错误 |
+
+成功响应统一使用：
+
+```json
+{
+  "data": {
+    "id": "metric-view-lifecycle",
+    "status": "ready",
+    "sourceType": "local-directory",
+    "digest": "<sha256>",
+    "fileCount": 3,
+    "files": ["SKILL.md", "references/contract.md", "scripts/check.py"],
+    "diagnostics": []
+  },
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_skill_001" }
+}
+```
+
+错误响应统一包含 `errorCode`、中文 `message`、`traceId` 和协议 `meta`；不会返回本地绝对路径、环境变量、凭据或原始文件内容。响应 Cookie：不适用。
+
+### 按地址注册
+
+```http
+POST http://127.0.0.1:4097/api/nexum/skills/register
+Content-Type: application/json
+
+{"address":"/workspace/skills/metric-view-lifecycle"}
+```
+
+同一规范化地址重复注册是幂等的。地址必须是本地目录，目录内必须包含合法的 `SKILL.md`；第一阶段不支持 HTTP(S) 下载地址。响应中的 Skill 摘要不会返回宿主绝对路径、凭据或源文件内容。
+
+### 刷新与校验
+
+```http
+POST /api/nexum/skills/refresh
+Content-Type: application/json
+
+{"id":"metric-view-lifecycle"}
+```
+
+`id` 可省略以刷新全部已注册来源。校验接口使用同样的可选 `id`：
+
+```http
+POST /api/nexum/skills/validate
+Content-Type: application/json
+
+{"id":"metric-view-lifecycle"}
+```
+
+### 取消注册
+
+```http
+DELETE http://127.0.0.1:4097/api/nexum/skills/metric-view-lifecycle
+```
+
+成功返回 `200`，数据为 `{ "id": "metric-view-lifecycle", "deleted": true }`。源目录仍保留；如果源目录被移动或损坏，注册表会保留 `invalid` 状态供用户刷新、修复或取消注册。
+
+### Skill registry 事件
+
+注册、刷新、校验和取消注册可产生 `skill.updated` 事件，数据只包含 Skill ID、变更类型和安全状态，不包含绝对路径或文件正文。已有 `skill.activated` 和 `skill.failed` 事件保持不变。
+
 ## 事件语义
 
 Core 只产生运行事实，Server 将事实编码为协议事件，应用层决定如何呈现。常用事件包括：
@@ -201,6 +299,7 @@ Core 只产生运行事实，Server 将事实编码为协议事件，应用层�
 - `question.request`、`question.result`、`question.cancelled`：结构化反问生命周期；
 - `context.compaction.started`、`context.compaction.completed`、`context.compaction.failed`：上下文压缩；
 - `skill.activated`、`skill.failed`：Skill 生命周期；
+- `skill.updated`：Skill 注册状态发生变化；
 - `model.attempt`、`model.retry`：模型尝试与自动重试；
 - `session.completed`、`session.failed`、`session.cancelled`：Session 终态。
 - `run.settled`：一次运行最终结算，`result` 为 `completed`、`failed` 或 `cancelled`。
