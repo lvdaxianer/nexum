@@ -16,10 +16,10 @@
 
 ## 3. 默认角色提示词持久化与模型上下文
 
-- [ ] 3.1 在 Core 定义默认角色提示词 port、内置默认值和 `runtime:default-role` system message 来源约束；通过 Core 类型检查和 prompt assembly 单测验证只生成上下文消息、不写 Session 历史。
-- [ ] 3.2 在 Adapter 实现 `role-prompt.json` 原子文件 store、默认数据目录/显式路径/环境变量配置及安全读取；通过单测覆盖保存、重启恢复、空值恢复默认、权限模式和损坏文件诊断。
-- [ ] 3.3 在新建、恢复、继续和 compaction 后的每次模型调用组装默认 system message，并保持 OpenAI adapter 原样发送模型输入且不拦截输出；通过模型请求记录测试覆盖中文偏好原文和多次调用最新值。
-- [ ] 3.4 暴露 role prompt GET/PUT/DELETE API 并补充接口文档；通过 Server API 测试验证保存/读取/恢复默认和 Agent 不可调用该管理端口。
+- [x] 3.1 在 Core 定义默认角色提示词 port、内置默认值和 `runtime:default-role` system message 来源约束；通过 Core 类型检查和 prompt assembly 单测验证只生成上下文消息、不写 Session 历史。
+- [x] 3.2 在 Adapter 实现 `role-prompt.json` 原子文件 store、默认数据目录/显式路径/环境变量配置及安全读取；通过单测覆盖保存、重启恢复、空值恢复默认、权限模式和损坏文件诊断。
+- [x] 3.3 在新建、恢复、继续和 compaction 后的每次模型调用组装默认 system message，并保持 OpenAI adapter 原样发送模型输入且不拦截输出；通过模型请求记录测试覆盖中文偏好原文和多次调用最新值。
+- [x] 3.4 暴露 role prompt GET/PUT/DELETE API 并补充接口文档；通过 Server API 测试验证保存/读取/恢复默认和 Agent 不可调用该管理端口。
 
 ## 4. Session Agent Skill 管理工具
 

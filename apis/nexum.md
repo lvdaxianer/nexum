@@ -2,7 +2,7 @@
 
 本文是 Nexum Runtime 对外 API 的使用说明。协议模型的权威定义位于 [`packages/nexum-protocol`](../packages/nexum-protocol/README.md)，服务端装配位于 [`packages/nexum-server`](../packages/nexum-server/README.md)。
 
-本文档覆盖 Nexum Runtime 的模型、Session、Permission、Question、Skill 和事件路由；其中 Skill 管理路由归属 `Skill Registry` 模块，调用方是 Nexum Web UI 和 Session Agent。
+本文档覆盖 Nexum Runtime 的模型、默认角色提示词、Session、Permission、Question、Skill 和事件路由；其中 Skill 管理路由归属 `Skill Registry` 模块，调用方是 Nexum Web UI 和 Session Agent。
 
 ### 对外 route 覆盖表
 
@@ -11,6 +11,7 @@
 | Nexum Runtime | `GET /api/nexum/skills`、`GET /api/nexum/skills/:id` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
 | Nexum Runtime | `POST /api/nexum/skills/register`、`POST /api/nexum/skills/refresh`、`POST /api/nexum/skills/validate` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
 | Nexum Runtime | `DELETE /api/nexum/skills/:id`、`POST /api/nexum/skills/:id/activate` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
+| Nexum Runtime | `GET /api/nexum/role-prompt`、`PUT /api/nexum/role-prompt`、`DELETE /api/nexum/role-prompt` | [默认角色提示词](#默认角色提示词) | 已覆盖 |
 
 ## 协议约定
 
@@ -29,6 +30,7 @@
 | `GET` | `/api/nexum/capabilities` | 能力发现和事件类型发现 |
 | `GET` / `PUT` | `/api/nexum/model` | 读取和保存模型配置 |
 | `POST` | `/api/nexum/model/probe` | 探测模型能力 |
+| `GET` / `PUT` / `DELETE` | `/api/nexum/role-prompt` | 读取、保存和恢复默认角色提示词 |
 | `GET` / `POST` | `/api/nexum/session` | 列出或创建 Session |
 | `PUT` / `DELETE` | `/api/nexum/session/:sessionID` | 更新或删除 Session |
 | `GET` | `/api/nexum/session/:sessionID/state` | 获取恢复状态 |
@@ -39,6 +41,27 @@
 | `GET` / `POST` | `/api/nexum/session/:sessionID/permission...` | 查询和回复权限请求 |
 | `GET` / `POST` | `/api/nexum/session/:sessionID/question...` | 查询、回答和取消结构化反问 |
 | `GET` / `POST` / `DELETE` | `/api/nexum/skills...` | Skill 列表、详情、按地址注册、刷新、校验、取消注册和激活 |
+
+## 默认角色提示词
+
+默认角色提示词是独立于模型凭据和 Session 消息历史的全局配置。默认本地 Runtime 将它持久化到 `<dataDirectory>/role-prompt.json`，也可通过 `NEXUM_ROLE_PROMPT_FILE` 指定文件。文件采用原子替换写入并使用 `0600` 权限。
+
+| 方法 | URL | 请求体 | 成功响应 |
+| --- | --- | --- | --- |
+| `GET` | `/api/nexum/role-prompt` | 不适用 | `200`，`data` 为 `{prompt, source, updatedAt?}` |
+| `PUT` | `/api/nexum/role-prompt` | `{prompt}`，非空字符串 | `200`，返回保存后的配置 |
+| `DELETE` | `/api/nexum/role-prompt` | 不适用 | `200`，恢复内置默认配置 |
+
+示例：
+
+```http
+PUT /api/nexum/role-prompt
+Content-Type: application/json
+
+{"prompt":"思考和回答都使用中文。"}
+```
+
+每次模型调用前，Nexum 将当前提示词原文作为 `system` 消息注入，来源标识固定为 `runtime:default-role`。该消息不会写入 Session 历史；resume、continue 和 compaction 后会重新读取最新配置。Nexum 不翻译、过滤或改写模型的 reasoning、tool 参数和文本输出，Agent 也不能通过工具修改该全局配置。
 
 ## Session 删除
 

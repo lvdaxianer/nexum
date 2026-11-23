@@ -126,6 +126,97 @@ test("publishes streamed reasoning without persisting it as visible assistant te
   ])
 })
 
+test("injects the configured role prompt into model context without persisting it", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-loop-role-prompt-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory })
+  const messageStore = createInMemoryMessageStore()
+  const prompts: Array<Parameters<ModelPort["prompt"]>[0]> = []
+  const model: ModelPort = {
+    async *prompt(input) {
+      prompts.push(input)
+      yield { type: "text", content: "好的，我会使用中文回答。" }
+      yield { type: "completed" }
+    },
+  }
+
+  await createNexumCodingLoop({
+    model,
+    tool: { async execute() { return { ok: true, output: "unused" } } },
+    permission: { async evaluate() { return "allow" } },
+    sessions,
+    events: { async publish() {} },
+    messageStore,
+    rolePrompt: {
+      async get() {
+        return { prompt: "思考和回答都必须使用中文。", source: "custom" as const }
+      },
+      async update(prompt) {
+        return { prompt, source: "custom" as const }
+      },
+      async reset() {
+        return { prompt: "默认", source: "default" as const }
+      },
+    },
+  }).run({ sessionID: session.sessionID, text: "介绍一下这个项目" })
+
+  expect(prompts[0]?.messages).toContainEqual({
+    role: "system",
+    content: "思考和回答都必须使用中文。",
+    sourceID: "runtime:default-role",
+  })
+  expect(await messageStore.load(session.sessionID)).toEqual([
+    { role: "user", content: "介绍一下这个项目" },
+    { role: "assistant", content: "好的，我会使用中文回答。" },
+  ])
+})
+
+test("re-reads the latest role prompt for a later Session run", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-loop-role-prompt-latest-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory })
+  const prompts: Array<Parameters<ModelPort["prompt"]>[0]> = []
+  let currentPrompt = "第一版角色提示词"
+  const model: ModelPort = {
+    async *prompt(input) {
+      prompts.push(input)
+      yield { type: "completed" }
+    },
+  }
+  const rolePrompt = {
+    async get() {
+      return { prompt: currentPrompt, source: "custom" as const }
+    },
+    async update(prompt: string) {
+      currentPrompt = prompt
+      return { prompt, source: "custom" as const }
+    },
+    async reset() {
+      currentPrompt = "默认角色提示词"
+      return { prompt: currentPrompt, source: "default" as const }
+    },
+  }
+  const loop = createNexumCodingLoop({
+    model,
+    tool: { async execute() { return { ok: true, output: "unused" } } },
+    permission: { async evaluate() { return "allow" } },
+    sessions,
+    events: { async publish() {} },
+    rolePrompt,
+  })
+
+  await loop.run({ sessionID: session.sessionID, text: "第一轮" })
+  currentPrompt = "第二版角色提示词"
+  await loop.run({ sessionID: session.sessionID, text: "第二轮" })
+
+  expect(prompts.map((input) => input.messages?.find((message) => message.role === "system")?.content)).toEqual([
+    "第一版角色提示词",
+    "第二版角色提示词",
+  ])
+})
+
 test("publishes a thinking heartbeat while the model is silent", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-loop-heartbeat-"))
   temporaryDirectories.push(directory)

@@ -99,3 +99,29 @@ test("manages Skill registrations by address through the Nexum client", async ()
   expect(await requests[1]?.json()).toEqual({ id: "metric-view-lifecycle" })
   expect(await requests[2]?.text()).toBe("")
 })
+
+test("manages the default role prompt through the Nexum client", async () => {
+  const requests: Request[] = []
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      const request = new Request(typeof input === "string" ? input : input.toString(), init)
+      requests.push(request)
+      return Response.json({
+        data: { prompt: "使用中文回答。", source: "custom" },
+        meta: { protocolVersion: "nexum.runtime.v1", traceId: "trace_role" },
+      })
+    },
+  })
+
+  await client.experimental.nexum.rolePrompt.get()
+  await client.experimental.nexum.rolePrompt.update({ prompt: "使用中文回答。" })
+  await client.experimental.nexum.rolePrompt.reset()
+
+  expect(requests.map((request) => [request.method, request.url])).toEqual([
+    ["GET", "http://nexum.test/api/nexum/role-prompt"],
+    ["PUT", "http://nexum.test/api/nexum/role-prompt"],
+    ["DELETE", "http://nexum.test/api/nexum/role-prompt"],
+  ])
+  expect(await requests[1]?.json()).toEqual({ prompt: "使用中文回答。" })
+})

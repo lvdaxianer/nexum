@@ -20,6 +20,7 @@ async function main(): Promise<void> {
   const dataDirectory = process.env.NEXUM_DATA_DIR ?? resolve(process.cwd(), ".nexum")
   const sessionFile = process.env.NEXUM_SESSION_FILE ?? resolve(dataDirectory, "sessions.json")
   const modelConfigFile = process.env.NEXUM_MODEL_CONFIG_FILE ?? resolve(dataDirectory, "model-config.json")
+  const rolePromptFile = process.env.NEXUM_ROLE_PROMPT_FILE ?? resolve(dataDirectory, "role-prompt.json")
   const skillRegistryFile = process.env.NEXUM_SKILL_REGISTRY_FILE ?? resolve(dataDirectory, "skills.json")
   const eventFile = process.env.NEXUM_EVENT_FILE ?? resolve(dataDirectory, "events.json")
   const messageFile = process.env.NEXUM_MESSAGE_FILE ?? resolve(dataDirectory, "messages.json")
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
   const server = await startNexumServer({
     sessionStore,
     modelConfigStore,
+    rolePromptFile,
     skillRegistryFile,
     messageStore,
     interactionStore,
