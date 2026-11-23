@@ -16,7 +16,7 @@
 
 - [x] 3.1 在每个 Nexum 包目录运行既有测试与类型检查；对 `packages/nexum-surfaces` 额外运行 typecheck 和 build。
 - [x] 3.2 运行根 `bun run check`、`git diff --check`、`openspec validate pure-nexum-repository --strict` 和活动配置的 `git grep` 检查，记录完整输出。
-- [ ] 3.3 重启本地 Test Workbench，通过浏览器配置模型、创建/恢复 Session、注册用户指定 Skill 地址并用 `@metric-view-lifecycle` 激活，确认模型、Session、Skill 和角色提示词持久化不回归。
+- [x] 3.3 重启本地 Test Workbench，通过浏览器配置模型、创建/恢复 Session、注册用户指定 Skill 地址并用 `@metric-view-lifecycle` 激活，确认模型、Session、Skill 和角色提示词持久化不回归。
 
 ## Workflow follow-up
 

@@ -1644,7 +1644,7 @@ async function getModelConfig(
   if (!modelConfigStore) {
     return errorResponse(503, "NEXUM_MODEL_CONFIG_NOT_CONFIGURED", "Nexum Model Config 尚未配置", traceId)
   }
-  return jsonResponse({ data: await modelConfigStore.get() }, traceId)
+  return jsonResponse({ data: (await modelConfigStore.get()) ?? null }, traceId)
 }
 
 /** 更新并校验当前模型配置，错误时保留旧配置。 */
