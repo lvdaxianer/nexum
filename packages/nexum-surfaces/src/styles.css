@@ -573,6 +573,16 @@ input[aria-invalid="true"]:focus {
   margin: 10px 0 14px;
 }
 
+.skill-register-form {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 16px;
+  padding: 12px;
+  border: 1px solid #dfe7ef;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
 .skill-list {
   display: grid;
   gap: 8px;
@@ -637,6 +647,22 @@ input[aria-invalid="true"]:focus {
 
 .skill-validate:hover {
   background: #dff4ef;
+}
+
+.skill-unregister {
+  justify-self: start;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #e2b6b0;
+  border-radius: 9px;
+  background: #fff7f6;
+  color: #b34e47;
+  font-size: 11px;
+}
+
+.skill-unregister:hover {
+  border-color: #c45b52;
+  background: #fff0ee;
 }
 
 .notice {
