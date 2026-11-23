@@ -130,7 +130,11 @@ function App() {
   const [continueAvailable, setContinueAvailable] = createSignal(false)
   const [continueBusy, setContinueBusy] = createSignal(false)
   const [renameBusy, setRenameBusy] = createSignal(false)
+  const [deleteBusy, setDeleteBusy] = createSignal(false)
+  const [deleteState, setDeleteState] = createSignal<ActionState>("idle")
+  const [deleteMessage, setDeleteMessage] = createSignal("")
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false)
   let streamController: AbortController | undefined
   let conversationBody: HTMLDivElement | undefined
   let permissionsSection: HTMLElement | undefined
@@ -525,8 +529,12 @@ function App() {
   async function selectSession(session: SessionSummary, announce = true) {
     const sequence = ++sessionSelectSequence
     streamController?.abort()
+    streamController = undefined
+    setConnected(false)
     const snapshot = await client.experimental.nexum.session.state({ sessionID: session.id })
     if (sequence !== sessionSelectSequence) return
+    setDeleteState("idle")
+    setDeleteMessage("")
     setSessionID(session.id)
     setSessionName(snapshot.data.session.name)
     setSessionStatus(snapshot.data.session.status)
@@ -667,6 +675,74 @@ function App() {
     }
   }
 
+  function requestDeleteSession() {
+    if (!sessionID() || deleteBusy()) return
+    setDeleteState("idle")
+    setDeleteMessage("")
+    setDeleteConfirmOpen(true)
+  }
+
+  async function confirmDeleteSession() {
+    const deletingID = sessionID()
+    if (!deletingID || deleteBusy()) return
+    setDeleteBusy(true)
+    setDeleteState("pending")
+    setDeleteMessage("正在删除 Session…")
+    try {
+      await client.experimental.nexum.session.delete({ sessionID: deletingID })
+    } catch (error) {
+      const message = messageFrom(error, "Session 删除失败，请重试")
+      setDeleteState("error")
+      setDeleteMessage(message)
+      setNotice(message)
+      setDeleteConfirmOpen(false)
+      setDeleteBusy(false)
+      return
+    }
+
+    streamController?.abort()
+    streamController = undefined
+    setConnected(false)
+    eventCursors.delete(deletingID)
+    seenEventKeys.clear()
+    const currentSessions = sessions()
+    const deletingIndex = currentSessions.findIndex((session) => session.id === deletingID)
+    const remaining = currentSessions.filter((session) => session.id !== deletingID)
+    setSessions(remaining)
+    setSessionEditDrawerOpen(false)
+    setDeleteConfirmOpen(false)
+    sessionStorage.removeItem("nexum.sessionID")
+
+    const nextSession = remaining[deletingIndex] ?? remaining[deletingIndex - 1] ?? remaining[0]
+    if (nextSession) {
+      await selectSession(nextSession, false).catch(clearSelectedSession)
+    } else {
+      clearSelectedSession()
+    }
+    setNotice("Session 已删除")
+    setDeleteBusy(false)
+  }
+
+  function clearSelectedSession() {
+    setSessionID("")
+    setSessionName("")
+    setDirectory("")
+    setSessionStatus("no session")
+    setEvents([])
+    setChatItems([])
+    setPermissions([])
+    setQuestions([])
+    setQuestionAnswers({})
+    setCompactionStatus("idle")
+    setContextSources([])
+    setActiveSkillIDs([])
+    setContinueAvailable(false)
+    setContinueBusy(false)
+    setDeleteState("idle")
+    setDeleteMessage("")
+    sessionStorage.removeItem("nexum.sessionID")
+  }
+
   async function connectEvents(id: string) {
     streamController?.abort()
     const controller = new AbortController()
@@ -749,7 +825,10 @@ function App() {
     } catch (error) {
       if (!controller.signal.aborted) setNotice(messageFrom(error, "事件流已断开，请重新连接"))
     } finally {
-      if (!controller.signal.aborted) setConnected(false)
+      if (streamController === controller) {
+        streamController = undefined
+        setConnected(false)
+      }
     }
   }
 
@@ -1403,7 +1482,7 @@ function App() {
             </Show>
             <Drawer
               title="会话操作"
-              description="重命名当前 Session，或重新建立事件流、刷新运行状态。"
+              description="重命名、恢复当前 Session，或删除不再需要的运行记录。"
               open={sessionEditDrawerOpen()}
               onOpenChange={(open) => (open ? openRenameSession() : setSessionEditDrawerOpen(false))}
               triggerClass="toolbar-button"
@@ -1456,6 +1535,18 @@ function App() {
                   {refreshBusy() ? "刷新中…" : "刷新状态"}
                 </button>
               </div>
+              <button
+                class="button button-danger session-delete-button"
+                disabled={!sessionID() || deleteBusy()}
+                onClick={requestDeleteSession}
+              >
+                {deleteBusy() ? "删除中…" : "删除 Session"}
+              </button>
+              <Show when={deleteMessage()}>
+                <p class={`form-feedback form-feedback-${deleteState()}`} role="status" aria-live="polite">
+                  {deleteMessage()}
+                </p>
+              </Show>
             </Drawer>
           </div>
         </header>
@@ -1938,6 +2029,15 @@ function App() {
           onOpenChange={setCancelConfirmOpen}
           busy={cancelBusy()}
           onConfirm={confirmCancelSession}
+        />
+        <ConfirmDialog
+          title="删除当前 Session？"
+          description="删除会清理消息、交互和事件记录，但不会删除工作目录或全局模型配置。此操作不可恢复，确认要继续吗？"
+          confirmLabel="确认删除 Session"
+          open={deleteConfirmOpen()}
+          onOpenChange={setDeleteConfirmOpen}
+          busy={deleteBusy()}
+          onConfirm={confirmDeleteSession}
         />
       </section>
       </main>

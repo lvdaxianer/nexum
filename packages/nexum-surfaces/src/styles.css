@@ -428,6 +428,10 @@ input[aria-invalid="true"]:focus {
   transform: translateY(-1px);
 }
 
+.session-delete-button {
+  margin-top: 18px;
+}
+
 .button-secondary {
   border: 1px solid #ccd6e0;
   background: #ffffff;

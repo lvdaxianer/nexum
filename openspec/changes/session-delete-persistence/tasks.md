@@ -13,8 +13,8 @@
 
 ## 3. Web Surface 删除交互
 
-- [ ] 3.1 在 `packages/nexum-surfaces/src/main.tsx` 复用现有 `ConfirmDialog` 添加危险删除入口、pending/失败/成功状态和当前 Session 切换；验证未确认不发请求、确认按钮防重复、删除后事件流关闭和空态/下一个 Session 正确。
-- [ ] 3.2 在 `packages/nexum-surfaces/test/permission.smoke.spec.ts` 增加删除 Session 的 Playwright smoke 覆盖，并运行前端类型检查、构建和该 smoke 测试。
+- [x] 3.1 在 `packages/nexum-surfaces/src/main.tsx` 复用现有 `ConfirmDialog` 添加危险删除入口、pending/失败/成功状态和当前 Session 切换；验证未确认不发请求、确认按钮防重复、删除后事件流关闭和空态/下一个 Session 正确。
+- [x] 3.2 在 `packages/nexum-surfaces/test/permission.smoke.spec.ts` 增加删除 Session 的 Playwright smoke 覆盖，并运行前端类型检查、构建和该 smoke 测试。
 
 ## 4. 集成验证
 
