@@ -1,6 +1,6 @@
 import { chromium, expect, type Browser, type Page } from "@playwright/test"
 import { afterEach, describe, test } from "bun:test"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
 import { join, normalize } from "node:path"
 import { tmpdir } from "node:os"
 import {
@@ -17,7 +17,10 @@ import { createNexumProjectContextPort, createNexumQuestionPort, createNexumSkil
 import { createNexumEventHub } from "../../nexum-server/src/events.ts"
 import { startNexumServer, type NexumServer } from "../../nexum-server/src/index.ts"
 
-const uiOrigin = "http://127.0.0.1:5173"
+const uiPort = Number(process.env.NEXUM_SMOKE_UI_PORT ?? "5173")
+const uiOrigin = `http://127.0.0.1:${uiPort}`
+const apiHost = process.env.NEXUM_SMOKE_API_HOST ?? "localhost"
+const apiPort = Number(process.env.NEXUM_SMOKE_API_PORT ?? "4097")
 const distDirectory = normalize(join(import.meta.dir, "../dist"))
 
 let browser: Browser | undefined
@@ -48,13 +51,13 @@ describe.serial("Nexum UI smoke", () => {
   test.serial("uses the served UI host for default API requests", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
-    const remoteUiOrigin = "http://localhost:5173"
-    const remoteApiOrigin = "http://localhost:4097"
+    const remoteUiOrigin = `http://localhost:${uiPort}`
+    const remoteApiOrigin = `http://${apiHost}:${apiPort}`
     apiServer = await startNexumServer({
-      port: 4097,
+      port: apiPort,
       corsOrigins: [remoteUiOrigin],
     })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     const apiRequest = page.waitForRequest(
       (request) =>
         request.method() === "GET" && request.url().startsWith(`${remoteApiOrigin}/api/nexum/`),
@@ -68,7 +71,7 @@ describe.serial("Nexum UI smoke", () => {
   test.serial("renders the internal Agent workbench shell", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
 
     await page.goto(uiOrigin)
     await expect(page.getByRole("heading", { name: "Agent 工作台" })).toBeVisible()
@@ -93,7 +96,7 @@ describe.serial("Nexum UI smoke", () => {
     const sessionService = createNexumSessionService()
     let continueCalls = 0
     apiServer = await startNexumServer({
-      port: 4097,
+      port: apiPort,
       corsOrigins: [uiOrigin],
       eventHub,
       sessionService,
@@ -103,14 +106,15 @@ describe.serial("Nexum UI smoke", () => {
         },
         async continueStart(sessionID) {
           continueCalls += 1
-          return { accepted: true, promise: sessionService.get(sessionID).then((value) => value!) }
+          const admission = sessionService.setStatus(sessionID, "running")
+          return { accepted: true, admission, promise: admission.then(() => sessionService.get(sessionID).then((value) => value!)) }
         },
         async cancel(sessionID) {
           return sessionService.setStatus(sessionID, "cancelled")
         },
       },
     })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     directory = await mkdtemp(join(tmpdir(), "nexum-ui-continue-"))
 
     await page.goto(uiOrigin)
@@ -174,8 +178,8 @@ describe.serial("Nexum UI smoke", () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
     const eventHub = createNexumEventHub()
-    apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin], eventHub })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin], eventHub })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     const firstDirectory = await mkdtemp(join(tmpdir(), "nexum-ui-session-a-"))
     const secondDirectory = await mkdtemp(join(tmpdir(), "nexum-ui-session-b-"))
     directory = firstDirectory
@@ -220,6 +224,135 @@ describe.serial("Nexum UI smoke", () => {
     await expect(page.getByRole("button", { name: /前端重命名/ })).toBeVisible()
   })
 
+  test.serial("confirms Session deletion and preserves its working directory", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    let deleteCalls = 0
+    let releaseDelete = () => {}
+    const deleteGate = new Promise<void>((resolve) => {
+      releaseDelete = resolve
+    })
+    page.on("request", (request) => {
+      if (request.method() === "DELETE" && request.url().includes("/api/nexum/session/")) deleteCalls += 1
+    })
+    await page.route("**/api/nexum/session/*", async (route) => {
+      if (route.request().method() === "DELETE") await deleteGate
+      await route.continue()
+    })
+    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+    const firstDirectory = await mkdtemp(join(tmpdir(), "nexum-ui-delete-a-"))
+    const secondDirectory = await mkdtemp(join(tmpdir(), "nexum-ui-delete-b-"))
+    directory = firstDirectory
+    extraDirectories.push(secondDirectory)
+
+    await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(firstDirectory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+    const firstID = await page.locator(".session-id").innerText()
+
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(secondDirectory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.locator(".current-session-directory")).toHaveText(secondDirectory)
+    await page.locator(".session-item", { hasText: firstDirectory }).click()
+    await expect(page.locator(".session-id")).toHaveText(firstID)
+
+    await page.getByRole("button", { name: "会话操作" }).click()
+    const drawer = page.getByRole("dialog", { name: "会话操作" })
+    const deleteButton = drawer.getByRole("button", { name: "删除 Session" })
+    await expect(deleteButton).toBeVisible()
+    await deleteButton.click()
+    await expect(page.getByRole("alertdialog")).toBeVisible()
+    expect(deleteCalls).toBe(0)
+
+    await page.getByRole("button", { name: "返回" }).click()
+    await expect(page.getByRole("alertdialog")).toHaveCount(0)
+    expect(deleteCalls).toBe(0)
+    await expect(page.locator(".session-id")).toHaveText(firstID)
+
+    await drawer.getByRole("button", { name: "删除 Session" }).click()
+    const deleteResponse = page.waitForResponse(
+      (response) => response.request().method() === "DELETE" && response.url().includes(`/api/nexum/session/${firstID}`),
+    )
+    const confirmButton = page.getByRole("button", { name: "确认删除 Session" })
+    await confirmButton.click()
+    await expect(page.getByRole("alertdialog").getByRole("button", { name: "处理中…" })).toBeDisabled()
+    releaseDelete()
+    await expect((await deleteResponse).status()).toBe(200)
+    await expect(page.getByText("Session 已删除", { exact: true })).toBeVisible()
+    expect(deleteCalls).toBe(1)
+    await expect(page.locator(".session-item", { hasText: firstDirectory })).toHaveCount(0)
+    await expect(page.locator(".current-session-directory")).toHaveText(secondDirectory)
+    expect((await stat(firstDirectory)).isDirectory()).toBe(true)
+
+    await page.getByRole("button", { name: "会话操作" }).click()
+    await page.getByRole("dialog", { name: "会话操作" }).getByRole("button", { name: "删除 Session" }).click()
+    const lastDeleteResponse = page.waitForResponse(
+      (response) => response.request().method() === "DELETE" && response.url().includes("/api/nexum/session/"),
+    )
+    await page.getByRole("button", { name: "确认删除 Session" }).click()
+    await expect((await lastDeleteResponse).status()).toBe(200)
+    await expect(page.getByText(/还没有 Session/)).toBeVisible()
+    expect(deleteCalls).toBe(2)
+    expect(await page.evaluate(() => sessionStorage.getItem("nexum.sessionID"))).toBeNull()
+    expect((await stat(secondDirectory)).isDirectory()).toBe(true)
+  })
+
+  test.serial("keeps a Session available after a failed delete and allows retry", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    let failNextDelete = true
+    let deleteCalls = 0
+    await page.route("**/api/nexum/session/*", async (route) => {
+      if (route.request().method() !== "DELETE") {
+        await route.continue()
+        return
+      }
+      deleteCalls += 1
+      if (failNextDelete) {
+        failNextDelete = false
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ errorCode: "NEXUM_SESSION_DELETE_FAILED", message: "删除失败" }),
+        })
+        return
+      }
+      await route.continue()
+    })
+    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+    directory = await mkdtemp(join(tmpdir(), "nexum-ui-delete-retry-"))
+
+    await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(directory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+    const sessionID = await page.locator(".session-id").innerText()
+
+    await page.getByRole("button", { name: "会话操作" }).click()
+    const drawer = page.getByRole("dialog", { name: "会话操作" })
+    await drawer.getByRole("button", { name: "删除 Session" }).click()
+    await page.getByRole("button", { name: "确认删除 Session" }).click()
+    await expect(drawer.getByText("删除失败", { exact: true })).toBeVisible()
+    await expect(page.locator(".session-id")).toHaveText(sessionID)
+    await expect(drawer.getByRole("button", { name: "删除 Session" })).toBeVisible()
+
+    await drawer.getByRole("button", { name: "删除 Session" }).click()
+    const retryResponse = page.waitForResponse(
+      (response) => response.request().method() === "DELETE" && response.url().includes(`/api/nexum/session/${sessionID}`),
+    )
+    await page.getByRole("button", { name: "确认删除 Session" }).click()
+    await expect((await retryResponse).status()).toBe(200)
+    await expect(page.getByText(/还没有 Session/)).toBeVisible()
+    expect(deleteCalls).toBe(2)
+    expect((await stat(directory)).isDirectory()).toBe(true)
+  })
+
   test.serial("validates model and workspace inputs before sending requests", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
@@ -228,8 +361,8 @@ describe.serial("Nexum UI smoke", () => {
       if (request.method() === "POST" && request.url().endsWith("/api/nexum/model"))
         modelUpdateCalls += 1
     })
-    apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin] })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
 
     await page.goto(uiOrigin)
     await openDrawer(page, /模型配置/)
@@ -254,8 +387,8 @@ describe.serial("Nexum UI smoke", () => {
   test.serial("keeps an invalid workspace input after server-side validation fails", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
-    apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin] })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
 
     const invalidDirectory = "/tmp/nexum-ui-directory-does-not-exist"
     await page.goto(uiOrigin)
@@ -283,8 +416,8 @@ describe.serial("Nexum UI smoke", () => {
           },
         },
       })
-      apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin], sessionService: sessions })
-      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin], sessionService: sessions })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
       directory = await mkdtemp(join(tmpdir(), "nexum-ui-create-pending-"))
 
       await page.goto(uiOrigin)
@@ -299,8 +432,8 @@ describe.serial("Nexum UI smoke", () => {
   test.serial("asks for confirmation before cancelling a run", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
-    apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin] })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     directory = await mkdtemp(join(tmpdir(), "nexum-ui-cancel-"))
 
     await page.goto(uiOrigin)
@@ -326,8 +459,8 @@ describe.serial("Nexum UI smoke", () => {
   test.serial("ignores a stale session snapshot when switching sessions quickly", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
-    apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin] })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     const firstDirectory = await mkdtemp(join(tmpdir(), "nexum-ui-race-a-"))
     const secondDirectory = await mkdtemp(join(tmpdir(), "nexum-ui-race-b-"))
     directory = firstDirectory
@@ -392,8 +525,8 @@ describe.serial("Nexum UI smoke", () => {
           })
         },
       })
-      apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin] })
-      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
       directory = await mkdtemp(join(tmpdir(), "nexum-ui-deny-"))
 
       await page.goto(uiOrigin)
@@ -455,8 +588,8 @@ describe.serial("Nexum UI smoke", () => {
           })
         },
       })
-      apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin] })
-      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
       directory = await mkdtemp(join(tmpdir(), "nexum-ui-allow-"))
 
       await page.goto(uiOrigin)
@@ -500,8 +633,8 @@ describe.serial("Nexum UI smoke", () => {
         if (request.method() !== "POST" && request.method() !== "PUT") return
         policyWrites.push({ method: request.method(), body: JSON.parse(request.postData() ?? "null") })
       })
-      apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin] })
-      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
       directory = await mkdtemp(join(tmpdir(), "nexum-ui-policy-"))
 
       await page.goto(uiOrigin)
@@ -578,8 +711,8 @@ describe.serial("Nexum UI smoke", () => {
           })
         },
       })
-      apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin] })
-      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
       directory = await mkdtemp(join(tmpdir(), "nexum-ui-always-"))
 
       await page.goto(uiOrigin)
@@ -676,14 +809,14 @@ describe.serial("Nexum UI smoke", () => {
       compactionThreshold: 10,
     })
     apiServer = await startNexumServer({
-      port: 4097,
+      port: apiPort,
       corsOrigins: [uiOrigin],
       sessionService: sessions,
       eventHub,
       codingLoop,
       questionPort: questions,
     })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     directory = await mkdtemp(join(tmpdir(), "nexum-ui-question-"))
 
     await page.goto(uiOrigin)
@@ -718,8 +851,8 @@ describe.serial("Nexum UI smoke", () => {
         join(skillDirectory, "SKILL.md"),
         "---\nname: example-skill\ndescription: Example test skill\nversion: 0.1.0\n---\n\n# Test Skill\n",
       )
-      apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin], skillRoots: [skillRoot] })
-      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin], skillRoots: [skillRoot] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
 
       await page.goto(uiOrigin)
       await openDrawer(page, /Skills/)
@@ -744,7 +877,7 @@ describe.serial("Nexum UI smoke", () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
     apiServer = await startNexumServer({
-      port: 4097,
+      port: apiPort,
       modelProbe: {
         async probe(input) {
           expect(input).toEqual({ mode: "both" })
@@ -752,7 +885,7 @@ describe.serial("Nexum UI smoke", () => {
         },
       },
     })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     directory = await mkdtemp(join(tmpdir(), "nexum-ui-control-plane-"))
 
     await page.goto(uiOrigin)
@@ -806,8 +939,8 @@ describe.serial("Nexum UI smoke", () => {
           return new Response(stream, { headers: { "content-type": "text/event-stream" } })
         },
       })
-      apiServer = await startNexumServer({ port: 4097, corsOrigins: [uiOrigin] })
-      uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+      apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
       directory = await mkdtemp(join(tmpdir(), "nexum-ui-stream-markdown-"))
 
       await page.goto(uiOrigin)
@@ -875,7 +1008,7 @@ describe.serial("Nexum UI smoke", () => {
       skills,
     })
     apiServer = await startNexumServer({
-      port: 4097,
+      port: apiPort,
       corsOrigins: [uiOrigin],
       sessionService: sessions,
       eventHub,
@@ -884,7 +1017,7 @@ describe.serial("Nexum UI smoke", () => {
       skillRegistry: registry,
       skillInvocation: skills,
     })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     directory = await mkdtemp(join(tmpdir(), "nexum-ui-project-skill-"))
 
     await page.goto(uiOrigin)
@@ -953,13 +1086,13 @@ describe.serial("Nexum UI smoke", () => {
       },
     }
     apiServer = await startNexumServer({
-      port: 4097,
+      port: apiPort,
       corsOrigins: [uiOrigin],
       sessionService: sessions,
       eventHub,
       codingLoop,
     })
-    uiServer = Bun.serve({ hostname: "127.0.0.1", port: 5173, fetch: serveBuiltUi })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     directory = await mkdtemp(join(tmpdir(), "nexum-ui-thinking-"))
 
     await page.goto(uiOrigin)

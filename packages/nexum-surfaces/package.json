@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "test:smoke": "bun run build && bun test test/permission.smoke.spec.ts",
+    "test:smoke:isolated": "export VITE_NEXUM_API_URL=http://127.0.0.1:4098 NEXUM_SMOKE_API_HOST=127.0.0.1 NEXUM_SMOKE_API_PORT=4098 NEXUM_SMOKE_UI_PORT=5174 && bun run build && bun test test/permission.smoke.spec.ts",
     "typecheck:tsc": "tsc --noEmit"
   },
   "dependencies": {

@@ -13,7 +13,7 @@ type ConfirmDialogProps = {
 }
 
 /**
- * 危险操作确认对话框：确认按钮在请求结束前保持 busy 并禁用，ESC/遮罩/返回可安全退出。
+ * 危险操作确认对话框：确认按钮在请求结束前保持 busy 并禁用，请求期间阻止 ESC/遮罩/返回关闭。
  * @author lvdaxianer@yeah.net
  * @date 2026-11-20
  */
@@ -27,7 +27,13 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     "onConfirm",
   ])
   return (
-    <Root {...others}>
+    <Root
+      {...others}
+      onOpenChange={(open) => {
+        if (local.busy && !open) return
+        others.onOpenChange(open)
+      }}
+    >
       <Portal>
         <Overlay class="confirm-overlay" />
         <Content class="confirm-content">
