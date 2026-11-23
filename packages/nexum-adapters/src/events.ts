@@ -14,6 +14,7 @@ import type { EventSink, RuntimeEvent } from "@nexum/core"
 export interface NexumEventHub extends EventSink {
   readonly subscribe: (sessionID: string, options?: NexumEventSubscriptionOptions) => AsyncIterable<RuntimeEvent>
   readonly lastSequence: (sessionID: string) => number
+  readonly delete: (sessionID: string) => Promise<void>
   /** 等待持久化事件文件首次加载完成；坏文件会以稳定错误拒绝。 */
   readonly ready?: () => Promise<void>
 }
@@ -117,6 +118,26 @@ export function createNexumEventHub(options: NexumEventHubOptions = {}): NexumEv
     },
     lastSequence(sessionID) {
       return history.get(sessionID)?.at(-1)?.sequence ?? 0
+    },
+    async delete(sessionID) {
+      if (filePath === undefined) {
+        const next = new Map(history)
+        next.delete(sessionID)
+        history = next
+        return
+      }
+      const operation = writeQueue.then(async () => {
+        await load()
+        const next = new Map(history)
+        next.delete(sessionID)
+        await persistEvents(filePath, next)
+        history = next
+      })
+      writeQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      )
+      await operation
     },
     ready() {
       return load()

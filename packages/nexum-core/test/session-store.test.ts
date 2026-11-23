@@ -81,3 +81,26 @@ test("serializes concurrent saves without losing sessions", async () => {
 
   expect(await store.list()).toHaveLength(2)
 })
+
+test("does not restore a deleted session in a fresh file store", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-session-store-delete-"))
+  temporaryDirectories.push(root)
+  const filePath = join(root, "sessions.json")
+  const store = createFileSessionStore({ filePath })
+  const sessions = ["session_delete", "session_keep"].map((sessionID) => ({
+    sessionID,
+    name: sessionID,
+    directory: `/workspace/${sessionID}`,
+    status: "completed" as const,
+    createdAt: "2026-11-21T00:00:00.000Z",
+    updatedAt: "2026-11-21T00:00:00.000Z",
+  }))
+
+  await Promise.all(sessions.map((session) => store.save(session)))
+  await store.delete("session_delete")
+  await store.delete("missing")
+
+  const reopened = createFileSessionStore({ filePath })
+  expect(await reopened.get("session_delete")).toBeUndefined()
+  expect(await reopened.get("session_keep")).toEqual(sessions[1])
+})

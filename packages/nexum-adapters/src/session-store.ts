@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { basename, dirname } from "node:path"
-import type { SessionRecord, SessionStore } from "@nexum/core"
+import type { SessionRecord } from "@nexum/core"
 
 const sessionStatuses = new Set<SessionRecord["status"]>(["idle", "running", "completed", "failed", "cancelled"])
 
@@ -21,25 +21,28 @@ interface StoredSessionFile {
 }
 
 /** 创建进程内 SessionStore，供默认 Runtime 与测试使用。 */
-export function createInMemorySessionStore(): SessionStore {
+export function createInMemorySessionStore() {
   const sessions = new Map<string, SessionRecord>()
 
   return {
-    async get(sessionID) {
+    async get(sessionID: string) {
       const session = sessions.get(sessionID)
       return session ? { ...session } : undefined
     },
     async list() {
       return sortSessions(Array.from(sessions.values(), (session) => ({ ...session })))
     },
-    async save(session) {
+    async save(session: SessionRecord) {
       sessions.set(session.sessionID, { ...session })
+    },
+    async delete(sessionID: string) {
+      sessions.delete(sessionID)
     },
   }
 }
 
 /** 创建基于 JSON 文件的 POC SessionStore。 */
-export function createFileSessionStore(options: FileSessionStoreOptions): SessionStore {
+export function createFileSessionStore(options: FileSessionStoreOptions) {
   let loaded: Promise<Map<string, SessionRecord>> | undefined
   let writeQueue = Promise.resolve()
 
@@ -49,17 +52,30 @@ export function createFileSessionStore(options: FileSessionStoreOptions): Sessio
   }
 
   return {
-    async get(sessionID) {
+    async get(sessionID: string) {
       const session = (await load()).get(sessionID)
       return session ? { ...session } : undefined
     },
     async list() {
       return sortSessions(Array.from((await load()).values(), (session) => ({ ...session })))
     },
-    async save(session) {
+    async save(session: SessionRecord) {
       const operation = writeQueue.then(async () => {
         const next = new Map(await load())
         next.set(session.sessionID, { ...session })
+        await persistSessions(options.filePath, next)
+        loaded = Promise.resolve(next)
+      })
+      writeQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      )
+      await operation
+    },
+    async delete(sessionID: string) {
+      const operation = writeQueue.then(async () => {
+        const next = new Map(await load())
+        next.delete(sessionID)
         await persistSessions(options.filePath, next)
         loaded = Promise.resolve(next)
       })

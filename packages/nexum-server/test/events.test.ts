@@ -50,6 +50,18 @@ test("event hub replays history on first subscribe and resumes after a cursor", 
   await resumed.return?.()
 })
 
+test("deletes one in-memory event history while preserving other sessions", async () => {
+  const hub = createNexumEventHub()
+  await hub.publish({ type: "assistant.text", sessionID: "session_delete", sequence: 1, eventID: "delete-memory-1", data: {} })
+  await hub.publish({ type: "assistant.text", sessionID: "session_keep", sequence: 1, eventID: "keep-memory-1", data: {} })
+
+  await hub.delete("session_delete")
+  await hub.delete("missing")
+
+  expect(hub.lastSequence("session_delete")).toBe(0)
+  expect(hub.lastSequence("session_keep")).toBe(1)
+})
+
 test("persists events so a new hub replays history and resumes from a cursor", async () => {
   const filePath = join(await createEventDirectory(), "events.json")
   const first = createNexumEventHub({ filePath })
@@ -129,4 +141,23 @@ test("leaves a corrupt event file untouched and hides internal paths", async () 
     hub.publish({ type: "assistant.text", sessionID: "session-corrupt-001", sequence: 1, eventID: "x1", data: {} }),
   ).rejects.toThrow("事件文件格式无效")
   expect(await Bun.file(filePath).text()).toBe("not-json")
+})
+
+test("deletes one session event history while preserving other sessions after restart", async () => {
+  const filePath = join(await createEventDirectory(), "events.json")
+  const hub = createNexumEventHub({ filePath })
+  await hub.ready?.()
+  await hub.publish({ type: "assistant.text", sessionID: "session_delete", sequence: 1, eventID: "delete-1", data: {} })
+  await hub.publish({ type: "assistant.text", sessionID: "session_keep", sequence: 1, eventID: "keep-1", data: {} })
+
+  await hub.delete("session_delete")
+  await hub.delete("missing")
+
+  expect(hub.lastSequence("session_delete")).toBe(0)
+  expect(hub.lastSequence("session_keep")).toBe(1)
+
+  const reopened = createNexumEventHub({ filePath })
+  await reopened.ready?.()
+  expect(reopened.lastSequence("session_delete")).toBe(0)
+  expect(reopened.lastSequence("session_keep")).toBe(1)
 })

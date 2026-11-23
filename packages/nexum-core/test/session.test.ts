@@ -107,3 +107,71 @@ test("allows a completed session to start a later run", async () => {
 
   expect(restarted.status).toBe("running")
 })
+
+test("deletes a settled session while preserving other sessions and rejecting running sessions", async () => {
+  const firstDirectory = await makeDirectory()
+  const secondDirectory = await makeDirectory()
+  const service = createNexumSessionService()
+  const first = await service.create({ directory: firstDirectory })
+  const second = await service.create({ directory: secondDirectory })
+
+  await service.delete(first.sessionID)
+
+  expect(await service.get(first.sessionID)).toBeUndefined()
+  expect((await service.list()).map((session) => session.sessionID)).toEqual([second.sessionID])
+
+  await service.setStatus(second.sessionID, "running")
+  await expect(service.delete(second.sessionID)).rejects.toMatchObject({ code: "session_busy" })
+  expect(await service.get(second.sessionID)).toMatchObject({ sessionID: second.sessionID, status: "running" })
+})
+
+test("serializes concurrent deletion and status changes for one session", async () => {
+  const firstDirectory = await makeDirectory()
+  const secondDirectory = await makeDirectory()
+  const service = createNexumSessionService()
+  const first = await service.create({ directory: firstDirectory })
+  const second = await service.create({ directory: secondDirectory })
+
+  const deleteFirst = await Promise.allSettled([
+    service.delete(first.sessionID),
+    service.setStatus(first.sessionID, "running"),
+  ])
+  expect(deleteFirst.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+  expect(deleteFirst.filter((result) => result.status === "rejected")).toHaveLength(1)
+  expect(deleteFirst[1]).toMatchObject({ status: "rejected", reason: { code: "session_not_found" } })
+  expect(await service.get(first.sessionID)).toBeUndefined()
+
+  const statusFirst = await Promise.allSettled([
+    service.setStatus(second.sessionID, "running"),
+    service.delete(second.sessionID),
+  ])
+  expect(statusFirst.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+  expect(statusFirst.filter((result) => result.status === "rejected")).toHaveLength(1)
+  expect(statusFirst[1]).toMatchObject({ status: "rejected", reason: { code: "session_busy" } })
+  expect(await service.get(second.sessionID)).toMatchObject({ sessionID: second.sessionID, status: "running" })
+})
+
+test("serializes concurrent update and deletion for one session", async () => {
+  const firstDirectory = await makeDirectory()
+  const secondDirectory = await makeDirectory()
+  const service = createNexumSessionService()
+  const first = await service.create({ directory: firstDirectory, name: "待删除" })
+  const second = await service.create({ directory: secondDirectory, name: "待更新" })
+
+  const deleteFirst = await Promise.allSettled([
+    service.delete(first.sessionID),
+    service.update(first.sessionID, { name: "不应复活" }),
+  ])
+  expect(deleteFirst.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+  expect(deleteFirst.filter((result) => result.status === "rejected")).toHaveLength(1)
+  expect(deleteFirst[1]).toMatchObject({ status: "rejected", reason: { code: "session_not_found" } })
+  expect(await service.get(first.sessionID)).toBeUndefined()
+
+  const updateFirst = await Promise.allSettled([
+    service.update(second.sessionID, { name: "已更新" }),
+    service.delete(second.sessionID),
+  ])
+  expect(updateFirst[0]).toMatchObject({ status: "fulfilled", value: { name: "已更新" } })
+  expect(updateFirst[1]).toMatchObject({ status: "fulfilled" })
+  expect(await service.get(second.sessionID)).toBeUndefined()
+})

@@ -35,6 +35,7 @@ test("gives events a run identity and keeps sequence monotonic across prompts", 
     async setStatus(_sessionID: string, nextStatus: SessionRecord["status"]) {
       return { ...session, status: nextStatus }
     },
+    async delete() {},
   }
   const model: ModelPort = {
     async *prompt() {
@@ -104,6 +105,7 @@ test("continues event sequence after loading the persisted session cursor", asyn
     async setStatus(_sessionID: string, status: SessionRecord["status"]) {
       return { ...session, status }
     },
+    async delete() {},
   }
   const loop = createNexumCodingLoop({
     model: {

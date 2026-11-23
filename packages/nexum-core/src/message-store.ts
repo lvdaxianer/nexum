@@ -6,7 +6,7 @@ import type { ModelMessage } from "./index.js"
 export interface MessageStore {
   readonly load: (sessionID: string) => Promise<readonly ModelMessage[]>
   readonly save: (sessionID: string, messages: readonly ModelMessage[]) => Promise<void>
-  readonly delete?: (sessionID: string) => Promise<void>
+  readonly delete: (sessionID: string) => Promise<void>
 }
 
 /** 可供 Core 单元测试使用的进程内消息 Store。 */
@@ -18,6 +18,9 @@ export function createInMemoryMessageStore(): MessageStore {
     },
     async save(sessionID, messages) {
       sessions.set(sessionID, copyMessages(messages))
+    },
+    async delete(sessionID) {
+      sessions.delete(sessionID)
     },
   }
 }
