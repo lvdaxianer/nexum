@@ -11,6 +11,8 @@ import {
   type NexumModelProbe,
   type NexumPermission,
   type NexumQuestion,
+  type NexumRolePrompt,
+  type NexumRolePromptInput,
   type NexumResponse,
   type NexumSession,
   type NexumSessionDeleteResult,
@@ -31,6 +33,8 @@ export type {
   NexumModelProbe,
   NexumPermission,
   NexumQuestion,
+  NexumRolePrompt,
+  NexumRolePromptInput,
   NexumResponse,
   NexumSession,
   NexumSessionDeleteResult,
@@ -83,6 +87,12 @@ export const Nexum = {
               request<NexumModelConfig>("/model", { method: "PUT", body: JSON.stringify(input) }),
             probe: (input: { readonly mode?: "text" | "function_calling" | "both" }) =>
               request<NexumModelProbe>("/model/probe", { method: "POST", body: JSON.stringify(input) }),
+          },
+          rolePrompt: {
+            get: () => request<NexumRolePrompt>("/role-prompt"),
+            update: (input: NexumRolePromptInput) =>
+              request<NexumRolePrompt>("/role-prompt", { method: "PUT", body: JSON.stringify(input) }),
+            reset: () => request<NexumRolePrompt>("/role-prompt", { method: "DELETE" }),
           },
           session: {
             create: (input: { readonly directory: string; readonly name?: string }) =>

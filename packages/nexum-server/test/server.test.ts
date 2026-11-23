@@ -6,6 +6,7 @@ import {
   createNexumCodingLoop,
   createNexumPermissionBroker,
   createNexumSessionService,
+  NEXUM_DEFAULT_ROLE_PROMPT,
   NexumSessionError,
   type MessageStore,
   type SessionRecord,
@@ -1009,6 +1010,7 @@ test("completes a function-calling task after an allow-once permission reply", a
   expect(completionText).toContain("文件已写入")
   expect(modelRequests).toHaveLength(2)
   expect(modelRequests[1]?.messages).toEqual([
+    { role: "system", content: NEXUM_DEFAULT_ROLE_PROMPT },
     { role: "user", content: "请写入 notes.txt" },
     {
       role: "assistant",

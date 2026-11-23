@@ -15,6 +15,7 @@ import {
   NexumRunError,
   NexumModelError,
   NexumModelProbeError,
+  NexumRolePromptError,
   NexumSkillInvocationError,
   nexumAnyToolAction,
   type NexumCodingLoop,
@@ -22,6 +23,7 @@ import {
   type NexumPermissionBroker,
   type NexumPermissionPolicyStore,
   type NexumQuestionPort,
+  type NexumRolePromptStore,
   type NexumModelProbeMode,
   type NexumModelProbePort,
   type NexumSessionService,
@@ -52,6 +54,7 @@ const NEXUM_FEATURES = [
   "context_compaction",
   "project_context",
   "skill",
+  "role_prompt",
 ] as const
 const NEXUM_CAPABILITIES = [
   { id: "model", version: "1", status: "enabled", operations: ["prompt"] },
@@ -61,6 +64,7 @@ const NEXUM_CAPABILITIES = [
   { id: "session", version: "1", status: "enabled", operations: ["create", "list", "get", "update", "delete", "continue"] },
   { id: "context", version: "1", status: "enabled", operations: ["load", "compact"] },
   { id: "skill", version: "1", status: "enabled", operations: ["list", "detail", "register", "refresh", "validate", "unregister", "activate"] },
+  { id: "role_prompt", version: "1", status: "enabled", operations: ["get", "update", "reset"] },
   { id: "memory", version: "1", status: "disabled", operations: ["search", "upsert", "remove"] },
   { id: "mcp", version: "1", status: "disabled", operations: ["listServers", "listTools", "listResources", "listPrompts", "callTool"] },
   { id: "host", version: "1", status: "enabled", operations: ["readText", "writeText", "runShell"] },
@@ -87,6 +91,8 @@ export interface NexumServerOptions {
   readonly questionPort?: NexumQuestionPort
   readonly modelProbe?: NexumModelProbePort
   readonly modelConfigStore?: NexumModelConfigStore
+  readonly rolePromptStore?: NexumRolePromptStore
+  readonly rolePromptFile?: string
   readonly skillRegistry?: NexumSkillRegistry
   readonly skillRegistryFile?: string
   readonly skillInvocation?: NexumSkillInvocationPort
@@ -119,6 +125,8 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
     ...(options.sessionService ? { sessions: options.sessionService } : {}),
     ...(options.sessionStore ? { sessionStore: options.sessionStore } : {}),
     ...(options.modelConfigStore ? { modelConfig: options.modelConfigStore } : {}),
+    ...(options.rolePromptStore ? { rolePrompt: options.rolePromptStore } : {}),
+    ...(options.rolePromptFile ? { rolePromptFile: options.rolePromptFile } : {}),
     ...(options.messageStore ? { messageStore: options.messageStore } : {}),
     ...(interactionStore ? { interactionStore } : {}),
     ...(options.eventHub ? { eventHub: options.eventHub } : {}),
@@ -136,6 +144,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const messageStore = runtime.messageStore
   const runtimeInteractionStore = runtime.interactionStore
   const modelConfigStore = runtime.modelConfig
+  const rolePromptStore = runtime.rolePrompt
   const modelProbe = runtime.modelProbe
   const eventHub = runtime.eventHub
   const permissionBroker = runtime.permissionBroker
@@ -170,6 +179,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
           permissionBroker,
           questionPort,
           modelConfigStore,
+          rolePromptStore,
           modelProbe,
           skillRegistry,
           skillInvocation,
@@ -264,6 +274,7 @@ async function handleRequest(
   permissionBroker?: NexumPermissionBroker,
   questionPort?: NexumQuestionPort,
   modelConfigStore?: NexumModelConfigStore,
+  rolePromptStore?: NexumRolePromptStore,
   modelProbe?: NexumModelProbePort,
   skillRegistry?: NexumSkillRegistry,
   skillInvocation?: NexumSkillInvocationPort,
@@ -344,6 +355,13 @@ async function handleRequest(
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
     return probeModel(request, modelProbe, traceId)
+  }
+
+  if (url.pathname === "/api/nexum/role-prompt") {
+    if (request.method === "GET") return getRolePrompt(rolePromptStore, traceId)
+    if (request.method === "PUT") return updateRolePrompt(request, rolePromptStore, traceId)
+    if (request.method === "DELETE") return resetRolePrompt(rolePromptStore, traceId)
+    return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET、PUT 或 DELETE 请求", traceId)
   }
 
   if (url.pathname === "/api/nexum/skills") {
@@ -1662,6 +1680,55 @@ async function updateModelConfig(
       return errorResponse(400, "NEXUM_INVALID_MODEL_CONFIG", error.message, traceId)
     }
     return errorResponse(500, "NEXUM_MODEL_CONFIG_UPDATE_FAILED", "模型配置保存失败", traceId)
+  }
+}
+
+/** 返回当前默认角色提示词。 */
+async function getRolePrompt(
+  rolePromptStore: NexumRolePromptStore | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!rolePromptStore) {
+    return errorResponse(503, "NEXUM_ROLE_PROMPT_NOT_CONFIGURED", "默认角色提示词尚未配置", traceId)
+  }
+  return jsonResponse({ data: await rolePromptStore.get() }, traceId)
+}
+
+/** 保存默认角色提示词；只保存用户配置，不改变模型输出。 */
+async function updateRolePrompt(
+  request: Request,
+  rolePromptStore: NexumRolePromptStore | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!rolePromptStore) {
+    return errorResponse(503, "NEXUM_ROLE_PROMPT_NOT_CONFIGURED", "默认角色提示词尚未配置", traceId)
+  }
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload) || typeof payload.prompt !== "string") {
+    return errorResponse(400, "NEXUM_INVALID_ROLE_PROMPT", "prompt 必须是字符串", traceId)
+  }
+  try {
+    return jsonResponse({ data: await rolePromptStore.update(payload.prompt) }, traceId)
+  } catch (error) {
+    if (error instanceof NexumRolePromptError) {
+      return errorResponse(400, "NEXUM_INVALID_ROLE_PROMPT", error.message, traceId)
+    }
+    return errorResponse(500, "NEXUM_ROLE_PROMPT_UPDATE_FAILED", "默认角色提示词保存失败", traceId)
+  }
+}
+
+/** 恢复内置默认角色提示词。 */
+async function resetRolePrompt(
+  rolePromptStore: NexumRolePromptStore | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!rolePromptStore) {
+    return errorResponse(503, "NEXUM_ROLE_PROMPT_NOT_CONFIGURED", "默认角色提示词尚未配置", traceId)
+  }
+  try {
+    return jsonResponse({ data: await rolePromptStore.reset() }, traceId)
+  } catch {
+    return errorResponse(500, "NEXUM_ROLE_PROMPT_RESET_FAILED", "默认角色提示词恢复失败", traceId)
   }
 }
 

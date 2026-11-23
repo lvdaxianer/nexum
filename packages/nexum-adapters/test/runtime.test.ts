@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import {
   createEmbeddedRuntime,
   createFileMemory,
+  createFileRolePromptStore,
   createHttpMcpAdapter,
   createLocalHostAdapter,
   createLocalRuntime,
@@ -68,6 +69,24 @@ test("persists Skill registrations in the local runtime data directory", async (
   await second.skillRegistry.refresh()
   await expect(second.skillRegistry.list()).resolves.toMatchObject([{ id: "metric-view-lifecycle", status: "ready" }])
   await second.close()
+})
+
+test("persists and resets the default role prompt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-role-prompt-"))
+  directories.push(directory)
+  const filePath = join(directory, "role-prompt.json")
+  const first = createFileRolePromptStore({ filePath })
+
+  await expect(first.get()).resolves.toMatchObject({ source: "default" })
+  await expect(first.update("思考过程和回答都使用中文。"))
+    .resolves.toMatchObject({ prompt: "思考过程和回答都使用中文。", source: "custom" })
+  await expect(first.update("  保留原始空格。  ")).resolves.toMatchObject({ prompt: "  保留原始空格。  " })
+  await expect(first.update("   ")).rejects.toThrow("不能为空")
+
+  const reopened = createFileRolePromptStore({ filePath })
+  await expect(reopened.get()).resolves.toMatchObject({ prompt: "  保留原始空格。  ", source: "custom" })
+  await expect(reopened.reset()).resolves.toMatchObject({ source: "default" })
+  await expect(createFileRolePromptStore({ filePath }).get()).resolves.toMatchObject({ source: "default" })
 })
 
 test("persists memory through the local adapter and maps optional MCP resources", async () => {

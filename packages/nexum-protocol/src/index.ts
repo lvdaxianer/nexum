@@ -121,6 +121,16 @@ export type NexumModelConfig = {
   readonly credentialRef?: string
 }
 
+export type NexumRolePrompt = {
+  readonly prompt: string
+  readonly source: "default" | "custom"
+  readonly updatedAt?: string
+}
+
+export type NexumRolePromptInput = {
+  readonly prompt: string
+}
+
 export type NexumSessionStatus = "idle" | "running" | "completed" | "failed" | "cancelled"
 
 export type NexumSession = {

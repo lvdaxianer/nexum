@@ -29,6 +29,14 @@ import type { MessageStore } from "./message-store.js"
 import { normalizeNexumToolRequest } from "./tools.js"
 import { NexumSkillInvocationError } from "./skill-invocation.js"
 import type { NexumSkillInvocationPort } from "./skill-invocation.js"
+export {
+  NEXUM_DEFAULT_ROLE_PROMPT,
+  NexumRolePromptError,
+  type NexumRolePrompt,
+  type NexumRolePromptSource,
+  type NexumRolePromptStore,
+} from "./role-prompt.js"
+import type { NexumRolePromptStore } from "./role-prompt.js"
 
 /** Agent 请求模型生成时携带的最小输入。 */
 export interface ModelToolDefinition {
@@ -419,6 +427,8 @@ export interface NexumCodingLoopOptions {
   readonly projectContext?: ProjectContextPort
   readonly question?: NexumQuestionPort
   readonly skills?: NexumSkillInvocationPort
+  /** 每次模型调用前临时注入的默认角色提示词，不写入 Session 历史。 */
+  readonly rolePrompt?: NexumRolePromptStore
   readonly compactionThreshold?: number
   readonly compactionKeepRecent?: number
   readonly maxSteps?: number
@@ -572,11 +582,18 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
     }
     /** 只用于本轮模型请求：临时注入 skill 与项目上下文，不影响落盘历史。 */
     const injectTemporaryContext = async (history: readonly ModelMessage[]): Promise<ModelMessage[]> => {
+      const rolePrompt = options.rolePrompt ? await options.rolePrompt.get() : undefined
+      const roleSystemMessages = rolePrompt
+        ? [{ role: "system" as const, content: rolePrompt.prompt, sourceID: "runtime:default-role" }]
+        : []
+      for (const message of roleSystemMessages) {
+        if (message.sourceID) temporarySourceIDs.add(message.sourceID)
+      }
       for (const message of skillSystemMessages) {
         if (message.role === "system" && message.sourceID) temporarySourceIDs.add(message.sourceID)
       }
-      const withSkills = insertSkillSystemMessages(skillSystemMessages, history)
-      return restoreProjectContext(input.sessionID, withSkills, options.projectContext, publish, temporarySourceIDs)
+      const withTemporarySystemMessages = insertSystemMessages([...roleSystemMessages, ...skillSystemMessages], history)
+      return restoreProjectContext(input.sessionID, withTemporarySystemMessages, options.projectContext, publish, temporarySourceIDs)
     }
 
     try {
@@ -1276,8 +1293,8 @@ function compactedMessages(result: ContextCompactionResult): ModelMessage[] {
   ]
 }
 
-/** 把本轮激活的 Skill 系统消息临时放到历史之前，并按 sourceID 去重。 */
-function insertSkillSystemMessages(
+/** 把本轮临时系统消息放到历史之前，并按 sourceID 去重。 */
+function insertSystemMessages(
   systemMessages: readonly ModelMessage[],
   messages: readonly ModelMessage[],
 ): ModelMessage[] {

@@ -25,6 +25,7 @@ import {
   type NexumPermissionBroker,
   type NexumPermissionPolicyStore,
   type NexumQuestionPort,
+  type NexumRolePromptStore,
   type NexumRuntime,
   type SessionStore,
 } from "@nexum/core"
@@ -41,6 +42,7 @@ import { createFileMessageStore, createInMemoryMessageStore } from "./message-st
 import { createFilePermissionPolicyStore } from "./permission-policy.ts"
 import { createFileSessionStore, createInMemorySessionStore } from "./session-store.ts"
 import { createFileModelConfigStore } from "./model-config.ts"
+import { createFileRolePromptStore, createNexumRolePromptStore } from "./role-prompt.ts"
 import { createNexumEventHub, type NexumEventHub } from "./events.ts"
 import { createLocalHostAdapter } from "./local-host.ts"
 import { createFileMemory } from "./memory.ts"
@@ -61,6 +63,8 @@ export { createInMemoryMessageStore } from "./message-store.ts"
 export type { FileMessageStoreOptions, InMemoryMessageStore } from "./message-store.ts"
 export { createFileModelConfigStore, createNexumModelConfigStore } from "./model-config.ts"
 export type { FileModelConfigStoreOptions } from "./model-config.ts"
+export { createFileRolePromptStore, createNexumRolePromptStore } from "./role-prompt.ts"
+export type { FileRolePromptStoreOptions } from "./role-prompt.ts"
 export { createOpenAICompatibleModelPort } from "./openai-model.ts"
 export type { NexumFetch, OpenAICompatibleModelPortOptions } from "./openai-model.ts"
 export { createFilePermissionPolicyStore } from "./permission-policy.ts"
@@ -82,6 +86,7 @@ export interface NexumRuntimeStorageOptions {
   readonly messageFile?: string
   readonly interactionFile?: string
   readonly modelConfigFile?: string
+  readonly rolePromptFile?: string
   readonly skillRegistryFile?: string
   readonly permissionPolicyFile?: string
   readonly eventFile?: string
@@ -91,6 +96,7 @@ export interface NexumRuntimeStorageOptions {
 export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly model?: ModelPort
   readonly modelConfig?: NexumModelConfigStore
+  readonly rolePrompt?: NexumRolePromptStore
   readonly sessions?: NexumSessionService
   readonly sessionStore?: SessionStore
   readonly messageStore?: MessageStore
@@ -112,6 +118,7 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
 
 export interface NexumDefaultRuntime extends NexumRuntime {
   readonly modelConfig: NexumModelConfigStore
+  readonly rolePrompt: NexumRolePromptStore
   readonly sessionService: NexumSessionService
   readonly eventHub: NexumEventHub
   readonly messageStore: MessageStore
@@ -130,6 +137,9 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     directoryValidator: createLocalDirectoryValidator(),
   })
   const modelConfig = options.modelConfig ?? createNexumModelConfigStore()
+  const rolePrompt = options.rolePrompt ?? (options.rolePromptFile
+    ? createFileRolePromptStore({ filePath: options.rolePromptFile })
+    : createNexumRolePromptStore())
   const messageStore = options.messageStore ?? createInMemoryMessageStore()
   const interactionStore = options.interactionStore
   const eventHub = options.eventHub ?? createNexumEventHub()
@@ -158,6 +168,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     tools: tools.definitions,
     question,
     skills: skillInvocation,
+    rolePrompt,
   }
   const model = options.model ?? createOpenAICompatibleModelPort({ config: modelConfig })
   const modelProbe = options.modelProbe ?? createNexumModelProbePort({ model })
@@ -176,6 +187,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   })
   return Object.assign(runtime, {
     modelConfig,
+    rolePrompt,
     sessionService: sessions,
     eventHub,
     messageStore,
@@ -195,6 +207,7 @@ export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefa
   const messageFile = options.messageFile ?? join(dataDirectory, "messages.json")
   const interactionFile = options.interactionFile ?? join(dataDirectory, "interactions.json")
   const modelConfigFile = options.modelConfigFile ?? join(dataDirectory, "model-config.json")
+  const rolePromptFile = options.rolePromptFile ?? join(dataDirectory, "role-prompt.json")
   const skillRegistryFile = options.skillRegistryFile ?? join(dataDirectory, "skills.json")
   const permissionPolicyFile = options.permissionPolicyFile ?? join(dataDirectory, "permission-policies.json")
   const eventFile = options.eventFile ?? join(dataDirectory, "events.json")
@@ -205,6 +218,7 @@ export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefa
     messageStore: options.messageStore ?? createFileMessageStore({ filePath: messageFile }),
     interactionStore: options.interactionStore ?? createFileInteractionStore({ filePath: interactionFile }),
     modelConfig: options.modelConfig ?? createFileModelConfigStore({ filePath: modelConfigFile }),
+    rolePromptFile,
     skillRegistryFile,
     eventHub: options.eventHub ?? createNexumEventHub({ filePath: eventFile }),
     memory: options.memory ?? createFileMemory({ filePath: memoryFile }),
