@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createNexumSessionService, normalizeNexumToolRequest } from "../src/index.ts"
+import { createNexumCodingLoop, createNexumSessionService, normalizeNexumToolRequest, type PermissionPort } from "../src/index.ts"
 import { createNexumToolRegistry } from "../../nexum-adapters/src/index.ts"
 
 const temporaryDirectories: string[] = []
@@ -33,6 +33,121 @@ test("registers read, write/edit, and shell tools with normalized permission res
     action: "shell",
     resource: "echo ok",
   })
+})
+
+test("exposes Nexum-managed Skill registry operations without shell discovery", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-skill-tool-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory })
+  const calls: Array<{ operation: string; input: Record<string, unknown> }> = []
+  const skill = {
+    id: "metric-view-lifecycle",
+    name: "Metric View Lifecycle",
+    description: "test skill",
+    digest: "digest",
+    fileCount: 1,
+    files: ["SKILL.md"],
+    status: "ready" as const,
+    diagnostics: [],
+  }
+  const skillRegistry = {
+    async register(address: string) {
+      calls.push({ operation: "register", input: { address } })
+      return skill
+    },
+    async refresh(id?: string) {
+      calls.push({ operation: "refresh", input: id ? { id } : {} })
+    },
+    async list() {
+      calls.push({ operation: "list", input: {} })
+      return [skill]
+    },
+    async get() {
+      return undefined
+    },
+    async unregister(id: string) {
+      calls.push({ operation: "unregister", input: { id } })
+    },
+  }
+  const registry = createNexumToolRegistry({ sessions, skillRegistry })
+
+  expect(registry.names).toContain("skill_registry")
+  expect(normalizeNexumToolRequest(session.sessionID, "skill_registry", {
+    operation: "register",
+    address: "/workspace/skills/metric-view-lifecycle",
+  })).toMatchObject({ action: "skill.manage", resource: "/workspace/skills/metric-view-lifecycle" })
+  expect(normalizeNexumToolRequest(session.sessionID, "skill_registry", { operation: "list" })).toMatchObject({
+    action: "skill.read",
+    resource: "skills",
+  })
+  expect(normalizeNexumToolRequest(session.sessionID, "skill_registry", { operation: "unregister", id: skill.id })).toMatchObject({
+    action: "skill.manage",
+    resource: skill.id,
+  })
+
+  const registered = await registry.port.execute(normalizeNexumToolRequest(session.sessionID, "skill_registry", {
+    operation: "register",
+    address: "/workspace/skills/metric-view-lifecycle",
+  }))
+  const detailed = await registry.port.execute(normalizeNexumToolRequest(session.sessionID, "skill_registry", {
+    operation: "detail",
+    id: skill.id,
+  }))
+  const removed = await registry.port.execute(normalizeNexumToolRequest(session.sessionID, "skill_registry", {
+    operation: "unregister",
+    id: skill.id,
+  }))
+
+  expect(registered).toEqual({ ok: true, output: JSON.stringify(skill) })
+  expect(detailed).toEqual({ ok: true, output: JSON.stringify(skill) })
+  expect(removed).toEqual({ ok: true, output: JSON.stringify({ id: skill.id, deleted: true }) })
+  expect(calls.map((call) => call.operation)).toEqual(["register", "list", "unregister"])
+})
+
+test("requires the Skill management permission action for mutating operations", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-skill-permission-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory })
+  const requests: Array<{ action: string; resource: string }> = []
+  const registry = createNexumToolRegistry({
+    sessions,
+    skillRegistry: {
+      async register() { return { id: "skill", name: "skill", description: "", digest: "", fileCount: 1, files: ["SKILL.md"], status: "ready", diagnostics: [] } },
+      async refresh() {},
+      async list() { return [] },
+      async get() { return undefined },
+      async unregister() {},
+    },
+  })
+
+  const permission = {
+    async evaluate(request: Parameters<PermissionPort["evaluate"]>[0]) {
+      requests.push({ action: request.action, resource: request.resource })
+      return "allow" as const
+    },
+  }
+
+  await createNexumCodingLoop({
+    model: {
+      async *prompt(input) {
+        if (input.toolResults?.length) {
+          yield { type: "completed" }
+          return
+        }
+        yield { type: "tool-call", toolName: "skill_registry", toolInput: { operation: "register", address: "/tmp/skill" } }
+        yield { type: "completed" }
+      },
+    },
+    tool: registry.port,
+    permission,
+    sessions,
+    events: { async publish() {} },
+    tools: registry.definitions,
+  }).run({ sessionID: session.sessionID, text: "注册 Skill" })
+
+  expect(requests[0]).toEqual({ action: "skill.manage", resource: "/tmp/skill" })
 })
 
 test("executes registered file tools inside the session directory", async () => {

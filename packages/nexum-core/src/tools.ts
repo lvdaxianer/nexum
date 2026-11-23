@@ -4,7 +4,7 @@ import type { ModelToolDefinition, NexumSessionService, ToolPort, ToolRequest } 
 import type { HostPort } from "./host.js"
 
 /** POC 首期内置工具名称。 */
-export type NexumBuiltinToolName = "read" | "write" | "edit" | "shell"
+export type NexumBuiltinToolName = "read" | "write" | "edit" | "shell" | "skill_registry"
 
 /** 工具注册配置。 */
 export interface NexumToolRegistryOptions {
@@ -26,14 +26,30 @@ export function normalizeNexumToolRequest(
   input: Record<string, unknown>,
   signal?: AbortSignal,
 ): ToolRequest {
-  const action = toolName === "read" ? "read" : toolName === "write" || toolName === "edit" ? "write" : toolName
+  const action = toolName === "read"
+    ? "read"
+    : toolName === "write" || toolName === "edit"
+      ? "write"
+      : toolName === "skill_registry"
+        ? skillRegistryPermissionAction(input.operation)
+        : toolName
   const resource =
     toolName === "shell"
       ? typeof input.command === "string"
         ? input.command
         : "shell"
+      : toolName === "skill_registry"
+        ? typeof input.address === "string"
+          ? input.address
+          : typeof input.id === "string"
+            ? input.id
+            : "skills"
       : typeof input.path === "string"
         ? input.path
         : toolName
   return { sessionID, toolName, action, resource, input, ...(signal ? { signal } : {}) }
+}
+
+function skillRegistryPermissionAction(operation: unknown): "skill.manage" | "skill.read" {
+  return operation === "register" || operation === "refresh" || operation === "unregister" ? "skill.manage" : "skill.read"
 }
