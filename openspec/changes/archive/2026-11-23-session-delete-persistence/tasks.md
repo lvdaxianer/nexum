@@ -18,7 +18,7 @@
 
 ## 4. 集成验证
 
-- [ ] 4.1 运行受影响包的聚焦测试、`bun run --cwd packages/nexum-surfaces typecheck:tsc`、`bun run --cwd packages/nexum-surfaces build`、相关 smoke、`openspec validate session-delete-persistence --strict` 和 `git diff --check`，确认模型配置持久化、Session 持久化和删除边界均有证据。
+- [x] 4.1 运行受影响包的聚焦测试、`bun run --cwd packages/nexum-surfaces typecheck:tsc`、`bun run --cwd packages/nexum-surfaces build`、相关 smoke、`openspec validate session-delete-persistence --strict` 和 `git diff --check`，确认模型配置持久化、Session 持久化和删除边界均有证据。聚焦测试与删除相关 smoke 全部通过；隔离 UI 全量 smoke 的既有模型 Probe/浏览器上下文用例仍有环境级偶发失败，未涉及本次删除路径；根目录 `bun run check` 仍受既有缺失 `bun check` 脚本阻断。
 
 ## Workflow follow-up
 

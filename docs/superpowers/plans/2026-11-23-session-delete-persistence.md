@@ -50,6 +50,6 @@
 
 ## Task 4: Integration and completion audit
 
-- [ ] 4.1 Run `bun test` from `packages/nexum-server`, focused Core/Adapter tests from Task 1, `bun test` from `packages/nexum-client`, Surface typecheck/build/smoke, `openspec validate session-delete-persistence --strict`, and `git diff --check`; separately record the pre-existing full Core-suite class-instance failures if they remain isolated from focused tests.
-- [ ] 4.2 Re-read `proposal.md`, `spec.md`, `design.md`, and this plan; verify model configuration persistence, Session persistence, deletion boundary, API documentation, and UI confirmation one by one with file/test evidence. Run the final code-review and per-task audit before marking all OpenSpec tasks complete.
-- [ ] 4.3 Archive the completed OpenSpec change only after all implementation tasks and audits pass, then merge the clean task branch back into `dev-v0.0.1` with `--no-ff` and verify ancestry.
+- [x] 4.1 Run `bun test` from `packages/nexum-server`, focused Core/Adapter tests from Task 1, `bun test` from `packages/nexum-client`, Surface typecheck/build/smoke, `openspec validate session-delete-persistence --strict`, and `git diff --check`; separately record the pre-existing full Core-suite class-instance failures if they remain isolated from focused tests. 聚焦包测试、Surface 构建/类型检查、删除相关 smoke、OpenSpec 严格校验和 diff 检查均通过；隔离 UI 全量 smoke 的既有模型 Probe/浏览器上下文用例存在环境级偶发失败；根目录 `bun run check` 受既有缺失 `bun check` 脚本阻断。
+- [x] 4.2 Re-read `proposal.md`, `spec.md`, `design.md`, and this plan; verify model configuration persistence, Session persistence, deletion boundary, API documentation, and UI confirmation one by one with file/test evidence. Run the final code-review and per-task audit before marking all OpenSpec tasks complete.
+- [x] 4.3 Archive the completed OpenSpec change only after all implementation tasks and audits pass, then merge the clean task branch back into `dev-v0.0.1` with `--no-ff` and verify ancestry.
