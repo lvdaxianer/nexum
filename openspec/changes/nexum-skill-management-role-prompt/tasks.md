@@ -2,10 +2,10 @@
 
 ## 1. Skill Registry 持久化与安全地址加载
 
-- [ ] 1.1 扩展 `nexum-core` 的 Skill registry contract、状态值和注册记录类型，覆盖 address/sourceType/digest/时间戳/安全错误，并保持现有 resolver 的 ready-only 语义；通过 Core 类型检查和 registry contract 单测验证。
-- [ ] 1.2 在 `nexum-adapters` 实现本地地址规范化、注册/幂等、刷新、冲突聚合和取消注册，复用现有 `SKILL.md`/symlink/文件大小校验；通过单测覆盖有效目录、重复地址、重复 ID、坏源和路径逃逸。
-- [ ] 1.3 增加原子 JSON registry store、`skills.json` 默认路径、显式文件配置和启动恢复；通过重启模拟测试验证注册状态恢复、单个坏源不阻塞其他源、写入失败不产生假成功。
-- [ ] 1.4 验证取消注册只移除 Nexum 记录而不修改源目录，并更新 `docs/headless-core-poc.md` 或对应 Nexum 文档说明持久化位置和删除边界；通过文件快照测试和文档命令核验。
+- [x] 1.1 扩展 `nexum-core` 的 Skill registry contract、状态值和注册记录类型，覆盖 address/sourceType/digest/时间戳/安全错误，并保持现有 resolver 的 ready-only 语义；通过 Core 类型检查和 registry contract 单测验证。
+- [x] 1.2 在 `nexum-adapters` 实现本地地址规范化、注册/幂等、刷新、冲突聚合和取消注册，复用现有 `SKILL.md`/symlink/文件大小校验；通过单测覆盖有效目录、重复地址、重复 ID、坏源和路径逃逸。
+- [x] 1.3 增加原子 JSON registry store、`skills.json` 默认路径、显式文件配置和启动恢复；通过重启模拟测试验证注册状态恢复、单个坏源不阻塞其他源、写入失败不产生假成功。
+- [x] 1.4 验证取消注册只移除 Nexum 记录而不修改源目录，并更新 `docs/headless-core-poc.md` 或对应 Nexum 文档说明持久化位置和删除边界；通过文件快照测试和文档命令核验。
 
 ## 2. Protocol、Server、Client 与事件
 

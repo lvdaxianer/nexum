@@ -82,6 +82,7 @@ export interface NexumRuntimeStorageOptions {
   readonly messageFile?: string
   readonly interactionFile?: string
   readonly modelConfigFile?: string
+  readonly skillRegistryFile?: string
   readonly permissionPolicyFile?: string
   readonly eventFile?: string
   readonly memoryFile?: string
@@ -140,7 +141,10 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     ...(permissionPolicyStore ? { policyStore: permissionPolicyStore } : {}),
   })
   const question = options.questionPort ?? createNexumQuestionPort({ ...(interactionStore ? { interactionStore } : {}) })
-  const skills = options.skillRegistry ?? createNexumSkillRegistry({ roots: options.skillRoots ?? [] })
+  const skills = options.skillRegistry ?? createNexumSkillRegistry({
+    roots: options.skillRoots ?? [],
+    ...(options.skillRegistryFile ? { filePath: options.skillRegistryFile } : {}),
+  })
   const skillInvocation = options.skillInvocation ?? createNexumSkillInvocationPort({ registry: skills, permission })
   const host = options.host ?? createLocalHostAdapter()
   const tools = createNexumToolRegistry({ sessions, host })
@@ -191,6 +195,7 @@ export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefa
   const messageFile = options.messageFile ?? join(dataDirectory, "messages.json")
   const interactionFile = options.interactionFile ?? join(dataDirectory, "interactions.json")
   const modelConfigFile = options.modelConfigFile ?? join(dataDirectory, "model-config.json")
+  const skillRegistryFile = options.skillRegistryFile ?? join(dataDirectory, "skills.json")
   const permissionPolicyFile = options.permissionPolicyFile ?? join(dataDirectory, "permission-policies.json")
   const eventFile = options.eventFile ?? join(dataDirectory, "events.json")
   const memoryFile = options.memoryFile ?? join(dataDirectory, "memory.json")
@@ -200,6 +205,7 @@ export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefa
     messageStore: options.messageStore ?? createFileMessageStore({ filePath: messageFile }),
     interactionStore: options.interactionStore ?? createFileInteractionStore({ filePath: interactionFile }),
     modelConfig: options.modelConfig ?? createFileModelConfigStore({ filePath: modelConfigFile }),
+    skillRegistryFile,
     eventHub: options.eventHub ?? createNexumEventHub({ filePath: eventFile }),
     memory: options.memory ?? createFileMemory({ filePath: memoryFile }),
     permissionPolicyFile,

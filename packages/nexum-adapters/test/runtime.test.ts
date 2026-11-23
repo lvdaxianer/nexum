@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
@@ -50,6 +50,24 @@ test("creates a file-backed local runtime", async () => {
   expect(runtime.eventHub).toBeDefined()
   expect(runtime.sessionService).toBeDefined()
   await runtime.close()
+})
+
+test("persists Skill registrations in the local runtime data directory", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-local-skill-"))
+  directories.push(directory)
+  const skillRoot = join(directory, "metric-view-lifecycle")
+  const dataDirectory = join(directory, ".nexum")
+  await mkdir(skillRoot, { recursive: true })
+  await writeFile(join(skillRoot, "SKILL.md"), "---\nname: metric-view-lifecycle\ndescription: test\n---\n")
+
+  const first = createLocalRuntime({ dataDirectory })
+  await expect(first.skillRegistry.register(skillRoot)).resolves.toMatchObject({ id: "metric-view-lifecycle", status: "ready" })
+  await first.close()
+
+  const second = createLocalRuntime({ dataDirectory })
+  await second.skillRegistry.refresh()
+  await expect(second.skillRegistry.list()).resolves.toMatchObject([{ id: "metric-view-lifecycle", status: "ready" }])
+  await second.close()
 })
 
 test("persists memory through the local adapter and maps optional MCP resources", async () => {

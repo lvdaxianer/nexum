@@ -22,10 +22,10 @@ The registry SHALL accept only explicitly registered local Skill directories, re
 
 #### Scenario: Path escape is rejected
 
-- **GIVEN** a registration request points outside every configured Skill root
+- **GIVEN** a registration request contains path traversal or resolves through a symlink outside the registered Skill directory
 - **WHEN** the request is validated
 - **THEN** the server returns a caller-safe path error with a trace ID
-- **AND** no file outside the root is read
+- **AND** no file outside the registered directory is read
 
 #### Scenario: Duplicate ID is visible
 
