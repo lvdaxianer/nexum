@@ -393,9 +393,9 @@ test("accepts an experimental continue request without appending a new prompt", 
       async run(input) {
         return (await sessionService.get(input.sessionID))!
       },
-      async continue(sessionID) {
+      async continueStart(sessionID) {
         continuations.push(sessionID)
-        return (await sessionService.get(sessionID))!
+        return { accepted: true, promise: sessionService.get(sessionID).then((value) => value!) }
       },
       async cancel(sessionID) {
         return sessionService.setStatus(sessionID, "cancelled")
@@ -434,7 +434,7 @@ test("rejects experimental continue while the session is running", async () => {
       async run(input) {
         return (await sessionService.get(input.sessionID))!
       },
-      async continue() {
+      continueStart() {
         throw new Error("continue should not be called for a running session")
       },
       async cancel(sessionID) {
@@ -464,6 +464,41 @@ test("rejects experimental continue while the session is running", async () => {
   })
 })
 
+test("rejects a legacy continue adapter without atomic admission", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-continue-legacy-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  const server = await startNexumServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        return (await sessionService.get(input.sessionID))!
+      },
+      async continue() {
+        throw new Error("legacy continue should not be called")
+      },
+      async cancel(sessionID) {
+        return sessionService.setStatus(sessionID, "cancelled")
+      },
+    },
+  })
+  servers.push(server)
+
+  const response = await fetch(
+    new URL(`/api/experimental/nexum/session/${session.sessionID}/continue`, server.url),
+    { method: "POST", body: "{}" },
+  )
+  const body = (await response.json()) as { errorCode: string; message: string }
+
+  expect(response.status).toBe(503)
+  expect(body).toMatchObject({
+    errorCode: "NEXUM_CONTINUE_NOT_CONFIGURED",
+    message: "Nexum Continue 尚未配置",
+  })
+})
+
 test("returns a stable error when no continuation context is available", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-server-continue-context-"))
   temporaryDirectories.push(directory)
@@ -476,11 +511,8 @@ test("returns a stable error when no continuation context is available", async (
       async run(input) {
         return (await sessionService.get(input.sessionID))!
       },
-      async canContinue() {
-        return false
-      },
-      async continue() {
-        throw new Error("continue should not start without context")
+      async continueStart() {
+        return { accepted: false, reason: "not_continuable" as const }
       },
       async cancel(sessionID) {
         return sessionService.setStatus(sessionID, "cancelled")
