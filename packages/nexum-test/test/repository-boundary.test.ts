@@ -64,4 +64,6 @@ test("仓库不保留旧 workspace 包目录", async () => {
 
   const packageDirectories = new Set(await readdir(resolve(repositoryRoot, "packages")))
   expect(oldPackageDirectories.filter((directory) => packageDirectories.has(directory))).toEqual([])
+  expect(await Bun.file(resolve(repositoryRoot, "strobe.json")).exists()).toBe(false)
+  expect(await Bun.file(resolve(repositoryRoot, ".dockerignore")).text()).not.toContain(".opencode")
 })
