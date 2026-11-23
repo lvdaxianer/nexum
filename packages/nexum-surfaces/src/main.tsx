@@ -1981,18 +1981,30 @@ function App() {
                             </Show>
                           </Match>
                           <Match when={item.kind === "reasoning"}>
-                            <div class="reasoning-stream" aria-label="模型思考过程">
-                              <div class="reasoning-label">
-                                <span>{item.title}</span>
-                                <span class="turn-meta">{item.localTime}</span>
+                            <details
+                              class="reasoning-fold"
+                              open={item.status === "streaming"}
+                              aria-label="模型思考过程"
+                            >
+                              <summary>
+                                <span class="rf-icon" aria-hidden="true">
+                                  💭
+                                </span>
+                                <span class="rf-title">{item.title}</span>
+                                <span class="rf-meta">
+                                  约 {(item.content ?? "").length} 字 · {item.localTime}
+                                </span>
                                 <Show when={item.status === "streaming"}>
                                   <span class="stream-cursor" aria-hidden="true">
                                     ▍
                                   </span>
                                 </Show>
-                              </div>
+                                <span class="rf-chevron" aria-hidden="true">
+                                  ▸
+                                </span>
+                              </summary>
                               <div class="reasoning-copy">{item.content}</div>
-                            </div>
+                            </details>
                           </Match>
                           <Match when={item.kind === "execution"}>
                             <div

@@ -1444,30 +1444,74 @@ input[aria-invalid="true"]:focus {
   border-radius: 8px;
 }
 
-.reasoning-stream {
-  max-width: 760px;
-  padding: 2px 0 2px 14px;
-  border-left: 2px solid #b8d8d4;
-  color: #6d7c8c;
+/* 思考过程默认折叠为一行摘要，流式进行中自动展开，点击可查看全文 */
+.reasoning-fold {
+  margin-top: 6px;
+  border-radius: 8px;
 }
 
-.reasoning-label {
+.reasoning-fold summary {
   display: flex;
-  align-items: baseline;
-  gap: 9px;
-  margin-bottom: 5px;
-  color: #4e817e;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  list-style: none;
+  color: #7d8b9a;
   font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  transition: background 140ms ease;
+}
+
+.reasoning-fold summary::-webkit-details-marker {
+  display: none;
+}
+
+.reasoning-fold summary:hover {
+  background: #f2f6f8;
+}
+
+.reasoning-fold .rf-icon {
+  font-size: 12px;
+}
+
+.reasoning-fold .rf-title {
+  color: #7d8b9a;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.reasoning-copy {
-  white-space: pre-wrap;
-  color: #68798b;
-  font-size: 13px;
+.reasoning-fold .rf-meta {
+  color: #b3bfcc;
+}
+
+.reasoning-fold .rf-chevron {
+  margin-left: auto;
+  color: #b3bfcc;
+  transition: transform 140ms ease;
+}
+
+.reasoning-fold[open] summary {
+  background: #f2f6f8;
+}
+
+.reasoning-fold[open] .rf-chevron {
+  transform: rotate(90deg);
+}
+
+.reasoning-fold .reasoning-copy {
+  max-height: 38vh;
+  margin: 6px 0 2px;
+  padding: 10px 12px 10px 14px;
+  overflow-y: auto;
+  border-left: 2px solid #d5dee6;
+  border-radius: 0 8px 8px 0;
+  background: #f7f9fb;
+  color: #7d8b9a;
+  font-size: 12.5px;
   line-height: 1.75;
+  white-space: pre-wrap;
 }
 
 .thinking-status {
