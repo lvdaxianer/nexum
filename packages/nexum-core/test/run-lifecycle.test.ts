@@ -32,6 +32,183 @@ async function createSession() {
   return { directory, session, sessions }
 }
 
+test("reserves a running session before start returns so deletion cannot win admission", async () => {
+  const { directory, session, sessions } = await createSession()
+  let releaseExecution: (() => void) | undefined
+  const executionBlocked = new Promise<void>((resolve) => {
+    releaseExecution = resolve
+  })
+  const loop = dependencies(
+    { async publish() {} },
+    {
+      async *prompt() {
+        await executionBlocked
+        yield { type: "text", content: "完成" }
+        yield { type: "completed" }
+      },
+    },
+    { sessions, maxModelRetries: 0 },
+  )
+
+  const started = loop.start!({ sessionID: session.sessionID, text: "开始任务" })
+  expect(started.accepted).toBe(true)
+  await expect(sessions.delete(session.sessionID)).rejects.toMatchObject({ code: "session_busy" })
+
+  releaseExecution?.()
+  if (!started.accepted) throw new Error("运行未被接受")
+  await expect(started.promise).resolves.toMatchObject({ status: "completed" })
+  await rm(directory, { recursive: true, force: true })
+})
+
+test("exposes admission separately from the execution promise", async () => {
+  const { directory, session, sessions: baseSessions } = await createSession()
+  let releaseAdmission!: () => void
+  const admissionReleased = new Promise<void>((resolve) => {
+    releaseAdmission = resolve
+  })
+  let executed = false
+  const sessions = {
+    ...baseSessions,
+    async setStatus(sessionID: string, status: Parameters<typeof baseSessions.setStatus>[1]) {
+      await admissionReleased
+      return baseSessions.setStatus(sessionID, status)
+    },
+  }
+  const loop = dependencies(
+    { async publish() {} },
+    {
+      async *prompt() {
+        executed = true
+        yield { type: "text", content: "完成" }
+        yield { type: "completed" }
+      },
+    },
+    { sessions },
+  )
+
+  const started = loop.start!({ sessionID: session.sessionID, text: "开始任务" })
+  expect(started.accepted).toBe(true)
+  if (!started.accepted) throw new Error("运行未被接受")
+
+  await Promise.resolve()
+  expect(executed).toBe(false)
+  expect(started.admission).toBeDefined()
+  releaseAdmission()
+
+  await expect(started.admission).resolves.toMatchObject({ status: "running" })
+  await expect(started.promise).resolves.toMatchObject({ status: "completed" })
+  expect(executed).toBe(true)
+  await rm(directory, { recursive: true, force: true })
+})
+
+test("publishes terminal events before allowing session deletion", async () => {
+  const { directory, session, sessions } = await createSession()
+  const events: string[] = []
+  let releaseTerminal!: () => void
+  let markTerminalStarted!: () => void
+  const terminalStarted = new Promise<void>((resolve) => {
+    markTerminalStarted = resolve
+  })
+  const terminalReleased = new Promise<void>((resolve) => {
+    releaseTerminal = resolve
+  })
+  const loop = dependencies(
+    {
+      async publish(event) {
+        events.push(event.type)
+        if (event.type !== "session.completed") return
+        markTerminalStarted()
+        await terminalReleased
+      },
+    },
+    {
+      async *prompt() {
+        yield { type: "text", content: "完成" }
+        yield { type: "completed" }
+      },
+    },
+    { sessions },
+  )
+
+  const run = loop.run({ sessionID: session.sessionID, text: "终态事件" })
+  await terminalStarted
+  expect((await sessions.get(session.sessionID))?.status).toBe("running")
+  await expect(sessions.delete(session.sessionID)).rejects.toMatchObject({ code: "session_busy" })
+
+  releaseTerminal()
+  await expect(run).resolves.toMatchObject({ status: "completed" })
+  expect(events).toEqual(["model.attempt", "assistant.text", "session.completed", "run.settled"])
+  await sessions.delete(session.sessionID)
+  expect(await sessions.get(session.sessionID)).toBeUndefined()
+  await rm(directory, { recursive: true, force: true })
+})
+
+test("finalizing publishes terminal events before allowing session deletion", async () => {
+  const { directory, session, sessions } = await createSession()
+  let modelCalls = 0
+  let releaseTerminal!: () => void
+  let markTerminalStarted!: () => void
+  const terminalStarted = new Promise<void>((resolve) => {
+    markTerminalStarted = resolve
+  })
+  const terminalReleased = new Promise<void>((resolve) => {
+    releaseTerminal = resolve
+  })
+  const loop = dependencies(
+    {
+      async publish(event) {
+        if (event.type !== "session.completed") return
+        markTerminalStarted()
+        await terminalReleased
+      },
+    },
+    {
+      async *prompt() {
+        modelCalls += 1
+        if (modelCalls === 1) {
+          yield { type: "tool-call", toolCallID: "call_finalizing", toolName: "read", toolInput: { path: "a.txt" } }
+          return
+        }
+        yield { type: "tool-call", toolCallID: "call_graceful", toolName: "read", toolInput: { path: "b.txt" } }
+      },
+    },
+    { sessions, maxSteps: 1 },
+  )
+
+  const run = loop.run({ sessionID: session.sessionID, text: "触发收尾" })
+  await terminalStarted
+  expect((await sessions.get(session.sessionID))?.status).toBe("running")
+  await expect(sessions.delete(session.sessionID)).rejects.toMatchObject({ code: "session_busy" })
+
+  releaseTerminal()
+  await expect(run).resolves.toMatchObject({ status: "completed" })
+  await sessions.delete(session.sessionID)
+  expect(await sessions.get(session.sessionID)).toBeUndefined()
+  await rm(directory, { recursive: true, force: true })
+})
+
+test("settles the session even when terminal event publishing fails", async () => {
+  const { directory, session, sessions } = await createSession()
+  const loop = dependencies(
+    {
+      async publish(event) {
+        if (event.type === "session.completed") throw new Error("事件存储失败")
+      },
+    },
+    {
+      async *prompt() {
+        yield { type: "text", content: "完成" }
+        yield { type: "completed" }
+      },
+    },
+    { sessions },
+  )
+
+  await expect(loop.run({ sessionID: session.sessionID, text: "事件失败" })).resolves.toMatchObject({ status: "completed" })
+  expect((await sessions.get(session.sessionID))?.status).toBe("completed")
+  await rm(directory, { recursive: true, force: true })
+})
+
 test("publishes one settled event after a model timeout", async () => {
   const { directory, session, sessions } = await createSession()
   const events: Array<{ type: string; data?: Record<string, unknown> }> = []

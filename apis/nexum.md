@@ -20,7 +20,7 @@
 | `GET` / `PUT` | `/api/nexum/model` | 读取和保存模型配置 |
 | `POST` | `/api/nexum/model/probe` | 探测模型能力 |
 | `GET` / `POST` | `/api/nexum/session` | 列出或创建 Session |
-| `GET` / `PUT` | `/api/nexum/session/:sessionID` | 读取或更新 Session |
+| `PUT` / `DELETE` | `/api/nexum/session/:sessionID` | 更新或删除 Session |
 | `GET` | `/api/nexum/session/:sessionID/state` | 获取恢复状态 |
 | `POST` | `/api/nexum/session/:sessionID/prompt` | 提交长任务 Prompt |
 | `POST` | `/api/experimental/nexum/session/:sessionID/continue` | 从既有 User/Tool 上下文继续运行；实验性接口 |
@@ -29,6 +29,167 @@
 | `GET` / `POST` | `/api/nexum/session/:sessionID/permission...` | 查询和回复权限请求 |
 | `GET` / `POST` | `/api/nexum/session/:sessionID/question...` | 查询、回答和取消结构化反问 |
 | `GET` / `POST` | `/api/nexum/skills...` | Skill 列表、注册、刷新、校验和激活 |
+
+## Session 删除
+
+### 接口概览
+
+`DELETE /api/nexum/session/:sessionID` 删除指定 Session 的持久化历史和运行记录，但保留工作目录与模型配置。服务按 `messageStore`、可选 `interactionStore`、`eventHub`、`sessionService` 的顺序删除；任一步依赖失败都会返回稳定的 `NEXUM_SESSION_DELETE_FAILED`，不会暴露内部错误文本。
+
+| 项目 | 内容 |
+| --- | --- |
+| 接口用途 | 删除不再需要的 Nexum Session 及其消息、交互和事件记录 |
+| 调用方 | 已确认 Session 不再需要的 Runtime 客户端 |
+| 前置条件 | `sessionID` 对应现存且当前不处于 `running` 状态的 Session |
+| 权限要求 | 当前认证约定待确认；服务实现未校验认证信息 |
+| 幂等性 | 重复删除不视为成功幂等：首次成功返回 `200`，之后返回 `404 NEXUM_SESSION_NOT_FOUND` |
+| 数据保留 | 工作目录和模型配置不受影响 |
+
+### 请求定义
+
+#### Method and URL
+
+```http
+DELETE http://127.0.0.1:4097/api/nexum/session/{sessionID}
+```
+
+| 项目 | 内容 |
+| --- | --- |
+| Method | `DELETE` |
+| URL | `/api/nexum/session/{sessionID}`；`sessionID` 必须进行 URL path 编码 |
+| Content-Type | 不适用；请求体为空 |
+| Accept | 可选；服务返回 JSON |
+
+#### Path parameters
+
+| 参数名 | 类型 | 必填 | 格式/范围 | 示例 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| `{sessionID}` | string | 是 | 已存在的 Session 标识；作为 URL path segment 传输 | `session_001` | 待删除 Session |
+
+#### Query parameters
+
+不适用。
+
+#### Request headers
+
+| Header | 必填 | 类型/格式 | 示例 | 用途 | 缺失或非法时 |
+| --- | --- | --- | --- | --- | --- |
+| `X-Trace-Id` | 否 | 1-128 位字母、数字、`.`、`_`、`:` 或 `-` | `trace_delete_001` | 排障关联；响应 Header 和响应体会返回同一 trace ID | 缺失或非法时生成新的 trace ID |
+| `Authorization` | 不适用 | — | — | 当前接口未实现认证校验 | 当前实现不会因缺失该 Header 返回认证错误 |
+
+#### Request cookies
+
+不适用。当前接口不读取或设置 Cookie。
+
+#### requestBody
+
+请求体不适用，必须为空；不得发送 JSON 删除参数。
+
+### 响应定义
+
+#### Response headers
+
+所有 JSON 响应包含以下 Header：
+
+| Header | 示例 | 用途 |
+| --- | --- | --- |
+| `Content-Type` | `application/json;charset=utf-8` | JSON 响应媒体类型 |
+| `Cache-Control` | `no-store` | 禁止缓存删除结果 |
+| `Vary` | `origin` | CORS 响应变化标识 |
+| `X-Trace-Id` | `trace_delete_001` | 与响应体 `traceId` 一致 |
+
+响应 Cookie：不适用。
+
+#### 成功响应：`200 OK`
+
+```json
+{
+  "data": {
+    "id": "session_001",
+    "deleted": true
+  },
+  "meta": {
+    "protocolVersion": "nexum.runtime.v1",
+    "traceId": "trace_delete_001"
+  }
+}
+```
+
+| 字段路径 | 类型 | 必有/可选 | 示例 | 说明 |
+| --- | --- | --- | --- | --- |
+| `data.id` | string | 必有 | `session_001` | 被删除的 Session ID |
+| `data.deleted` | boolean literal | 必有 | `true` | 固定为 `true`，表示删除成功 |
+| `meta.protocolVersion` | string | 必有 | `nexum.runtime.v1` | 协议版本 |
+| `meta.traceId` | string | 必有 | `trace_delete_001` | 请求链路标识 |
+
+#### 错误响应
+
+错误响应沿用统一错误结构，包含 `errorCode`、`message`、`traceId` 和 `meta`；`message` 不包含内部 Store 或异常文本。
+
+| HTTP 状态码 | `errorCode` | 触发条件 | 调用方处理 |
+| --- | --- | --- | --- |
+| `404` | `NEXUM_SESSION_NOT_FOUND` | Session 未知或已经成功删除后再次删除 | 停止重试该 Session ID |
+| `409` | `NEXUM_SESSION_RUN_CONFLICT` | Session 当前处于 `running`，或删除过程中检测到运行冲突 | 等待本轮运行结束后再发起删除 |
+| `405` | `NEXUM_METHOD_NOT_ALLOWED` | 对该资源使用非 `PUT`/`DELETE` 方法 | 改用支持的方法 |
+| `500` | `NEXUM_SESSION_DELETE_FAILED` | Message、Interaction、Event 或 Session Store 删除失败 | 使用 `traceId` 排障；按服务恢复策略重试 |
+
+`404` 示例：
+
+```json
+{
+  "errorCode": "NEXUM_SESSION_NOT_FOUND",
+  "message": "Session 不存在",
+  "traceId": "trace_delete_002",
+  "meta": {
+    "protocolVersion": "nexum.runtime.v1",
+    "traceId": "trace_delete_002"
+  }
+}
+```
+
+`409` 示例：
+
+```json
+{
+  "errorCode": "NEXUM_SESSION_RUN_CONFLICT",
+  "message": "Session 当前正在运行，请先等待本轮完成后再删除",
+  "traceId": "trace_delete_003",
+  "meta": {
+    "protocolVersion": "nexum.runtime.v1",
+    "traceId": "trace_delete_003"
+  }
+}
+```
+
+`500` 示例：
+
+```json
+{
+  "errorCode": "NEXUM_SESSION_DELETE_FAILED",
+  "message": "Session 删除失败",
+  "traceId": "trace_delete_004",
+  "meta": {
+    "protocolVersion": "nexum.runtime.v1",
+    "traceId": "trace_delete_004"
+  }
+}
+```
+
+### curl 示例
+
+```bash
+curl --request DELETE 'http://127.0.0.1:4097/api/nexum/session/session_001' \
+  --header 'X-Trace-Id: trace_delete_001'
+```
+
+请求不携带 body、认证 Header 或 Cookie。成功响应的 HTTP Header 为 `Content-Type: application/json;charset=utf-8`、`Cache-Control: no-store`、`Vary: origin` 和 `X-Trace-Id: trace_delete_001`，响应体如下：
+
+```json
+{
+  "data": { "id": "session_001", "deleted": true },
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_delete_001" }
+}
+```
 
 ## 事件语义
 

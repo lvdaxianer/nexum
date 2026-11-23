@@ -7,9 +7,9 @@
 
 ## 2. Server、Client 与 API 契约
 
-- [ ] 2.1 在 `packages/nexum-server` 增加 `DELETE /api/nexum/session/:sessionID`，按“消息→交互→事件→Session 元数据”顺序清理，映射 404/409/500 稳定错误；先写 Server API RED 测试，再实现并验证成功、未知、running、重复删除、历史清理和工作目录保留场景。
-- [ ] 2.2 在 `packages/nexum-client` 与 `packages/nexum-protocol` 增加 `session.delete` 类型和调用方法；先写客户端请求契约测试，再验证 DELETE path、Envelope 和稳定错误解析。
-- [ ] 2.3 更新 `apis/nexum.md` 的 Session 资源表和删除端点章节，包含参数、请求头、响应、错误、幂等语义和可运行 curl；验证文档与 Server 测试中的实际路径/字段一致。
+- [x] 2.1 在 `packages/nexum-server` 增加 `DELETE /api/nexum/session/:sessionID`，按“消息→交互→事件→Session 元数据”顺序清理，映射 404/409/500 稳定错误；先写 Server API RED 测试，再实现并验证成功、未知、running、重复删除、历史清理和工作目录保留场景。
+- [x] 2.2 在 `packages/nexum-client` 与 `packages/nexum-protocol` 增加 `session.delete` 类型和调用方法；先写客户端请求契约测试，再验证 DELETE path、Envelope 和稳定错误解析。
+- [x] 2.3 更新 `apis/nexum.md` 的 Session 资源表和删除端点章节，包含参数、请求头、响应、错误、幂等语义和可运行 curl；验证文档与 Server 测试中的实际路径/字段一致。
 
 ## 3. Web Surface 删除交互
 

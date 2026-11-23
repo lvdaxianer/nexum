@@ -82,7 +82,7 @@ function defaultCapabilities(options: NexumRuntimeOptions): readonly NexumCapabi
     capability("tool", ["execute"]),
     capability("permission", ["evaluate"]),
     capability("interaction", ["request", "reply"]),
-    capability("session", ["create", "list", "get", "update"]),
+    capability("session", ["create", "list", "get", "update", "delete"]),
     capability("context", ["load", "compact"]),
     capability("skill", ["list", "activate"]),
     capability("memory", ["search", "upsert", "remove"], options.memory !== undefined),

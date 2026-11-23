@@ -184,7 +184,7 @@ export interface NexumSessionService {
   readonly get: (sessionID: string) => Promise<SessionRecord | undefined>
   readonly update: (sessionID: string, input: NexumSessionUpdateInput) => Promise<SessionRecord>
   readonly setStatus: (sessionID: string, status: NexumSessionStatus) => Promise<SessionRecord>
-  readonly delete: (sessionID: string) => Promise<void>
+  readonly delete: (sessionID: string, beforeDelete?: () => Promise<void>) => Promise<void>
 }
 
 /** Nexum Session Service 的依赖配置。 */
@@ -353,7 +353,7 @@ export function createNexumSessionService(options: NexumSessionServiceOptions = 
         return next
       })
     },
-    delete(sessionID) {
+    delete(sessionID, beforeDelete) {
       return enqueueSessionOperation(sessionID, async () => {
         const current = await store.get(sessionID)
         if (!current) {
@@ -362,6 +362,7 @@ export function createNexumSessionService(options: NexumSessionServiceOptions = 
         if (current.status === "running") {
           throw new NexumSessionError("session_busy", "Session 当前正在运行", sessionID)
         }
+        await beforeDelete?.()
         await store.delete(sessionID)
       })
     },
@@ -448,14 +449,14 @@ type NexumCodingLoopExecutionInput = NexumCodingLoopInput | { readonly sessionID
 
 /** 用于在 HTTP admission 与异步执行之间保持同一 Session 的运行占用。 */
 export type NexumCodingLoopStart =
-  | { readonly accepted: true; readonly promise: Promise<SessionRecord> }
+  | { readonly accepted: true; readonly admission: Promise<SessionRecord>; readonly promise: Promise<SessionRecord> }
   | { readonly accepted: false }
 
 /**
  * Continue admission 的稳定失败原因。
  */
 export type NexumCodingLoopContinueStart =
-  | { readonly accepted: true; readonly promise: Promise<SessionRecord> }
+  | { readonly accepted: true; readonly admission: Promise<SessionRecord>; readonly promise: Promise<SessionRecord> }
   | { readonly accepted: false; readonly reason: "session_busy" | "not_continuable" }
 
 /**
@@ -541,6 +542,22 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       settled = true
       await publish("run.settled", { result })
     }
+    const publishTerminalEvents = async (
+      type: string,
+      data: Record<string, unknown> | undefined,
+      result: "completed" | "failed" | "cancelled",
+    ) => {
+      const sessionEvent = await publish(type, data).then(
+        () => ({ ok: true as const }),
+        (error) => ({ ok: false as const, error }),
+      )
+      const settledEvent = await publishSettled(result).then(
+        () => ({ ok: true as const }),
+        (error) => ({ ok: false as const, error }),
+      )
+      if (!sessionEvent.ok) return sessionEvent
+      return settledEvent
+    }
     // canonicalHistory 只保存需要跨 Prompt 恢复的消息；modelMessages 在其基础上临时注入 skill 与项目上下文。
     let canonicalHistory: ModelMessage[] = continuation ? [...history] : [...history, { role: "user", content: promptText }]
     let modelMessages: ModelMessage[] = [...canonicalHistory]
@@ -562,7 +579,6 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
     }
 
     try {
-      await options.sessions.setStatus(input.sessionID, "running")
       // 用户输入先进入 canonical 历史并立即落盘，避免后续临时注入污染历史。
       if (!continuation) await persist()
       const skillPrompt = options.skills
@@ -647,18 +663,16 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 }
                 appendCanonical(appendAssistantMessage([], assistantText, assistantReasoning))
                 await persist()
+                await publishTerminalEvents("session.completed", undefined, "completed")
                 const completed = await options.sessions.setStatus(input.sessionID, "completed")
-                await publish("session.completed")
-                await publishSettled("completed")
                 return completed
               }
 
               if (finalizing) {
                 appendCanonical(appendAssistantMessage([], assistantText, assistantReasoning))
                 await persist()
+                await publishTerminalEvents("session.completed", undefined, "completed")
                 const completed = await options.sessions.setStatus(input.sessionID, "completed")
-                await publish("session.completed")
-                await publishSettled("completed")
                 return completed
               }
 
@@ -781,9 +795,8 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         if (continued) continue
         appendCanonical(appendAssistantMessage([], assistantText, assistantReasoning))
         await persist()
+        await publishTerminalEvents("session.completed", undefined, "completed")
         const completed = await options.sessions.setStatus(input.sessionID, "completed")
-        await publish("session.completed")
-        await publishSettled("completed")
         return completed
       }
     } catch (error) {
@@ -792,15 +805,12 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       }
       if (!runState.timedOut && (runState.cancelled || runState.controller.signal.aborted || error instanceof NexumCancellationError)) {
         const current = await options.sessions.get(input.sessionID)
-        const cancelled =
-          current?.status === "cancelled" ? current : await options.sessions.setStatus(input.sessionID, "cancelled")
-        await publish("session.cancelled")
-        await publishSettled("cancelled")
+        await publishTerminalEvents("session.cancelled", undefined, "cancelled")
+        const cancelled = current?.status === "cancelled" ? current : await options.sessions.setStatus(input.sessionID, "cancelled")
         return cancelled
       }
+      await publishTerminalEvents("session.failed", { message: safeErrorMessage(error) }, "failed")
       await options.sessions.setStatus(input.sessionID, "failed")
-      await publish("session.failed", { message: safeErrorMessage(error) })
-      await publishSettled("failed")
       throw error
     } finally {
       if (runState.timeoutTimer) clearTimeout(runState.timeoutTimer)
@@ -827,13 +837,15 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       }, timeoutMs)
     }
     activeRuns.set(input.sessionID, runState)
-    const promise = execute(input, runState)
+    const admission = options.sessions.setStatus(input.sessionID, "running")
+    const promise = admission.then(() => execute(input, runState))
+    runState.promise = promise
     const cleanup = () => {
       if (runState.timeoutTimer) clearTimeout(runState.timeoutTimer)
       if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
     }
     void promise.then(cleanup, cleanup)
-    return { accepted: true, promise }
+    return { accepted: true, admission, promise }
   }
 
   return {
@@ -881,17 +893,23 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         active.cancelled = true
         active.controller.abort()
         await options.permission.cancel?.(sessionID)
+        await active.promise?.catch(() => undefined)
       }
-      if (current.status === "idle" || current.status === "running") {
+      const latest = await options.sessions.get(sessionID)
+      if (!latest) {
+        throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
+      }
+      if (latest.status === "idle" || latest.status === "running") {
         return options.sessions.setStatus(sessionID, "cancelled")
       }
-      return current
+      return latest
     },
   }
 }
 
 interface ActiveRun {
   readonly controller: AbortController
+  promise?: Promise<SessionRecord>
   cancelled: boolean
   timedOut: boolean
   timeoutTimer?: ReturnType<typeof setTimeout>

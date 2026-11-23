@@ -58,7 +58,7 @@ const NEXUM_CAPABILITIES = [
   { id: "tool", version: "1", status: "enabled", operations: ["execute"] },
   { id: "permission", version: "1", status: "enabled", operations: ["evaluate"] },
   { id: "interaction", version: "1", status: "enabled", operations: ["request", "reply"] },
-  { id: "session", version: "1", status: "enabled", operations: ["create", "list", "get", "update", "continue"] },
+  { id: "session", version: "1", status: "enabled", operations: ["create", "list", "get", "update", "delete", "continue"] },
   { id: "context", version: "1", status: "enabled", operations: ["load", "compact"] },
   { id: "skill", version: "1", status: "enabled", operations: ["list", "activate"] },
   { id: "memory", version: "1", status: "disabled", operations: ["search", "upsert", "remove"] },
@@ -131,6 +131,8 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
     skillRoots: options.skillRoots ?? [resolve(process.cwd(), "skills")],
   })
   const sessionService = runtime.sessionService
+  const messageStore = runtime.messageStore
+  const runtimeInteractionStore = runtime.interactionStore
   const modelConfigStore = runtime.modelConfig
   const modelProbe = runtime.modelProbe
   const eventHub = runtime.eventHub
@@ -143,7 +145,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const codingLoop = runtime.codingLoop
   assertPort(port)
   if (options.sessionStore) await options.sessionStore.list()
-  if (interactionStore) await interactionStore.list()
+  if (runtimeInteractionStore) await runtimeInteractionStore.list()
 
   const server = Bun.serve({
     hostname,
@@ -160,6 +162,8 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
           request,
           sessionService,
           eventHub,
+          messageStore,
+          runtimeInteractionStore,
           codingLoop,
           permissionBroker,
           questionPort,
@@ -252,6 +256,8 @@ async function handleRequest(
   request: Request,
   sessionService: NexumSessionService,
   eventHub: NexumEventHub,
+  messageStore: MessageStore,
+  interactionStore: NexumInteractionStore | undefined,
   codingLoop?: NexumCodingLoop,
   permissionBroker?: NexumPermissionBroker,
   questionPort?: NexumQuestionPort,
@@ -317,10 +323,12 @@ async function handleRequest(
 
   const updateSessionMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)$/)
   if (updateSessionMatch) {
-    if (request.method !== "PUT") {
-      return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 PUT 请求", traceId)
+    const sessionID = decodeURIComponent(updateSessionMatch[1]!)
+    if (request.method === "PUT") return updateSession(request, sessionID, sessionService, traceId)
+    if (request.method === "DELETE") {
+      return deleteSession(request, { sessionID, messageStore, interactionStore, eventHub, sessionService }, traceId)
     }
-    return updateSession(request, decodeURIComponent(updateSessionMatch[1]!), sessionService, traceId)
+    return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 PUT 或 DELETE 请求", traceId)
   }
 
   if (url.pathname === "/api/nexum/model") {
@@ -771,11 +779,52 @@ async function createPrompt(
   }
 
   const started = codingLoop.start?.({ sessionID, text: payload.text })
-  if (started && !started.accepted) {
+  if (started) {
+    if (!started.accepted) {
+      return errorResponse(409, "NEXUM_SESSION_RUN_CONFLICT", "Session 当前正在运行，请等待本轮完成后再提交", traceId)
+    }
+    if (!started.admission) {
+      return errorResponse(500, "NEXUM_INTERNAL_ERROR", "Nexum Service 暂时不可用", traceId)
+    }
+    try {
+      await started.admission
+    } catch (error) {
+      void started.promise.catch(() => undefined)
+      if (!(error instanceof NexumSessionError)) logRequestFailure(request, traceId, error)
+      return promptAdmissionError(error, traceId)
+    }
+    void started.promise.catch(() => undefined)
+    return jsonResponse({ data: { status: "accepted" } }, traceId)
+  }
+
+  try {
+    await sessionService.setStatus(sessionID, "running")
+  } catch (error) {
+    if (!(error instanceof NexumSessionError)) logRequestFailure(request, traceId, error)
+    return promptAdmissionError(error, traceId)
+  }
+  void codingLoop.run({ sessionID, text: payload.text }).catch(() => {
+    void sessionService.setStatus(sessionID, "failed").catch(() => undefined)
+  })
+  return jsonResponse({ data: { status: "accepted" } }, traceId)
+}
+
+/**
+ * 将 Prompt admission 异常转换为稳定的公共 HTTP 响应。
+ *
+ * @param error - admission 阶段捕获的异常
+ * @param traceId - 当前请求链路标识
+ * @returns caller-safe HTTP 错误响应
+ * @author lvdaxianer@yeah.net
+ */
+function promptAdmissionError(error: unknown, traceId: string): Response {
+  if (error instanceof NexumSessionError && error.code === "session_not_found") {
+    return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  if (error instanceof NexumSessionError && error.code === "session_busy") {
     return errorResponse(409, "NEXUM_SESSION_RUN_CONFLICT", "Session 当前正在运行，请等待本轮完成后再提交", traceId)
   }
-  void (started?.promise ?? codingLoop.run({ sessionID, text: payload.text })).catch(() => undefined)
-  return jsonResponse({ data: { status: "accepted" } }, traceId)
+  return errorResponse(500, "NEXUM_INTERNAL_ERROR", "Nexum Service 暂时不可用", traceId)
 }
 
 /**
@@ -806,7 +855,7 @@ async function continueSession(
     return errorResponse(409, "NEXUM_SESSION_NOT_CONTINUABLE", "Session 没有可继续的上下文", traceId)
   }
 
-  return startContinue(codingLoop!, sessionID, traceId)
+  return startContinue(request, codingLoop!, sessionID, traceId)
 }
 
 /**
@@ -842,13 +891,22 @@ function continueAdmissionError(
  * @returns accepted 响应或同步启动错误响应
  * @author lvdaxianer@yeah.net
  */
-async function startContinue(codingLoop: NexumCodingLoop, sessionID: string, traceId: string): Promise<Response> {
+async function startContinue(request: Request, codingLoop: NexumCodingLoop, sessionID: string, traceId: string): Promise<Response> {
   try {
     const started = await codingLoop.continueStart!(sessionID)
     if (!started.accepted) return continueAdmissionResponse(started.reason, traceId)
+    if (!started.admission) return errorResponse(503, "NEXUM_CONTINUE_FAILED", "Nexum Continue 暂时不可用", traceId)
+    try {
+      await started.admission
+    } catch (error) {
+      void started.promise.catch(() => undefined)
+      if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError)) logRequestFailure(request, traceId, error)
+      return continueErrorResponse(error, traceId)
+    }
     void started.promise.catch(() => undefined)
     return jsonResponse({ data: { status: "accepted" } }, traceId)
   } catch (error) {
+    if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError)) logRequestFailure(request, traceId, error)
     return continueErrorResponse(error, traceId)
   }
 }
@@ -877,6 +935,9 @@ function continueAdmissionResponse(reason: "session_busy" | "not_continuable", t
  * @author lvdaxianer@yeah.net
  */
 function continueErrorResponse(error: unknown, traceId: string): Response {
+  if (error instanceof NexumSessionError && error.code === "session_not_found") {
+    return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
   if (error instanceof NexumSessionError && error.code === "session_busy") {
     return errorResponse(409, "NEXUM_SESSION_RUN_CONFLICT", "Session 当前正在运行，请等待本轮完成后再继续", traceId)
   }
@@ -1474,6 +1535,49 @@ async function updateSession(
     }
     return errorResponse(500, "NEXUM_SESSION_UPDATE_FAILED", "Session 更新失败", traceId)
   }
+}
+
+/** Session 删除处理所需的运行时依赖。 */
+type NexumSessionDeleteInput = {
+  readonly sessionID: string
+  readonly messageStore: MessageStore
+  readonly interactionStore?: NexumInteractionStore
+  readonly eventHub: NexumEventHub
+  readonly sessionService: NexumSessionService
+}
+
+/**
+ * 按固定顺序删除 Session 的历史、交互、事件和目录索引记录。
+ *
+ * @param input - Session 标识与删除依赖
+ * @param traceId - 当前请求链路标识
+ * @returns 删除结果或 caller-safe 错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-23
+ */
+async function deleteSession(request: Request, input: NexumSessionDeleteInput, traceId: string): Promise<Response> {
+  try {
+    await input.sessionService.delete(input.sessionID, async () => {
+      await input.messageStore.delete(input.sessionID)
+      await input.interactionStore?.deleteSession(input.sessionID)
+      await input.eventHub.delete(input.sessionID)
+    })
+    return jsonResponse({ data: { id: input.sessionID, deleted: true } }, traceId)
+  } catch (error) {
+    if (!(error instanceof NexumSessionError)) logRequestFailure(request, traceId, error)
+    return deleteSessionError(error, traceId)
+  }
+}
+
+/** 将 Session 删除异常转换为稳定的公共错误响应。 */
+function deleteSessionError(error: unknown, traceId: string): Response {
+  if (error instanceof NexumSessionError && error.code === "session_not_found") {
+    return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  if (error instanceof NexumSessionError && error.code === "session_busy") {
+    return errorResponse(409, "NEXUM_SESSION_RUN_CONFLICT", "Session 当前正在运行，请先等待本轮完成后再删除", traceId)
+  }
+  return errorResponse(500, "NEXUM_SESSION_DELETE_FAILED", "Session 删除失败", traceId)
 }
 
 /** 返回当前模型配置的安全视图。 */

@@ -1,11 +1,14 @@
 import { afterEach, expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   createNexumCodingLoop,
   createNexumPermissionBroker,
   createNexumSessionService,
+  NexumSessionError,
+  type MessageStore,
+  type SessionRecord,
   type SessionStore,
   type ContextCompactionPort,
   type EventSink,
@@ -16,6 +19,8 @@ import {
 import {
   createFileInteractionStore,
   createFileSessionStore,
+  createInMemoryMessageStore,
+  createInMemorySessionStore,
   createNexumModelConfigStore,
   createNexumQuestionPort,
 } from "@nexum/adapters"
@@ -172,6 +177,98 @@ test("creates and updates independently named sessions", async () => {
   })
   const updateBody = (await update.json()) as { data: { id: string; name: string; directory: string } }
   expect(updateBody.data).toMatchObject({ id: first.data.id, name: "前端应用", directory: firstDirectory })
+})
+
+test("deletes one session and its durable history while preserving the work directory", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-delete-project-"))
+  const root = await mkdtemp(join(tmpdir(), "nexum-server-delete-data-"))
+  temporaryDirectories.push(directory, root)
+  const sessionStore = createInMemorySessionStore()
+  const sessionService = createNexumSessionService({ store: sessionStore })
+  const messageStore = createInMemoryMessageStore()
+  const interactionStore = createFileInteractionStore({ filePath: join(root, "interactions.json") })
+  const eventHub = createNexumEventHub()
+  const session = await sessionService.create({ directory, name: "待删除" })
+  await messageStore.save(session.sessionID, [{ role: "user", content: "需要删除的历史" }])
+  await interactionStore.save({
+    requestID: "delete-permission-001",
+    sessionID: session.sessionID,
+    status: "orphaned",
+    createdAt: "2026-11-23T00:00:00.000Z",
+    updatedAt: "2026-11-23T00:00:00.000Z",
+    kind: "permission",
+    action: "shell",
+    resource: "pwd",
+  })
+  await eventHub.publish({
+    type: "assistant.text",
+    sessionID: session.sessionID,
+    sequence: 1,
+    eventID: "delete-event-001",
+    data: { content: "需要删除的事件" },
+  })
+  const server = await startNexumServer({ port: 0, sessionService, messageStore, interactionStore, eventHub })
+  servers.push(server)
+
+  const response = await fetch(new URL(`/api/nexum/session/${session.sessionID}`, server.url), { method: "DELETE" })
+  const body = (await response.json()) as { data: { id: string; deleted: boolean } }
+
+  expect(response.status).toBe(200)
+  expect(body.data).toEqual({ id: session.sessionID, deleted: true })
+  expect(await sessionService.get(session.sessionID)).toBeUndefined()
+  expect(await messageStore.load(session.sessionID)).toEqual([])
+  expect(await interactionStore.get("delete-permission-001")).toBeUndefined()
+  expect(eventHub.lastSequence(session.sessionID)).toBe(0)
+  expect((await stat(directory)).isDirectory()).toBe(true)
+
+  const repeated = await fetch(new URL(`/api/nexum/session/${session.sessionID}`, server.url), { method: "DELETE" })
+  expect(repeated.status).toBe(404)
+  expect(((await repeated.json()) as { errorCode: string }).errorCode).toBe("NEXUM_SESSION_NOT_FOUND")
+})
+
+test("rejects deletion for a running session with a stable conflict", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-delete-running-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  await sessionService.setStatus(session.sessionID, "running")
+  const server = await startNexumServer({ port: 0, sessionService })
+  servers.push(server)
+
+  const response = await fetch(new URL(`/api/nexum/session/${session.sessionID}`, server.url), { method: "DELETE" })
+  const body = (await response.json()) as { errorCode: string; message: string }
+
+  expect(response.status).toBe(409)
+  expect(body).toMatchObject({
+    errorCode: "NEXUM_SESSION_RUN_CONFLICT",
+    message: "Session 当前正在运行，请先等待本轮完成后再删除",
+  })
+})
+
+test("maps session deletion storage failures without exposing internals", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-delete-failure-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  const messageStore: MessageStore = {
+    async load() {
+      return []
+    },
+    async save() {},
+    async delete() {
+      throw new Error("internal message store details")
+    },
+  }
+  const server = await startNexumServer({ port: 0, sessionService, messageStore })
+  servers.push(server)
+
+  const response = await fetch(new URL(`/api/nexum/session/${session.sessionID}`, server.url), { method: "DELETE" })
+  const body = (await response.json()) as { errorCode: string; message: string }
+
+  expect(response.status).toBe(500)
+  expect(body).toEqual(expect.objectContaining({ errorCode: "NEXUM_SESSION_DELETE_FAILED", message: "Session 删除失败" }))
+  expect(JSON.stringify(body)).not.toContain("internal message store details")
+  expect(await sessionService.get(session.sessionID)).toEqual(session)
 })
 
 test("restores sessions from a file store after the server restarts", async () => {
@@ -340,6 +437,96 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
   })
 })
 
+test("reserves running before a legacy prompt adapter can race with deletion", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-prompt-legacy-race-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  let releaseRun = () => {}
+  const runReleased = new Promise<void>((resolve) => {
+    releaseRun = resolve
+  })
+  let finishRun = () => {}
+  const runFinished = new Promise<void>((resolve) => {
+    finishRun = resolve
+  })
+  const server = await startNexumServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        await runReleased
+        const completed = await sessionService.setStatus(input.sessionID, "completed")
+        finishRun()
+        return completed
+      },
+      async cancel(sessionID) {
+        return sessionService.setStatus(sessionID, "cancelled")
+      },
+    },
+  })
+  servers.push(server)
+
+  const promptResponse = await fetch(new URL(`/api/nexum/session/${session.sessionID}/prompt`, server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "legacy" }),
+  })
+  const deleteWhileRunning = await fetch(new URL(`/api/nexum/session/${session.sessionID}`, server.url), { method: "DELETE" })
+  releaseRun()
+  await runFinished
+  const deleteAfterRun = await fetch(new URL(`/api/nexum/session/${session.sessionID}`, server.url), { method: "DELETE" })
+
+  expect(promptResponse.status).toBe(200)
+  expect(deleteWhileRunning.status).toBe(409)
+  expect(deleteAfterRun.status).toBe(200)
+})
+
+test("rejects prompt admission failures before returning accepted", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-prompt-admission-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  let admissionError: unknown = new NexumSessionError("session_not_found", "内部 Session 错误", session.sessionID)
+  const server = await startNexumServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        return (await sessionService.get(input.sessionID))!
+      },
+      start() {
+        const admission = Promise.reject<SessionRecord>(admissionError)
+        return { accepted: true, admission, promise: admission.then(() => sessionService.get(session.sessionID).then((value) => value!)) }
+      },
+      async cancel(sessionID) {
+        return sessionService.setStatus(sessionID, "cancelled")
+      },
+    },
+  })
+  servers.push(server)
+
+  const cases = [
+    { error: new NexumSessionError("session_not_found", "内部 Session 错误", session.sessionID), status: 404, errorCode: "NEXUM_SESSION_NOT_FOUND" },
+    { error: new NexumSessionError("session_busy", "内部 Session 错误", session.sessionID), status: 409, errorCode: "NEXUM_SESSION_RUN_CONFLICT" },
+    { error: new Error("internal admission details"), status: 500, errorCode: "NEXUM_INTERNAL_ERROR" },
+  ] as const
+
+  for (const current of cases) {
+    admissionError = current.error
+    const response = await fetch(new URL(`/api/nexum/session/${session.sessionID}/prompt`, server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-trace-id": "prompt_admission_trace" },
+      body: JSON.stringify({ text: "提交任务" }),
+    })
+    const body = (await response.json()) as { errorCode: string; message: string; traceId: string }
+
+    expect(response.status).toBe(current.status)
+    expect(body).toMatchObject({ errorCode: current.errorCode, traceId: "prompt_admission_trace" })
+    expect(body.message).not.toContain("internal admission details")
+  }
+})
+
 test("rejects a prompt while the session is already running", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-server-prompt-conflict-"))
   temporaryDirectories.push(directory)
@@ -396,7 +583,8 @@ test("accepts an experimental continue request without appending a new prompt", 
       },
       async continueStart(sessionID) {
         continuations.push(sessionID)
-        return { accepted: true, promise: sessionService.get(sessionID).then((value) => value!) }
+        const admission = sessionService.setStatus(sessionID, "running")
+        return { accepted: true, admission, promise: admission.then(() => sessionService.get(sessionID).then((value) => value!)) }
       },
       async cancel(sessionID) {
         return sessionService.setStatus(sessionID, "cancelled")
@@ -420,6 +608,54 @@ test("accepts an experimental continue request without appending a new prompt", 
     meta: { protocolVersion: "nexum.runtime.v1" },
   })
   expect(continuations).toEqual([session.sessionID])
+})
+
+test("rejects experimental continue admission failures before returning accepted", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-continue-admission-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  let admissionError: unknown = new NexumSessionError("session_not_found", "内部 Session 错误", session.sessionID)
+  const server = await startNexumServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        return (await sessionService.get(input.sessionID))!
+      },
+      async continueStart() {
+        const admission = Promise.reject<SessionRecord>(admissionError)
+        return { accepted: true, admission, promise: admission }
+      },
+      async cancel(sessionID) {
+        return sessionService.setStatus(sessionID, "cancelled")
+      },
+    },
+  })
+  servers.push(server)
+
+  const cases = [
+    { error: admissionError, status: 404, errorCode: "NEXUM_SESSION_NOT_FOUND" },
+    { error: new NexumSessionError("session_busy", "内部运行冲突", session.sessionID), status: 409, errorCode: "NEXUM_SESSION_RUN_CONFLICT" },
+    { error: new Error("internal continue admission details"), status: 503, errorCode: "NEXUM_CONTINUE_FAILED" },
+  ] as const
+
+  for (const current of cases) {
+    admissionError = current.error
+    const response = await fetch(
+      new URL(`/api/experimental/nexum/session/${session.sessionID}/continue`, server.url),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-trace-id": "continue_admission_trace" },
+        body: "{}",
+      },
+    )
+    const body = (await response.json()) as { errorCode: string; message: string; traceId: string }
+
+    expect(response.status).toBe(current.status)
+    expect(body).toMatchObject({ errorCode: current.errorCode, traceId: "continue_admission_trace" })
+    expect(body.message).not.toContain("internal continue admission details")
+  }
 })
 
 test("rejects experimental continue while the session is running", async () => {
