@@ -10,6 +10,7 @@ import type {
   NexumModelProbe,
   NexumPermission,
   NexumQuestion,
+  NexumRolePrompt,
   NexumSession,
   NexumSkill,
 } from "@nexum/client"
@@ -110,12 +111,24 @@ function App() {
   const [modelDrawerOpen, setModelDrawerOpen] = createSignal(false)
   const [sessionDrawerOpen, setSessionDrawerOpen] = createSignal(false)
   const [sessionEditDrawerOpen, setSessionEditDrawerOpen] = createSignal(false)
+  const [rolePromptDrawerOpen, setRolePromptDrawerOpen] = createSignal(false)
   const [chatView, setChatView] = createSignal<"chat" | "events">("chat")
   const [sessionEditName, setSessionEditName] = createSignal("")
   const [skillsDrawerOpen, setSkillsDrawerOpen] = createSignal(false)
   const [skills, setSkills] = createSignal<SkillSummary[]>([])
   const [skillBusy, setSkillBusy] = createSignal(false)
+  const [skillAddress, setSkillAddress] = createSignal("")
+  const [skillRegisterState, setSkillRegisterState] = createSignal<ActionState>("idle")
+  const [skillRegisterMessage, setSkillRegisterMessage] = createSignal("")
   const [skillValidation, setSkillValidation] = createSignal<Record<string, string>>({})
+  const [skillUnregisterID, setSkillUnregisterID] = createSignal("")
+  const [skillUnregisterBusy, setSkillUnregisterBusy] = createSignal(false)
+  const [skillUnregisterConfirmOpen, setSkillUnregisterConfirmOpen] = createSignal(false)
+  const [rolePrompt, setRolePrompt] = createSignal<NexumRolePrompt | undefined>()
+  const [rolePromptDraft, setRolePromptDraft] = createSignal("")
+  const [rolePromptBusy, setRolePromptBusy] = createSignal(false)
+  const [rolePromptState, setRolePromptState] = createSignal<ActionState>("idle")
+  const [rolePromptMessage, setRolePromptMessage] = createSignal("")
   const [activeSkillIDs, setActiveSkillIDs] = createSignal<string[]>([])
   const [policyPopoverOpen, setPolicyPopoverOpen] = createSignal(false)
   const [policyRules, setPolicyRules] = createSignal<PermissionPolicyRule[]>([])
@@ -160,7 +173,7 @@ function App() {
       setModelConfigured(true)
       setNotice(active.data.credentialConfigured ? "模型配置已加载" : "模型服务地址已加载")
     }
-    await Promise.all([restoreSession().catch(() => undefined), loadSkills()])
+    await Promise.all([restoreSession().catch(() => undefined), loadSkills(), loadRolePrompt()])
     if (!active) setNotice("Nexum API 尚未连接")
   })
 
@@ -403,6 +416,48 @@ function App() {
     }
   }
 
+  async function loadRolePrompt() {
+    try {
+      const current = await client.experimental.nexum.rolePrompt.get()
+      setRolePrompt(current.data)
+      setRolePromptDraft(current.data.prompt)
+    } catch (error) {
+      setRolePromptMessage(messageFrom(error, "默认角色提示词暂时不可用"))
+      setRolePromptState("error")
+    }
+  }
+
+  async function registerSkill() {
+    if (skillBusy() || !skillAddress().trim()) {
+      if (!skillAddress().trim()) {
+        setSkillRegisterState("error")
+        setSkillRegisterMessage("请输入 Skill 目录地址")
+      }
+      return
+    }
+    setSkillBusy(true)
+    setSkillRegisterState("pending")
+    setSkillRegisterMessage("正在注册 Skill…")
+    try {
+      const registered = await client.experimental.nexum.skill.register({ address: skillAddress().trim() })
+      setSkills((current) => {
+        const withoutSameID = current.filter((skill) => skill.id !== registered.data.id)
+        return [...withoutSameID, registered.data]
+      })
+      setSkillAddress("")
+      setSkillRegisterState("success")
+      setSkillRegisterMessage(`已注册 ${registered.data.id}，状态：${registered.data.status}`)
+      setNotice(`Skill ${registered.data.id} 已注册`)
+    } catch (error) {
+      const message = messageFrom(error, "Skill 注册失败，请检查目录地址")
+      setSkillRegisterState("error")
+      setSkillRegisterMessage(message)
+      setNotice(message)
+    } finally {
+      setSkillBusy(false)
+    }
+  }
+
   /**
    * 重新扫描 Skill root 并清理旧校验状态。
    * @author lvdaxianer@yeah.net
@@ -434,6 +489,7 @@ function App() {
     try {
       const result = await client.experimental.nexum.skill.validate({ id: skillID })
       const skill = result.data.data.find((item) => item.id === skillID)
+      if (skill) setSkills((current) => current.map((item) => (item.id === skillID ? skill : item)))
       setSkillValidation({
         ...skillValidation(),
         [skillID]: skill?.status === "ready" ? "validated / ready" : "needs attention",
@@ -442,6 +498,84 @@ function App() {
       setSkillValidation({ ...skillValidation(), [skillID]: messageFrom(error, "validation failed") })
     } finally {
       setSkillBusy(false)
+    }
+  }
+
+  function requestUnregisterSkill(skillID: string) {
+    if (skillBusy() || skillUnregisterBusy()) return
+    setSkillUnregisterID(skillID)
+    setSkillUnregisterConfirmOpen(true)
+  }
+
+  async function confirmUnregisterSkill() {
+    const skillID = skillUnregisterID()
+    if (!skillID || skillUnregisterBusy()) return
+    setSkillUnregisterBusy(true)
+    try {
+      await client.experimental.nexum.skill.unregister({ id: skillID })
+      setSkills((current) => current.filter((skill) => skill.id !== skillID))
+      setSkillValidation((current) => {
+        const next = { ...current }
+        delete next[skillID]
+        return next
+      })
+      setSkillUnregisterConfirmOpen(false)
+      setNotice(`Skill ${skillID} 已取消注册，源目录未删除`)
+    } catch (error) {
+      const message = messageFrom(error, "Skill 取消注册失败，请重试")
+      setNotice(message)
+      setSkillUnregisterConfirmOpen(false)
+    } finally {
+      setSkillUnregisterBusy(false)
+    }
+  }
+
+  async function saveRolePrompt() {
+    if (rolePromptBusy()) return
+    if (!rolePromptDraft().trim()) {
+      setRolePromptState("error")
+      setRolePromptMessage("默认角色提示词不能为空")
+      return
+    }
+    setRolePromptBusy(true)
+    setRolePromptState("pending")
+    setRolePromptMessage("正在保存默认角色提示词…")
+    try {
+      const saved = await client.experimental.nexum.rolePrompt.update({ prompt: rolePromptDraft() })
+      setRolePrompt(saved.data)
+      setRolePromptDraft(saved.data.prompt)
+      setRolePromptState("success")
+      setRolePromptMessage("默认角色提示词已保存；下一次模型调用会使用最新内容")
+      setNotice("默认角色提示词已保存")
+    } catch (error) {
+      const message = messageFrom(error, "默认角色提示词保存失败，请重试")
+      setRolePromptState("error")
+      setRolePromptMessage(message)
+      setNotice(message)
+    } finally {
+      setRolePromptBusy(false)
+    }
+  }
+
+  async function resetRolePrompt() {
+    if (rolePromptBusy()) return
+    setRolePromptBusy(true)
+    setRolePromptState("pending")
+    setRolePromptMessage("正在恢复内置默认…")
+    try {
+      const reset = await client.experimental.nexum.rolePrompt.reset()
+      setRolePrompt(reset.data)
+      setRolePromptDraft(reset.data.prompt)
+      setRolePromptState("success")
+      setRolePromptMessage("已恢复内置默认角色提示词")
+      setNotice("默认角色提示词已恢复")
+    } catch (error) {
+      const message = messageFrom(error, "默认角色提示词恢复失败，请重试")
+      setRolePromptState("error")
+      setRolePromptMessage(message)
+      setNotice(message)
+    } finally {
+      setRolePromptBusy(false)
     }
   }
 
@@ -1234,6 +1368,33 @@ function App() {
                 {skillBusy() ? "刷新中…" : "刷新"}
               </button>
             </div>
+            <div class="skill-register-form">
+              <label class="form-field">
+                <span>Skill 目录地址 <span class="required-mark">必填</span></span>
+                <input
+                  aria-label="Skill 目录地址"
+                  value={skillAddress()}
+                  onInput={(event) => {
+                    setSkillAddress(event.currentTarget.value)
+                    setSkillRegisterState("idle")
+                    setSkillRegisterMessage("")
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void registerSkill()
+                  }}
+                  placeholder="/Users/…/skills/metric-view-lifecycle"
+                />
+                <span class="field-help">只填写本地 Skill 目录；注册不会复制、修改或删除源目录。</span>
+              </label>
+              <button class="button button-primary" disabled={skillBusy()} onClick={() => void registerSkill()}>
+                {skillBusy() ? "处理中…" : "注册 Skill"}
+              </button>
+              <Show when={skillRegisterMessage()}>
+                <p class={`form-feedback form-feedback-${skillRegisterState()}`} role="status" aria-live="polite">
+                  {skillRegisterMessage()}
+                </p>
+              </Show>
+            </div>
             <div class="skill-list" aria-live="polite">
               <Show when={skills().length > 0} fallback={<p class="empty-copy">暂无已发现的项目 Skill</p>}>
                 <For each={skills()}>
@@ -1255,11 +1416,64 @@ function App() {
                       <Show when={skillValidation()[skill.id]}>
                         <span class="skill-validation">{skillValidation()[skill.id]}</span>
                       </Show>
+                      <button
+                        class="skill-unregister"
+                        disabled={skillBusy() || skillUnregisterBusy()}
+                        onClick={() => requestUnregisterSkill(skill.id)}
+                      >
+                        取消注册
+                      </button>
                     </article>
                   )}
                 </For>
               </Show>
             </div>
+          </Drawer>
+          <Drawer
+            title="默认角色提示词"
+            description="只注入模型上下文，不改写模型的思考或输出。"
+            open={rolePromptDrawerOpen()}
+            onOpenChange={(open) => {
+              setRolePromptDrawerOpen(open)
+              if (open) void loadRolePrompt()
+            }}
+            triggerClass="nav-item"
+            trigger={
+              <>
+                <span>✧</span>角色提示词
+                <span class={`nav-badge ${rolePrompt()?.source === "custom" ? "is-ready" : ""}`}>
+                  {rolePrompt()?.source === "custom" ? "已配置" : "内置默认"}
+                </span>
+              </>
+            }
+          >
+            <label class="form-field">
+              <span>提示词内容</span>
+              <textarea
+                aria-label="默认角色提示词"
+                value={rolePromptDraft()}
+                onInput={(event) => {
+                  setRolePromptDraft(event.currentTarget.value)
+                  setRolePromptState("idle")
+                  setRolePromptMessage("")
+                }}
+                placeholder="例如：思考和回答都使用中文。"
+              />
+              <span class="field-help">Nexum 会把这段原文作为 system context 传给模型；不会翻译、过滤或后处理模型响应。</span>
+            </label>
+            <div class="button-stack">
+              <button class="button button-primary" disabled={rolePromptBusy()} onClick={() => void saveRolePrompt()}>
+                {rolePromptBusy() ? "保存中…" : "保存角色提示词"}
+              </button>
+              <button class="button button-secondary" disabled={rolePromptBusy()} onClick={() => void resetRolePrompt()}>
+                {rolePromptBusy() ? "处理中…" : "恢复内置默认"}
+              </button>
+            </div>
+            <Show when={rolePromptMessage()}>
+              <p class={`form-feedback form-feedback-${rolePromptState()}`} role="status" aria-live="polite">
+                {rolePromptMessage()}
+              </p>
+            </Show>
           </Drawer>
             <Popover.Trigger class="nav-item" aria-label="权限策略">
               <span>⚙</span>权限策略
@@ -2038,6 +2252,15 @@ function App() {
           onOpenChange={setDeleteConfirmOpen}
           busy={deleteBusy()}
           onConfirm={confirmDeleteSession}
+        />
+        <ConfirmDialog
+          title="取消注册这个 Skill？"
+          description={`只会移除 Nexum 注册记录，不会删除或修改源目录。确认取消注册 ${skillUnregisterID()} 吗？`}
+          confirmLabel="确认取消注册"
+          open={skillUnregisterConfirmOpen()}
+          onOpenChange={setSkillUnregisterConfirmOpen}
+          busy={skillUnregisterBusy()}
+          onConfirm={confirmUnregisterSkill}
         />
       </section>
       </main>
