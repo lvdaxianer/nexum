@@ -15,6 +15,7 @@ CLI 与 UI 同层：两者都是 Surface，通过同一个协议适配层对接�
 - 提供 REPL（核心）与一次性命令（可脚本化）两种形态。
 - 覆盖完整交互链路：prompt、流式事件、Permission、Question、取消/继续、历史回放与断线恢复。
 - 覆盖管理面模块的终端设计：思考（Reasoning）展示、模型配置与探测、角色 Prompt、Skill 查询、MCP 连接管理。
+- 覆盖对标 claude / codex 的基础命令：会话查看与恢复、主题切换、status 总览、doctor 诊断。
 - 零新增运行时三方依赖。
 
 ## 非目标
@@ -71,7 +72,7 @@ packages/nexum-cli/src/
 - 运行中输入锁定；`Ctrl+C` 在运行中触发 `cancelRun`，空闲时退出 REPL。
 - Permission：事件到达即打印 `action / resource / reason`，提示 `允许一次 / 始终允许 / 拒绝` 三选一，调用 `replyPermission`。
 - Question：按题号渲染编号选项，单选输入序号、多选逗号分隔，按问题顺序提交二维字符串数组；支持取消，取消不伪造答案——与 UI 的 `questionAnswers` 语义一致。
-- REPL slash 命令：`/help`、`/new`、`/use <sessionID>`、`/sessions`、`/cancel`、`/continue`、`/skills`、`/events`、`/thinking [summary|full]`、`/expand`、`/quit`。
+- REPL slash 命令：`/help`、`/new [名称]`、`/use <sessionID>`、`/sessions`、`/resume`、`/cancel`、`/continue`、`/skills`、`/mcp`、`/model`、`/status`、`/theme [dark|light|auto]`、`/clear`、`/events`、`/thinking [summary|full]`、`/expand`、`/quit`。其中 `/new`、`/use`、`/resume` 直接切换会话（重建事件订阅并回放历史），`/skills`、`/mcp`、`/model`、`/status` 与同名一次性命令输出一致。
 
 ### 5. 渲染约定与终端样式
 
@@ -136,18 +137,33 @@ packages/nexum-cli/src/
 
 REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status === "ready"` 的 Skill，与 UI 一致。
 
-### 8. 一次性命令与退出码
+### 8. 基础命令（会话恢复 · 主题 · 状态 · 诊断）
+
+对标 claude / codex 的基础命令面：
+
+| 命令 | 作用 | 说明 |
+| --- | --- | --- |
+| `nexum resume` | 交互式恢复会话 | 编号列出会话（ID/名称/目录/状态/更新时间），选择后进入 REPL 并回放历史 |
+| `nexum -c` / `--continue` | 恢复最近会话 | 等价 resume 选第一项；`--session <id>` 恢复指定会话 |
+| `nexum theme [dark\|light\|auto]` | 查看/切换主题 | 写入 `~/.nexum/cli.json`，下次启动生效；只影响装饰色板（Logo 渐变、扫描光色相），语义色仍随终端 |
+| `nexum status` | 总览 | Server 连接与协议版本、模型与凭据、主题、会话/Skill/MCP 统计 |
+| `nexum doctor` | 诊断 | 逐项 ✓/⚠/✗：Server 可达、协议匹配、模型探测、MCP 待授权、invalid Skill，并给出修复命令；存在 ✗ 时退出码 1 |
+| `nexum --version` | 版本 | CLI 版本 + 协议版本 |
+
+主题设计：配置文件 `~/.nexum/cli.json`（`{ "theme": "dark" | "light" | "auto" }`）；解析顺序 `--theme` flag > 配置文件 > `COLORFGBG` 环境变量推断 > 默认 dark。浅色主题下装饰元素换用深色系色板（Logo 渐变 `#0550ae→#8250df→#cf222e`，扫描光用 blue），语义 ANSI 16 色不变。
+
+### 9. 一次性命令与退出码
 
 - `nexum session list`、`nexum session create --dir <path> [--name <name>]`：JSON 或紧凑表格输出，供脚本消费。
 - `nexum prompt "..."`（可带 `--session <id>` 复用已有会话；不带时以当前工作目录为 `directory` 隐式创建新会话）：流式输出到 stdout，`run.settled` 后按结果退出：completed → 0，failed → 1，cancelled → 130；协议错误输出到 stderr 并非零退出。
 
-### 9. 错误处理
+### 10. 错误处理
 
 - `ChatProtocolError` 透传 `code / message / traceId`，REPL 显示为 notice 行，不中断会话。
 - 事件流断开且非用户主动断开时提示重连；重连复用 `afterSequence` 游标。
 - 参数错误、Server 不可达、协议版本不匹配（`NEXUM_INVALID_RESPONSE`）直接非零退出并给出修复提示。
 
-### 10. 测试策略
+### 11. 测试策略
 
 - `render.ts`：事件序列 → 输出行断言，覆盖流式文本合并、reasoning 三形态收敛、run.settled 终态收敛；动画帧序列与降级（非 TTY 静态输出）可断言。
 - `repl.ts`：脚本化假 `ChatProtocolAdapter`（接口天然可注入，不 mock 全局对象）+ 注入 input/output 流，驱动 prompt、permission、question、取消全流程。
@@ -169,6 +185,7 @@ REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status 
 - REPL 完成一轮包含 Permission 与 Question 的运行，`Ctrl+C` 取消生效，断线重连后事件不丢不重。
 - 思考展示覆盖流式、折叠、`/thinking full` 三形态。
 - 管理面命令覆盖 model / role-prompt / skill / mcp，状态文案与协议枚举一致，凭据不出的边界不破坏。
+- 基础命令齐备：`resume` / `-c` 恢复会话、`theme` 切换主题（配置持久化）、`status` 总览、`doctor` 诊断（✗ 时退出码 1）、`--version`；REPL 内 `/new` `/use` `/resume` 可直接切换会话。
 - 一次性命令可脚本化，退出码符合约定。
 - 零新增运行时三方依赖（`packages/nexum-cli/package.json` 仅含 workspace 依赖）。
 - 受影响包测试、类型检查与根目录 `bun run check` 通过。
