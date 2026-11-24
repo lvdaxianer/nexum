@@ -10,7 +10,7 @@
 
 - [x] 2.1 创建 `docs/ui/interaction-protocol.md` 和 `docs/ui/states.md`，定义 Runtime 驱动交互与 UI 本地交互、加载/空态/错误/提交中/取消/恢复状态；验证每个状态都能对应当前 Surface 实现或 Protocol 事件。
 - [x] 2.2 创建 `docs/ui/question.md` 和 `docs/ui/permission.md`，完整记录 Question/Permission 的触发、发现、展示、回复、取消、重启和错误行为；验证字段、端点和事件与 Protocol、Application、Server 源码一致。
-- [ ] 2.3 创建 `docs/capabilities/session.md` 和 `docs/capabilities/events.md`，记录 Session 生命周期、消息历史、SSE 序列、去重、终态和恢复；验证示例中的事件类型和字段来自 `packages/nexum-protocol/src/index.ts`。
+- [x] 2.3 创建 `docs/capabilities/session.md` 和 `docs/capabilities/events.md`，记录 Session 生命周期、消息历史、SSE 序列、去重、终态和恢复；验证示例中的事件类型和字段来自 `packages/nexum-protocol/src/index.ts`。
 - [ ] 2.4 创建 `docs/capabilities/skills.md`、`docs/capabilities/integrations.md`、`docs/capabilities/model-runtime.md` 和 `docs/capabilities/context-and-history.md`；验证每篇文档至少链接一个实现模块、一个测试或现有规范，并通过格式检查。
 
 ## 3. Runtime API 文档
