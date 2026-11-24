@@ -49,7 +49,7 @@ export interface McpServerConfigStore {
 
 export interface McpOAuthCredential {
   readonly serverID: string
-  readonly accessToken: string
+  readonly accessToken?: string
   readonly refreshToken?: string
   readonly expiresAt?: number
   readonly tokenType?: string
@@ -57,6 +57,7 @@ export interface McpOAuthCredential {
   readonly resource?: string
   readonly clientId?: string
   readonly clientSecret?: string
+  readonly issuer?: string
 }
 
 export interface McpCredentialStore {
@@ -106,6 +107,8 @@ export interface McpConnection {
   readonly listPrompts: () => Promise<readonly McpPrompt[]>
   readonly callTool: (input: McpToolCall) => Promise<ToolResult>
   readonly close: () => Promise<void>
+  readonly onToolsChanged?: (listener: () => void) => () => void
+  readonly onClose?: (listener: () => void) => () => void
 }
 
 export interface McpConnector {
@@ -128,6 +131,7 @@ export interface McpRegistry extends McpPort {
   readonly disconnect: (serverID: string) => Promise<McpServer | undefined>
   readonly remove: (serverID: string) => Promise<void>
   readonly subscribe: (listener: (server: McpServer) => void) => () => void
+  readonly subscribeToolsChanged: (listener: (serverID: string) => void) => () => void
   readonly close: () => Promise<void>
 }
 
@@ -146,12 +150,16 @@ interface McpEntry {
     readonly controller: AbortController
     readonly promise: Promise<McpServer>
   }
+  cleanup?: () => void
+  retryTimer?: ReturnType<typeof setTimeout>
+  reconnectAttempts: number
 }
 
 export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
   let closed = false
   const entries = new Map<string, McpEntry>()
   const listeners = new Set<(server: McpServer) => void>()
+  const catalogListeners = new Set<(serverID: string) => void>()
 
   const registry = {
     async register(config: McpServerConfig): Promise<McpServer> {
@@ -162,6 +170,7 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
         config: normalized,
         server: snapshot(normalized, normalized.disabled ? "disabled" : "pending"),
         generation: 0,
+        reconnectAttempts: 0,
       }
       entries.set(normalized.id, entry)
       publish(entry.server)
@@ -202,6 +211,8 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
             return entry.server
           }
           entry.connection = connection
+          entry.reconnectAttempts = 0
+          entry.cleanup = watchConnection(entry, connection, generation)
           entry.server = snapshot(entry.config, "connected")
           publish(entry.server)
           return entry.server
@@ -250,12 +261,25 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
     },
 
     async callTool(input: McpToolCall): Promise<ToolResult> {
-      return requireConnection(input.serverID).callTool(input)
+      const entry = requireEntry(input.serverID)
+      try {
+        return await requireConnection(input.serverID).callTool(input)
+      } catch (error) {
+        if (!isRecoverableConnectionError(error)) throw error
+        await stopEntry(entry)
+        await registry.connect(input.serverID)
+        return requireConnection(input.serverID).callTool(input)
+      }
     },
 
     subscribe(listener: (server: McpServer) => void): () => void {
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+
+    subscribeToolsChanged(listener: (serverID: string) => void): () => void {
+      catalogListeners.add(listener)
+      return () => catalogListeners.delete(listener)
     },
 
     async close(): Promise<void> {
@@ -285,8 +309,50 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
     listeners.forEach((listener) => listener(server))
   }
 
+  function publishToolsChanged(serverID: string): void {
+    catalogListeners.forEach((listener) => listener(serverID))
+  }
+
+  function watchConnection(entry: McpEntry, connection: McpConnection, generation: number): () => void {
+    const cleanups = [
+      connection.onToolsChanged?.(() => {
+        if (entry.generation === generation && entry.connection === connection) publishToolsChanged(entry.config.id)
+      }),
+      connection.onClose?.(() => {
+        if (entry.generation !== generation || entry.connection !== connection || closed) return
+        entry.cleanup?.()
+        entry.cleanup = undefined
+        entry.connection = undefined
+        entry.server = {
+          ...snapshot(entry.config, "failed"),
+          error: { code: "connection_failed", message: "MCP 连接已关闭，等待恢复" },
+        }
+        publish(entry.server)
+        scheduleReconnect(entry)
+      }),
+    ].filter((cleanup): cleanup is () => void => cleanup !== undefined)
+    return () => cleanups.forEach((cleanup) => cleanup())
+  }
+
+  function scheduleReconnect(entry: McpEntry): void {
+    if (closed || entry.config.disabled || entry.retryTimer || entry.reconnectAttempts >= 3) return
+    const generation = entry.generation
+    entry.reconnectAttempts += 1
+    entry.retryTimer = setTimeout(() => {
+      entry.retryTimer = undefined
+      if (closed || entry.generation !== generation || entry.connection || entry.operation) return
+      void registry.connect(entry.config.id).then((server) => {
+        if (server.status === "failed") scheduleReconnect(entry)
+      })
+    }, 250)
+  }
+
   async function stopEntry(entry: McpEntry): Promise<void> {
     entry.generation += 1
+    if (entry.retryTimer) clearTimeout(entry.retryTimer)
+    entry.retryTimer = undefined
+    entry.cleanup?.()
+    entry.cleanup = undefined
     entry.operation?.controller.abort()
     entry.operation = undefined
     const connection = entry.connection
@@ -353,4 +419,9 @@ function safeMcpErrorMessage(message: string): string {
 
 function closeQuietly(connection: McpConnection): Promise<void> {
   return connection.close().catch(() => {})
+}
+
+function isRecoverableConnectionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : ""
+  return /401|unauthorized|session\s+(expired|invalid|closed)/i.test(message)
 }
