@@ -93,7 +93,7 @@ export async function cmdPrompt(options: PromptOptions): Promise<number> {
   let interrupted = false
   const onSigint = () => {
     interrupted = true
-    void adapter.cancelRun(sessionID)
+    void adapter.cancelRun(sessionID).catch(() => {})
   }
   process.once("SIGINT", onSigint)
   try {

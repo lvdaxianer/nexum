@@ -98,3 +98,36 @@ test("cmdPrompt streams events and maps run result to exit codes", async () => {
   expect(cancelled).toBe(130)
   expect(io.plain()).toContain("你好")
 })
+
+test("cmdPrompt auto-denies permission and auto-cancels question when not TTY", async () => {
+  const io = memoryIO({ isTTY: false })
+  const replies: string[] = []
+  const adapter: ChatProtocolAdapter = {
+    loadHistory: async () => ({ messages: [], total: 0, hasMore: false, snapshotID: "snap" }),
+    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }, canContinue: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
+    subscribeEvents: async function* () {
+      yield { eventID: "e1", runID: "r1", sessionID: "s1", sequence: 1, occurredAt: "", type: "permission.requested", data: { requestID: "p1", action: "edit", resource: "a.ts" } } as never
+      yield { eventID: "e2", runID: "r1", sessionID: "s1", sequence: 2, occurredAt: "", type: "question.request", data: { requestID: "q1", toolCallID: "t1", questions: [{ header: "h", question: "q?", options: [{ label: "A", description: "" }] }] } } as never
+      yield { eventID: "e3", runID: "r1", sessionID: "s1", sequence: 3, occurredAt: "", type: "run.settled", data: { result: "completed" } } as never
+    },
+    listSkills: async () => [],
+    sendMessage: async () => {},
+    replyPermission: async ({ decision }) => {
+      replies.push(`permission:${decision}`)
+    },
+    replyQuestion: async () => {
+      replies.push("question:reply")
+    },
+    cancelQuestion: async () => {
+      replies.push("question:cancel")
+    },
+    cancelRun: async () => {},
+    continueRun: async () => {},
+  }
+  const client = fakeClient(() => ({ id: "s1", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }))
+  const code = await cmdPrompt({ client, adapter, io, prompter: async () => "1", text: "hi", sessionID: "s1", directory: "/tmp" })
+  expect(code).toBe(0)
+  expect(replies).toEqual(["permission:deny", "question:cancel"])
+  expect(io.plain()).toContain("非交互环境,权限已自动拒绝")
+  expect(io.plain()).toContain("非交互环境,补充信息已取消")
+})
