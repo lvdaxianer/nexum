@@ -17,7 +17,7 @@
 入口 [`src/index.ts`](../../packages/nexum-chat-surface/src/index.ts) 导出：
 
 - `ChatSurface`、`ChatSurfaceProps`、`ChatItem`。
-- `createChatProtocolAdapter`、`ChatProtocolAdapter`、`ChatProtocolError`。
+- `createChatProtocolAdapter`、`ChatProtocolAdapter`、`ChatProtocolError`（re-export 自 `@nexum/surface-adapter`，保持兼容）。
 - `CHAT_PROTOCOL_METHODS`、`ChatProtocolMethod` 及请求/标识类型。
 - `CHAT_SURFACE_TAG`、`defineChatSurfaceElement`。
 - Permission、Question、Skill 和事件类型。
@@ -43,7 +43,7 @@ Web Component 接入：
 
 ## 协议适配边界
 
-`ChatProtocolAdapter` 是 UI 与传输之间的稳定边界。默认适配器使用 `@nexum/client`；宿主也可以注入自定义适配器。适配器必须覆盖：
+协议适配契约已迁至 [`@nexum/surface-adapter`](./nexum-surface-adapter.md)，本包 re-export `ChatProtocolAdapter`、`createChatProtocolAdapter`、`ChatProtocolError` 等符号保持兼容。`ChatProtocolAdapter` 是 UI 与传输之间的稳定边界：默认适配器使用 `@nexum/client`，宿主也可以注入自定义适配器。适配器必须覆盖：
 
 `loadHistory`、`loadState`、`subscribeEvents`、`listSkills`、`sendMessage`、`replyPermission`、`replyQuestion`、`cancelQuestion`、`cancelRun`、`continueRun`。
 
@@ -51,7 +51,7 @@ Web Component 接入：
 
 ## 依赖边界
 
-该包依赖 Client、Protocol、Solid、DOMPurify 和 marked。它可以消费协议类型，但不能依赖 Core、Application 或 Server 内部模块。宿主通过 `@nexum/client` 或自定义 `ChatProtocolAdapter` 接入。
+该包依赖 Surface Adapter、Client、Solid、DOMPurify 和 marked。它可以消费协议类型，但不能依赖 Core、Application 或 Server 内部模块。宿主通过 `@nexum/client` 或自定义 `ChatProtocolAdapter` 接入。
 
 ## 测试与验证
 
@@ -61,10 +61,10 @@ bun test
 bun run typecheck
 ```
 
-投影和默认适配器测试位于 [`packages/nexum-chat-surface/test/chat-projection.test.ts`](../../packages/nexum-chat-surface/test/chat-projection.test.ts) 与 [`packages/nexum-chat-surface/test/default-adapter.test.ts`](../../packages/nexum-chat-surface/test/default-adapter.test.ts)。可运行 [`packages/nexum-chat-surface/example/index.html`](../../packages/nexum-chat-surface/example/index.html) 检查宿主接入。
+投影测试位于 [`packages/nexum-chat-surface/test/chat-projection.test.ts`](../../packages/nexum-chat-surface/test/chat-projection.test.ts)；默认适配器测试已随契约迁至 [`packages/nexum-surface-adapter/test/`](../../packages/nexum-surface-adapter/test/)。可运行 [`packages/nexum-chat-surface/example/index.html`](../../packages/nexum-chat-surface/example/index.html) 检查宿主接入。
 
 ## 修改同步清单
 
-- 修改 ChatProtocol 方法：同步 [`apis/nexum.md`](../../apis/nexum.md)、[`@nexum/client`](./nexum-client.md) 和默认适配器测试。
+- 修改 ChatProtocol 方法：同步 [`@nexum/surface-adapter`](./nexum-surface-adapter.md)、[`apis/nexum.md`](../../apis/nexum.md) 和适配器契约测试。
 - 修改事件投影或去重：同步 [`docs/capabilities/events.md`](../capabilities/events.md)、[`docs/ui/states.md`](../ui/states.md) 和投影测试。
 - 修改 Permission/Question 控件：同步 [`docs/ui/permission.md`](../ui/permission.md)、[`docs/ui/question.md`](../ui/question.md) 和交互协议文档。

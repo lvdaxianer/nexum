@@ -20,8 +20,10 @@ Nexum 将 Agent Runtime 拆成可组合模块。每个模块有清晰的职责�
 | `nexum-application`  | 应用编排层   | Skill/Tool/Question 服务、Configured Loop 和 Runtime Composer                       | 页面布局、HTTP 传输细节、Core 领域替代实现        | [`packages/nexum-application/README.md`](../../packages/nexum-application/README.md)   |
 | `nexum-protocol`     | 协议模型层   | `nexum.runtime.v1`、Envelope、能力、消息、交互和事件类型                            | 网络请求、状态持久化、UI 渲染                     | [`packages/nexum-protocol/README.md`](../../packages/nexum-protocol/README.md)         |
 | `nexum-client`       | 协议消费层   | HTTP/SSE 编码、响应校验、错误归一化和事件消费                                       | Core、Server 内部实现和页面业务规则               | [`packages/nexum-client/README.md`](../../packages/nexum-client/README.md)             |
+| `nexum-surface-adapter` | 协议适配层 | `ChatProtocolAdapter` 契约、错误归一化、默认实现 | Surface 业务规则、UI 渲染 | [`packages/nexum-surface-adapter/README.md`](../../packages/nexum-surface-adapter/README.md) |
+| `nexum-cli` | 应用呈现层 | 终端 REPL、事件投影、交互问答、管理面命令 | Core 执行、协议实现、UI 组件 | [`packages/nexum-cli/README.md`](../../packages/nexum-cli/README.md) |
 | `nexum-server`       | 协议绑定层   | HTTP/SSE 路由、错误边界、事件订阅和已组合 Runtime 的适配                            | 隐式创建业务实现、UI 组件、Core 规则              | [`packages/nexum-server/README.md`](../../packages/nexum-server/README.md)             |
-| `nexum-chat-surface` | 应用呈现层   | 可嵌入聊天组件、协议适配器、消息/事件/Question/Permission 展示                      | 创建 Session、模型配置、宿主级策略和 Runtime 决策 | [`packages/nexum-chat-surface/README.md`](../../packages/nexum-chat-surface/README.md) |
+| `nexum-chat-surface` | 应用呈现层   | 可嵌入聊天组件、消息/事件/Question/Permission 展示                      | 创建 Session、模型配置、宿主级策略和 Runtime 决策 | [`packages/nexum-chat-surface/README.md`](../../packages/nexum-chat-surface/README.md) |
 | `nexum-surfaces`     | 参考 Surface | Web 工作台、聊天时间线、抽屉、控制面和本地确认                                      | Core 执行、权限决策、Session 业务规则             | [`packages/nexum-surfaces/README.md`](../../packages/nexum-surfaces/README.md)         |
 | `nexum-test`         | 验证层       | 跨层真实链路、文件持久化、重启恢复和 Test Workbench                                 | 生产运行时依赖和业务功能                          | [`packages/nexum-test/README.md`](../../packages/nexum-test/README.md)                 |
 
@@ -34,8 +36,10 @@ nexum-application ─────> nexum-core + persistence + integrations
 nexum-protocol            纯协议模型
 nexum-client ──────────> nexum-protocol
 nexum-server ──────────> nexum-core + nexum-application + nexum-protocol
-nexum-chat-surface ────> nexum-client + nexum-protocol
+nexum-surface-adapter ─> nexum-client
+nexum-chat-surface ────> nexum-surface-adapter
 nexum-surfaces ────────> nexum-client + nexum-chat-surface
+nexum-cli ─────────────> nexum-surface-adapter + nexum-client
 nexum-test ────────────> core + persistence + integrations + application + protocol + client + surfaces
 ```
 
@@ -45,7 +49,7 @@ nexum-test ────────────> core + persistence + integratio
 - Protocol 是纯模型包，不反向依赖 Core 或 Server。
 - Client 可以依赖 Protocol，但不能依赖 Core 或 Server。
 - Server 绑定已经组合好的 Runtime，并负责传输边界，不在请求处理中偷偷创建业务实现。
-- Surface 通过 Client 消费协议；Test 才负责把多个层组合到一起进行跨层验证。
+- 聊天类 Surface 通过 Surface Adapter 消费协议，其余 Surface 直接通过 Client；Test 才负责把多个层组合到一起进行跨层验证。
 
 ## 变更边界
 

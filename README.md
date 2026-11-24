@@ -152,8 +152,10 @@ bun run --cwd packages/nexum-test dev
 | `@nexum/protocol`     | 协议层       | Wire Contract、Envelope、事件和能力模型                                | 以版本演进                    |
 | `@nexum/client`       | 协议层       | HTTP/SSE Client 和协议消费                                             | 可替换为其他语言客户端        |
 | `@nexum/server`       | 协议绑定层   | HTTP/SSE 路由、错误边界和事件投递                                      | 可替换为其他传输绑定          |
-| `@nexum/chat-surface` | 应用层       | 可嵌入聊天组件和协议适配器                                             | 可替换为其他聊天 Surface      |
-| `@nexum/surfaces`     | 应用层       | Web 参考交互面和协议状态投影                                           | 可替换为 TUI、CLI、Desktop 等 |
+| `@nexum/chat-surface` | 应用层       | 可嵌入聊天组件和聊天交互                                               | 可替换为其他聊天 Surface      |
+| `@nexum/surface-adapter` | 协议适配层 | `ChatProtocolAdapter` 契约、协议错误归一化和默认实现                   | 所有聊天类 Surface 共用       |
+| `@nexum/cli`          | 应用层       | 终端 Surface：REPL、思考动画、交互问答和管理面命令                     | 可替换为其他终端 UI           |
+| `@nexum/surfaces`     | 应用层       | Web 参考交互面和协议状态投影                                           | 可替换为 TUI、Desktop 等；CLI 已由 `@nexum/cli` 提供 |
 | `@nexum/test`         | 验证层       | 跨层 POC、文件持久化和重启恢复验证                                     | 不作为生产依赖                |
 
 依赖方向保持单向：
@@ -165,7 +167,10 @@ bun run --cwd packages/nexum-test dev
 @nexum/protocol           纯协议模型
 @nexum/client ──────────> @nexum/protocol
 @nexum/server ──────────> @nexum/core + @nexum/application + @nexum/protocol
-@nexum/surfaces ────────> @nexum/client
+@nexum/surface-adapter ─> @nexum/client
+@nexum/chat-surface ────> @nexum/surface-adapter
+@nexum/surfaces ────────> @nexum/client + @nexum/chat-surface
+@nexum/cli ─────────────> @nexum/surface-adapter + @nexum/client
 @nexum/test ────────────> Core + Persistence + Integrations + Application + Protocol + Client + Surface
 ```
 
@@ -208,11 +213,13 @@ bun run --cwd packages/nexum-test dev
 - [`@nexum/protocol`](docs/modules/nexum-protocol.md)
 - [`@nexum/client`](docs/modules/nexum-client.md)
 - [`@nexum/server`](docs/modules/nexum-server.md)
+- [`@nexum/surface-adapter`](docs/modules/nexum-surface-adapter.md)
 - [`@nexum/core`](docs/modules/nexum-core.md)
 - [`@nexum/application`](docs/modules/nexum-application.md)
 - [`@nexum/persistence`](docs/modules/nexum-persistence.md)
 - [`@nexum/integrations`](docs/modules/nexum-integrations.md)
 - [`@nexum/chat-surface`](docs/modules/nexum-chat-surface.md)
+- [`@nexum/cli`](docs/modules/nexum-cli.md)
 - [`@nexum/surfaces`](docs/modules/nexum-surfaces.md)
 - [`@nexum/test`](docs/modules/nexum-test.md)
 
@@ -270,6 +277,8 @@ cd ../nexum-application && bun test && bun run typecheck:tsc
 cd ../nexum-server && bun test && bun run typecheck:tsc
 cd ../nexum-protocol && bun test && bun run typecheck
 cd ../nexum-client && bun test && bun run typecheck
+cd ../nexum-surface-adapter && bun test && bun run typecheck:tsc
+cd ../nexum-cli && bun test && bun run typecheck:tsc
 cd ../nexum-test && bun test && bun run typecheck:tsc
 ```
 
@@ -282,7 +291,9 @@ cd ../nexum-test && bun test && bun run typecheck:tsc
 - [`@nexum/protocol`](packages/nexum-protocol/README.md)
 - [`@nexum/client`](packages/nexum-client/README.md)
 - [`@nexum/server`](packages/nexum-server/README.md)
+- [`@nexum/surface-adapter`](packages/nexum-surface-adapter/README.md)
 - [`@nexum/chat-surface`](packages/nexum-chat-surface/README.md)
+- [`@nexum/cli`](packages/nexum-cli/README.md)
 - [`@nexum/surfaces`](packages/nexum-surfaces/README.md)
 - [`@nexum/test`](packages/nexum-test/README.md)
 
