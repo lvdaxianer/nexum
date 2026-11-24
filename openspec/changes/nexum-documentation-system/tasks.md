@@ -3,8 +3,8 @@
 ## 1. 文档入口与架构基线
 
 - [x] 1.1 创建并验证文档体系的设计资产：完成 `proposal.md`、`design.md`、`tasks.md`、`skip_specs: true` 配置和 `openspec status --change nexum-documentation-system` 校验。
-- [ ] 1.2 更新根 `README.md` 的“文档导航”，并让 `docs/README.md`、`apis/README.md`、`packages/README.md` 回链根 README；验证所有导航目标文件存在且 Markdown Prettier 通过。
-- [ ] 1.3 创建 `docs/architecture/module-boundaries.md` 和 `docs/architecture/runtime-flow.md`；根据当前 package README、依赖配置和 Server/Application 入口核对边界，并验证文档引用的源码路径存在。
+- [x] 1.2 更新根 `README.md` 的“文档导航”，并让 `docs/README.md`、`apis/README.md`、`packages/README.md` 回链根 README；验证所有导航目标文件存在且 Markdown Prettier 通过。
+- [x] 1.3 创建 `docs/architecture/module-boundaries.md` 和 `docs/architecture/runtime-flow.md`；根据当前 package README、依赖配置和 Server/Application 入口核对边界，并验证文档引用的源码路径存在。
 
 ## 2. UI 与能力协议
 

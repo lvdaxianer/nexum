@@ -73,16 +73,16 @@ Core 不知道页面长什么样，也不负责决定使用 JSON 文件、SQLite
 
 协议层还定义交互什么时候发生以及如何表达：
 
-| 运行事实 | 协议事件 | 应用层表现 |
-| --- | --- | --- |
-| 模型产生文本 | `assistant.text` | 流式文本消息 |
-| 模型请求工具 | `tool.request` | 工具调用卡片 |
-| 工具返回结果 | `tool.result` | 执行结果卡片或折叠详情 |
-| 需要用户授权 | `permission.requested` | 权限确认卡片 |
-| 需要用户补充信息 | `question.request` | 反问卡片，暂停后续工具 |
-| 上下文正在压缩 | `context.compaction.*` | 上下文状态条 |
-| Skill 被激活 | `skill.activated` | Skill 活动卡片 |
-| Session 到达终态 | `session.completed/failed/cancelled` | 完成、失败或取消状态 |
+| 运行事实         | 协议事件                             | 应用层表现             |
+| ---------------- | ------------------------------------ | ---------------------- |
+| 模型产生文本     | `assistant.text`                     | 流式文本消息           |
+| 模型请求工具     | `tool.request`                       | 工具调用卡片           |
+| 工具返回结果     | `tool.result`                        | 执行结果卡片或折叠详情 |
+| 需要用户授权     | `permission.requested`               | 权限确认卡片           |
+| 需要用户补充信息 | `question.request`                   | 反问卡片，暂停后续工具 |
+| 上下文正在压缩   | `context.compaction.*`               | 上下文状态条           |
+| Skill 被激活     | `skill.activated`                    | Skill 活动卡片         |
+| Session 到达终态 | `session.completed/failed/cancelled` | 完成、失败或取消状态   |
 
 Core 产生事实，协议层表达事实，应用层决定如何呈现。应用层不能通过猜测文本来判断“是否需要反问”或“是否应该展示权限卡片”。
 
@@ -143,17 +143,18 @@ bun run --cwd packages/nexum-test dev
 
 ## 包模块地图
 
-| 包 | 层级 | 职责 | 能否被替换 |
-| --- | --- | --- | --- |
-| `@nexum/core` | 基础层 | 领域语义、Agent Loop、端口和生命周期 | 通过端口替换环境实现 |
-| `@nexum/persistence` | 持久化实现层 | Session、Message、Interaction、Policy、Event、Memory 等文件/内存 Store | 可替换为数据库或远程存储 |
-| `@nexum/integrations` | 外部集成层 | Model、Host、目录校验和 MCP | 可替换为网关、沙箱或其他 SDK |
-| `@nexum/application` | 应用编排层 | Skill、Tool、Question、Configured Loop 和 Runtime Composer | 可替换为其他应用组合 |
-| `@nexum/protocol` | 协议层 | Wire Contract、Envelope、事件和能力模型 | 以版本演进 |
-| `@nexum/client` | 协议层 | HTTP/SSE Client 和协议消费 | 可替换为其他语言客户端 |
-| `@nexum/server` | 协议绑定层 | HTTP/SSE 路由、错误边界和事件投递 | 可替换为其他传输绑定 |
-| `@nexum/surfaces` | 应用层 | Web 参考交互面和协议状态投影 | 可替换为 TUI、CLI、Desktop 等 |
-| `@nexum/test` | 验证层 | 跨层 POC、文件持久化和重启恢复验证 | 不作为生产依赖 |
+| 包                    | 层级         | 职责                                                                   | 能否被替换                    |
+| --------------------- | ------------ | ---------------------------------------------------------------------- | ----------------------------- |
+| `@nexum/core`         | 基础层       | 领域语义、Agent Loop、端口和生命周期                                   | 通过端口替换环境实现          |
+| `@nexum/persistence`  | 持久化实现层 | Session、Message、Interaction、Policy、Event、Memory 等文件/内存 Store | 可替换为数据库或远程存储      |
+| `@nexum/integrations` | 外部集成层   | Model、Host、目录校验和 MCP                                            | 可替换为网关、沙箱或其他 SDK  |
+| `@nexum/application`  | 应用编排层   | Skill、Tool、Question、Configured Loop 和 Runtime Composer             | 可替换为其他应用组合          |
+| `@nexum/protocol`     | 协议层       | Wire Contract、Envelope、事件和能力模型                                | 以版本演进                    |
+| `@nexum/client`       | 协议层       | HTTP/SSE Client 和协议消费                                             | 可替换为其他语言客户端        |
+| `@nexum/server`       | 协议绑定层   | HTTP/SSE 路由、错误边界和事件投递                                      | 可替换为其他传输绑定          |
+| `@nexum/chat-surface` | 应用层       | 可嵌入聊天组件和协议适配器                                             | 可替换为其他聊天 Surface      |
+| `@nexum/surfaces`     | 应用层       | Web 参考交互面和协议状态投影                                           | 可替换为 TUI、CLI、Desktop 等 |
+| `@nexum/test`         | 验证层       | 跨层 POC、文件持久化和重启恢复验证                                     | 不作为生产依赖                |
 
 依赖方向保持单向：
 
@@ -167,6 +168,21 @@ bun run --cwd packages/nexum-test dev
 @nexum/surfaces ────────> @nexum/client
 @nexum/test ────────────> Core + Persistence + Integrations + Application + Protocol + Client + Surface
 ```
+
+## 文档导航
+
+根 README 是 Nexum 文档的总入口。先按协作问题选择能力文档，再通过模块文档了解具体实现；API 文档用于接口联调，源码和测试是协议事实来源。
+
+### 当前入口
+
+- [文档维护规则](docs/README.md)
+- [API 文档规则](apis/README.md)
+- [完整 Nexum Runtime API](apis/nexum.md)
+- [包模块地图与包级验证](packages/README.md)
+- [模块边界](docs/architecture/module-boundaries.md)
+- [Runtime 运行流程](docs/architecture/runtime-flow.md)
+
+UI 交互、Session、事件、Skill 和每个 package 的专题文档会在对应文档完成后从这里继续补充链接。新增文档必须同时更新本节，并保持从根 README 可达。
 
 ## Nexum 的优势
 
@@ -226,12 +242,13 @@ cd ../nexum-test && bun test && bun run typecheck:tsc
 更多细节见：
 
 - [`@nexum/core`](packages/nexum-core/README.md)
-- [`@nexum/persistence`](packages/nexum-persistence/package.json)
-- [`@nexum/integrations`](packages/nexum-integrations/package.json)
-- [`@nexum/application`](packages/nexum-application/package.json)
+- [`@nexum/persistence`](packages/nexum-persistence/README.md)
+- [`@nexum/integrations`](packages/nexum-integrations/README.md)
+- [`@nexum/application`](packages/nexum-application/README.md)
 - [`@nexum/protocol`](packages/nexum-protocol/README.md)
 - [`@nexum/client`](packages/nexum-client/README.md)
 - [`@nexum/server`](packages/nexum-server/README.md)
+- [`@nexum/chat-surface`](packages/nexum-chat-surface/README.md)
 - [`@nexum/surfaces`](packages/nexum-surfaces/README.md)
 - [`@nexum/test`](packages/nexum-test/README.md)
 
