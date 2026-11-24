@@ -3,7 +3,7 @@ import { PassThrough } from "node:stream"
 import { Nexum, type NexumEvent, type NexumSession } from "@nexum/client"
 import type { ChatProtocolAdapter } from "@nexum/surface-adapter"
 import { arrayLineSource, inputBoxLines, readlineLineSource, runRepl } from "../src/repl.ts"
-import { memoryIO } from "../src/io.ts"
+import { createIO, memoryIO } from "../src/io.ts"
 
 const session: NexumSession = {
   id: "session_001",
@@ -350,4 +350,65 @@ test("readlineLineSource draws the box on showPrompt and closes it on submit", a
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(rendered.match(/╭/g)?.length).toBe(2)
   source.close()
+})
+
+async function waitFor(condition: () => boolean, timeoutMs = 2000) {
+  const start = Date.now()
+  while (!condition()) {
+    if (Date.now() - start > timeoutMs) throw new Error("waitFor 超时")
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
+/** 渲染输出与输入框共用同一流,断言两者相对顺序;ANSI 颜色序列剥离后比较。 */
+function boxHarness() {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 60)!
+  const source = readlineLineSource(() => [], { input, output, box })
+  const io = createIO({ caps: { isTTY: true, color: "none", anim: false, theme: "dark" }, out: output })
+  const plain = () => rendered.replace(/\x1b\[[0-9;]*m/g, "")
+  return { input, source, io, plain }
+}
+
+test("repl does not stick the settle line to the input box on double terminal events", async () => {
+  const { input, source, io, plain } = boxHarness()
+  // 真实服务器顺序:session.completed 先于 run.settled(publishTerminalEvents)
+  const { adapter } = fakeAdapter({
+    onSend: () => [makeEvent("session.completed", {}, 1), makeEvent("run.settled", { result: "completed" }, 2)],
+  })
+  const run = runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: source, prompter: async () => "" })
+  await waitFor(() => plain().includes("│ ›"))
+  input.write("你好\n")
+  await waitFor(() => plain().includes("✓ 运行完成"))
+  await waitFor(() => (plain().match(/╭/g)?.length ?? 0) >= 2)
+  source.close()
+  await run
+  const text = plain()
+  const bottom = text.indexOf("╰")
+  const settled = text.indexOf("✓ 运行完成")
+  expect(bottom).toBeGreaterThanOrEqual(0)
+  expect(settled).toBeGreaterThan(bottom)
+  // 终态行必须落在新框顶边之前,不粘在 │ › 输入行后面
+  expect(text.indexOf("╭", settled)).toBeGreaterThan(settled)
+  // 最后停在打开的框:顶边 = 底边 + 1
+  expect(text.match(/╭/g)?.length).toBe((text.match(/╰/g)?.length ?? 0) + 1)
+})
+
+test("repl redraws the input box after an empty line submit", async () => {
+  const { input, source, io, plain } = boxHarness()
+  const { adapter } = fakeAdapter({})
+  const run = runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: source, prompter: async () => "" })
+  await waitFor(() => (plain().match(/╭/g)?.length ?? 0) === 1)
+  input.write("\n")
+  await waitFor(() => (plain().match(/╭/g)?.length ?? 0) >= 2)
+  source.close()
+  await run
+  const text = plain()
+  expect(text.match(/╰/g)?.length).toBe(1)
+  expect(text.match(/╭/g)?.length).toBe(2)
 })

@@ -137,8 +137,6 @@ export type ReplOptions = {
   readonly io: CliIO
   /** 缺省时进入待创建状态:首条非 slash 消息到达时才创建会话。 */
   readonly sessionID?: string
-  /** 待创建状态下首条消息创建会话时使用的名称(可被 /new 覆盖)。 */
-  readonly sessionName?: string
   readonly lineSource: LineSource
   readonly prompter: Prompter
   readonly baseUrl?: string
@@ -148,7 +146,7 @@ export type ReplOptions = {
 export async function runRepl(options: ReplOptions): Promise<void> {
   const { adapter, client, io } = options
   let sessionID = options.sessionID
-  let pendingName = options.sessionName
+  let pendingName: string | undefined
   const recentEvents: string[] = []
 
   try {
@@ -218,7 +216,9 @@ export async function runRepl(options: ReplOptions): Promise<void> {
                 if (recentEvents.length > 50) recentEvents.shift()
                 renderer.event(event)
                 if (event.type === "permission.requested" || event.type === "question.request") enqueueInteraction(id, event)
-                if (event.type === "run.settled" || event.type === "session.completed" || event.type === "session.failed" || event.type === "session.cancelled") {
+                // 服务器总是先发 session.* 终态再发 run.settled(publishTerminalEvents);
+                // 只有 run.settled 才重画输入框,否则终态行会粘到 │ › 输入行后面。
+                if (event.type === "run.settled") {
                   awaitingRun = false
                   options.lineSource.showPrompt?.()
                 }
@@ -257,7 +257,11 @@ export async function runRepl(options: ReplOptions): Promise<void> {
           const line = await options.lineSource.next()
           if (line === null) return
           const text = line.trim()
-          if (!text) continue
+          if (!text) {
+            // 空行提交同样闭合了输入框,空闲时立即重画。
+            if (!locked()) options.lineSource.showPrompt?.()
+            continue
+          }
           if (text.startsWith("/")) {
             const [command, ...rest] = text.slice(1).split(/\s+/)
             if (command === "quit" || command === "exit") return
@@ -318,8 +322,17 @@ export async function runRepl(options: ReplOptions): Promise<void> {
             continue
           }
           if (!sessionID) {
-            const created = (await client.experimental.nexum.session.create({ directory: process.cwd(), ...(pendingName ? { name: pendingName } : {}) })).data
-            sessionID = created.id
+            const created = await client.experimental.nexum.session
+              .create({ directory: process.cwd(), ...(pendingName ? { name: pendingName } : {}) })
+              .catch((error: unknown) => {
+                io.line(paint(io.caps, "red", `创建会话失败:${error instanceof Error ? error.message : "未知错误"}`))
+                return undefined
+              })
+            if (!created) {
+              if (!locked()) options.lineSource.showPrompt?.()
+              continue
+            }
+            sessionID = created.data.id
             pendingName = undefined
             io.line(paint(io.caps, "dim", `会话 ${sessionID} · 已创建`))
             const opened = await openSession(sessionID)
