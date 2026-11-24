@@ -164,7 +164,7 @@ REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status 
 
 ## 验收
 
-- 终端样式与 `artifacts/nexum-cli-demo.png` / `nexum-cli-demo-light.png` 设计稿一致，思考动画与 `nexum-cli-thinking.gif`、酷炫效果与 `nexum-cli-cool.gif` 一致，经确认后才进入实现。
+- 终端样式与 `artifacts/nexum-cli-demo.png` / `nexum-cli-demo-light.png` 设计稿一致，思考动画与 `nexum-cli-thinking.gif`、酷炫效果与 `nexum-cli-cool.gif` 一致；所有视觉效果（样式、动画、渐变 Logo、进度条）必须在深色与浅色双主题下均成立，经确认后才进入实现。
 - CLI 与 UI 同层复用同一 `@nexum/surface-adapter` 契约；chat-surface 公开 API 不破坏，现有测试通过。
 - REPL 完成一轮包含 Permission 与 Question 的运行，`Ctrl+C` 取消生效，断线重连后事件不丢不重。
 - 思考展示覆盖流式、折叠、`/thinking full` 三形态。
