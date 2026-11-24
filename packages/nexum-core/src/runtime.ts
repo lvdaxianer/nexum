@@ -71,7 +71,9 @@ export function createNexumRuntime(options: NexumRuntimeOptions): NexumRuntime {
       return options.loop.cancel(sessionID)
     },
     close: async () => {
+      if (status === "closed") return
       status = "closed"
+      await options.mcp?.close?.()
     },
   }
 }
