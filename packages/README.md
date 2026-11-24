@@ -19,6 +19,8 @@
 | `nexum-surfaces`     | 应用层       | Web 参考 Surface，负责把协议事件投影为聊天、卡片、抽屉和状态视图                                       | 可替换为其他 UI              |
 | `nexum-test`         | 验证层       | 跨层 POC、文件持久化、重启恢复和可启动 Test Workbench                                                  | 不作为生产依赖               |
 
+每个包的实现边界和接入说明见 [`docs/modules/README.md`](../docs/modules/README.md)；直接入口如下：[`core`](../docs/modules/nexum-core.md)、[`persistence`](../docs/modules/nexum-persistence.md)、[`integrations`](../docs/modules/nexum-integrations.md)、[`application`](../docs/modules/nexum-application.md)、[`protocol`](../docs/modules/nexum-protocol.md)、[`client`](../docs/modules/nexum-client.md)、[`server`](../docs/modules/nexum-server.md)、[`chat-surface`](../docs/modules/nexum-chat-surface.md)、[`surfaces`](../docs/modules/nexum-surfaces.md)、[`test`](../docs/modules/nexum-test.md)。
+
 ## 依赖方向
 
 ```text
