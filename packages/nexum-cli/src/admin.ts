@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process"
 import type { Prompter } from "./interact"
+import { loadCliConfig, saveCliConfig } from "./config"
 import { paint, style } from "./term"
 import type { CliIO } from "./io"
 import type { NexumClient } from "./commands"
@@ -194,4 +195,66 @@ function openBrowser(url: string): void {
   const child = spawn(command, [url], { detached: true, stdio: "ignore" })
   child.on("error", () => {})
   child.unref()
+}
+
+export async function cmdTheme(io: CliIO, args: string[], file?: string): Promise<void> {
+  const next = args[0]
+  if (next === "dark" || next === "light" || next === "auto") {
+    const config = await loadCliConfig(file)
+    await saveCliConfig({ ...config, theme: next }, file)
+    io.line(`${paint(io.caps, "green", "✓")} 主题已切换 ${style(io.caps, ["bold"], next)} ${paint(io.caps, "dim", "· 下次启动生效(语义色仍随终端)")}`)
+    return
+  }
+  const config = await loadCliConfig(file)
+  io.line(`当前主题 ${style(io.caps, ["bold"], config.theme ?? "auto")} ${paint(io.caps, "dim", "· 配置 ~/.nexum/cli.json · 用法:nexum theme dark|light|auto")}`)
+}
+
+export async function cmdStatus(client: NexumClient, io: CliIO, options: { baseUrl?: string; file?: string } = {}): Promise<void> {
+  const [capabilities, model, sessions, skills, mcp, config] = await Promise.all([
+    client.capabilities(),
+    client.experimental.nexum.model.get(),
+    client.experimental.nexum.session.list(),
+    client.experimental.nexum.skill.list(),
+    client.experimental.nexum.mcp.list(),
+    loadCliConfig(options.file),
+  ])
+  const baseUrl = options.baseUrl ?? ""
+  io.line(`${paint(io.caps, "dim", "Server   ")}${baseUrl} ${paint(io.caps, "dim", "·")} ${paint(io.caps, "green", "✓ 已连接")} ${paint(io.caps, "dim", `(${capabilities.meta.protocolVersion})`)}`)
+  const modelText = model.data ? `${model.data.model} ${paint(io.caps, "dim", `· 凭据${model.data.credentialConfigured ? "已配置" : "未配置"}`)}` : paint(io.caps, "yellow", "未配置")
+  io.line(`${paint(io.caps, "dim", "模型     ")}${modelText}${paint(io.caps, "dim", ` · 主题 ${config.theme ?? "auto"}`)}`)
+  const sorted = [...sessions.data].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  io.line(`${paint(io.caps, "dim", "会话     ")}${sessions.data.length} 个${sorted[0] ? paint(io.caps, "dim", ` · 最近 ${sorted[0].id.slice(0, 8)}(${sorted[0].updatedAt.slice(0, 16).replace("T", " ")})`) : ""}`)
+  const skillCount = (status: string) => skills.data.filter((skill) => skill.status === status).length
+  const mcpCount = (status: string) => mcp.data.filter((server) => server.status === status).length
+  io.line(`${paint(io.caps, "dim", "Skill    ")}${paint(io.caps, "green", `${skillCount("ready")} ready`)}${skillCount("invalid") ? ` · ${paint(io.caps, "yellow", `${skillCount("invalid")} invalid`)}` : ""}    ${paint(io.caps, "dim", "MCP")} ${paint(io.caps, "green", `${mcpCount("connected")} connected`)}${mcpCount("needs_auth") ? ` · ${paint(io.caps, "yellow", `${mcpCount("needs_auth")} needs_auth`)}` : ""}${mcpCount("failed") ? ` · ${paint(io.caps, "red", `${mcpCount("failed")} failed`)}` : ""}`)
+}
+
+export async function cmdDoctor(client: NexumClient, io: CliIO): Promise<number> {
+  let failures = 0
+  const ok = (text: string) => io.line(`${paint(io.caps, "green", "✓")} ${text}`)
+  const warn = (text: string) => io.line(`${paint(io.caps, "yellow", "⚠")} ${text}`)
+  const bad = (text: string) => {
+    failures += 1
+    io.line(`${paint(io.caps, "red", "✗")} ${text}`)
+  }
+  const capabilities = await client.capabilities()
+  ok(`Server 可达 · 协议版本匹配 ${capabilities.meta.protocolVersion}`)
+  const model = (await client.experimental.nexum.model.get()).data
+  if (!model) bad("未配置模型 → nexum model set")
+  else {
+    ok(`模型已配置(${model.model})`)
+    const probe = (await client.experimental.nexum.model.probe({ mode: "both" })).data
+    if (probe.text === "pass") ok("模型探测 文本 pass")
+    else bad("模型探测 文本失败 → nexum model probe")
+    if (probe.functionCalling === "pass") ok("模型探测 Function Calling pass")
+    else warn("Function Calling skipped(工具调用不可用)")
+  }
+  for (const server of (await client.experimental.nexum.mcp.list()).data) {
+    if (server.status === "needs_auth") warn(`MCP ${server.id} 需要授权(needs_auth) → nexum mcp connect ${server.id}`)
+    if (server.status === "failed") bad(`MCP ${server.id} 连接失败:${server.error?.code ?? "unknown"}`)
+  }
+  for (const skill of (await client.experimental.nexum.skill.list()).data) {
+    if (skill.status === "invalid") bad(`Skill ${skill.id} invalid:${skill.diagnostics[0] ?? "校验失败"}`)
+  }
+  return failures > 0 ? 1 : 0
 }

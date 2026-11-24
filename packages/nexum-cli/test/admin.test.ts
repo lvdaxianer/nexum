@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { Nexum } from "@nexum/client"
-import { cmdMcpList, cmdModelGet, cmdModelProbe, cmdModelSet, cmdRolePromptGet, cmdSkillList } from "../src/admin.ts"
+import { cmdDoctor, cmdMcpList, cmdModelGet, cmdModelProbe, cmdModelSet, cmdRolePromptGet, cmdSkillList, cmdStatus, cmdTheme } from "../src/admin.ts"
 import { memoryIO } from "../src/io.ts"
 
 const meta = { protocolVersion: "nexum.runtime.v1", traceId: "trace_test" } as const
@@ -84,4 +86,62 @@ test("cmdSkillList colors status and cmdMcpList maps protocol statuses", async (
   expect(out).toContain("connected")
   expect(out).toContain("needs_auth")
   expect(out).toContain("ECONNREFUSED")
+})
+
+test("cmdTheme writes config and notes next-launch effect", async () => {
+  const io = memoryIO()
+  const file = join(tmpdir(), `nexum-cli-theme-${Date.now()}.json`)
+  await cmdTheme(io, ["light"], file)
+  expect(io.plain()).toContain("light")
+  expect(io.plain()).toContain("下次启动生效")
+  const io2 = memoryIO()
+  await cmdTheme(io2, [], file)
+  expect(io2.plain()).toContain("light")
+})
+
+test("cmdStatus prints server, model, theme and inventory overview", async () => {
+  const io = memoryIO()
+  const client = fakeClient((request) => {
+    const url = request.url
+    if (url.includes("/capabilities")) return { capabilities: [] }
+    if (url.includes("/model")) return { baseUrl: "https://a", model: "kimi-k2", credentialConfigured: true }
+    if (url.includes("/session")) return [{ id: "s1", name: "n", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "2026-11-24T10:00:00Z" }]
+    if (url.includes("/skills")) return [{ id: "tdd", name: "tdd", description: "", digest: "d", fileCount: 1, files: [], status: "ready", diagnostics: [] }]
+    if (url.includes("/mcp")) return [{ id: "fs", name: "fs", status: "connected" }]
+    return {}
+  })
+  await cmdStatus(client, io, { baseUrl: "http://nexum.test", file: join(tmpdir(), `nexum-cli-status-${Date.now()}.json`) })
+  const out = io.plain()
+  expect(out).toContain("http://nexum.test")
+  expect(out).toContain("已连接")
+  expect(out).toContain("kimi-k2")
+  expect(out).toContain("1 个")
+  expect(out).toContain("1 ready")
+  expect(out).toContain("1 connected")
+})
+
+test("cmdDoctor reports problems and returns 1 when any check fails", async () => {
+  const io = memoryIO()
+  const healthy = fakeClient((request) => {
+    const url = request.url
+    if (url.includes("/model/probe")) return { text: "pass", functionCalling: "pass" }
+    if (url.includes("/model")) return { baseUrl: "https://a", model: "kimi-k2", credentialConfigured: true }
+    if (url.includes("/skills")) return []
+    if (url.includes("/mcp")) return []
+    return { capabilities: [] }
+  })
+  expect(await cmdDoctor(healthy, io)).toBe(0)
+  expect(io.plain()).toContain("✓")
+  const io2 = memoryIO()
+  const broken = fakeClient((request) => {
+    const url = request.url
+    if (url.includes("/model/probe")) return { text: "pass", functionCalling: "skipped" }
+    if (url.includes("/model")) return { baseUrl: "https://a", model: "kimi-k2", credentialConfigured: true }
+    if (url.includes("/skills")) return [{ id: "bad", name: "bad", description: "", digest: "d", fileCount: 1, files: [], status: "invalid", diagnostics: ["缺 description"] }]
+    if (url.includes("/mcp")) return [{ id: "gh", name: "gh", status: "needs_auth" }]
+    return { capabilities: [] }
+  })
+  expect(await cmdDoctor(broken, io2)).toBe(1)
+  expect(io2.plain()).toContain("✗")
+  expect(io2.plain()).toContain("needs_auth")
 })
