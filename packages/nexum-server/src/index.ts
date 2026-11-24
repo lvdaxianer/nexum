@@ -170,6 +170,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const questionPort = runtime.questionPort
   const skillRegistry = runtime.skillRegistry
   await skillRegistry.refresh()
+  await runtime.mcpReady
   const skillInvocation = runtime.skillInvocation
   const corsOrigins = options.corsOrigins ?? DEFAULT_CORS_ORIGINS
   const codingLoop = runtime.codingLoop

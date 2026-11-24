@@ -1,11 +1,48 @@
 import { afterEach, expect, test } from "bun:test"
-import { createMcpRegistry, type McpConnection, type McpOAuthAttempt, type McpOAuthControlPort } from "@nexum/core"
+import { createMcpRegistry, type McpConnection, type McpOAuthAttempt, type McpOAuthControlPort, type McpServerConfigStore } from "@nexum/core"
+import { createInMemoryMcpServerConfigStore } from "../../nexum-persistence/src/index.ts"
+import { createLocalRuntime } from "@nexum/application"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
+import { mkdtemp, rm } from "node:fs/promises"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 
 const servers: NexumServer[] = []
+const directories: string[] = []
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.stop(true)))
+  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
+})
+
+test("waits for local MCP config restoration without waiting for remote initialize", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-mcp-start-"))
+  directories.push(directory)
+  const configs = createInMemoryMcpServerConfigStore()
+  await configs.save({ id: "slow", name: "Slow MCP", url: "https://slow.example.test/mcp" })
+  const delayedConfigs: McpServerConfigStore = {
+    ...configs,
+    async list() {
+      await Bun.sleep(50)
+      return configs.list()
+    },
+  }
+  let release: (() => void) | undefined
+  const pending = new Promise<McpConnection>((resolve) => {
+    release = () => resolve(createConnection())
+  })
+  const runtime = createLocalRuntime({
+    dataDirectory: join(directory, ".nexum"),
+    mcpConfigStore: delayedConfigs,
+    mcpConnector: { connect: async () => pending },
+  })
+
+  const server = await startNexumServer({ port: 0, runtime })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/experimental/nexum/mcp", server.url))
+  expect(await response.json()).toMatchObject({ data: [{ id: "slow" }] })
+  release?.()
 })
 
 test("registers and controls a remote MCP server through the experimental API", async () => {
@@ -126,3 +163,13 @@ test("exposes OAuth authorization attempts without returning credentials", async
   expect(completeResponse.status).toBe(200)
   expect(await completeResponse.json()).toMatchObject({ data: { status: "authorized" } })
 })
+
+function createConnection(): McpConnection {
+  return {
+    listTools: async () => [],
+    listResources: async () => [],
+    listPrompts: async () => [],
+    callTool: async () => ({ ok: true, output: "ok" }),
+    close: async () => {},
+  }
+}

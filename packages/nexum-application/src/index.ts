@@ -7,6 +7,8 @@ import {
   createNexumSessionService,
   createNexumRuntime,
   createNexumSkillInvocationPort,
+  createMcpRegistry,
+  McpError,
   type EventSink,
   type NexumCodingLoop,
   type NexumInteractionStore,
@@ -16,7 +18,11 @@ import {
   type NexumSkillRegistry,
   type HostPort,
   type McpPort,
+  type McpConnector,
+  type McpCredentialStore,
   type McpOAuthControlPort,
+  type McpRegistry,
+  type McpServerConfigStore,
   type MemoryPort,
   type ModelPort,
   type MessageStore,
@@ -42,6 +48,8 @@ import {
   createFileRolePromptStore,
   createFileSessionStore,
   createInMemoryMemory,
+  createFileMcpCredentialStore,
+  createFileMcpServerConfigStore,
   createInMemoryMessageStore,
   createInMemoryPermissionPolicyStore,
   createInMemorySessionStore,
@@ -51,7 +59,14 @@ import {
   type NexumEventHub,
 } from "@nexum/persistence"
 import { join } from "node:path"
-import { createLocalDirectoryValidator, createLocalHostAdapter, createOpenAICompatibleModelPort } from "@nexum/integrations"
+import {
+  createLocalDirectoryValidator,
+  createLocalHostAdapter,
+  createMcpOAuthManager,
+  createMcpOAuthProvider,
+  createMcpSdkConnector,
+  createOpenAICompatibleModelPort,
+} from "@nexum/integrations"
 
 export { createNexumQuestionPort } from "./context.ts"
 export type { NexumQuestionPortOptions } from "./context.ts"
@@ -73,6 +88,8 @@ export interface NexumRuntimeStorageOptions {
   readonly permissionPolicyFile?: string
   readonly eventFile?: string
   readonly memoryFile?: string
+  readonly mcpConfigFile?: string
+  readonly mcpCredentialFile?: string
 }
 
 export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
@@ -94,6 +111,10 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly memory?: MemoryPort
   readonly mcp?: McpPort
   readonly mcpOAuth?: McpOAuthControlPort
+  readonly mcpConfigStore?: McpServerConfigStore
+  readonly mcpCredentialStore?: McpCredentialStore
+  readonly mcpConnector?: McpConnector
+  readonly mcpReady?: Promise<void>
   readonly skillRoots?: readonly string[]
   readonly codingLoop?: NexumCodingLoop
   readonly capabilities?: readonly NexumCapability[]
@@ -112,7 +133,11 @@ export interface NexumDefaultRuntime extends NexumRuntime {
   readonly questionPort: NexumQuestionPort
   readonly modelProbe: NexumModelProbePort
   readonly codingLoop: NexumCodingLoop
+  readonly mcpReady?: Promise<void>
+  readonly mcpConfigStore?: McpServerConfigStore
 }
+
+const MCP_OAUTH_REDIRECT_URL = "http://127.0.0.1/oauth/callback"
 
 export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumDefaultRuntime {
   const sessions = options.sessions ?? createNexumSessionService({
@@ -159,7 +184,12 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     (options.model
       ? createNexumCodingLoop({ ...loopOptions, model: options.model })
       : createNexumConfiguredCodingLoop({ ...loopOptions, modelConfig }))
-  const runtimeLoop = options.mcp ? withMcpReady(loop, tools.ready) : loop
+  const mcpReady = options.mcp
+    ? options.mcpReady
+      ? options.mcpReady.then(() => tools.refresh())
+      : tools.ready
+    : undefined
+  const runtimeLoop = mcpReady ? withMcpReady(loop, mcpReady) : loop
   const runtime = createNexumRuntime({
     sessions,
     loop: runtimeLoop,
@@ -183,6 +213,8 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     questionPort: question,
     modelProbe,
     codingLoop: runtimeLoop,
+    ...(mcpReady ? { mcpReady } : {}),
+    ...(options.mcpConfigStore ? { mcpConfigStore: options.mcpConfigStore } : {}),
   })
 }
 
@@ -207,6 +239,13 @@ export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefa
   const permissionPolicyFile = options.permissionPolicyFile ?? join(dataDirectory, "permission-policies.json")
   const eventFile = options.eventFile ?? join(dataDirectory, "events.json")
   const memoryFile = options.memoryFile ?? join(dataDirectory, "memory.json")
+  const mcpConfigFile = options.mcpConfigFile ?? join(dataDirectory, "mcp-config.json")
+  const mcpCredentialFile = options.mcpCredentialFile ?? join(dataDirectory, "mcp-credentials.json")
+  const localMcp = options.mcp ? undefined : createLocalMcpRuntime({
+    ...options,
+    mcpConfigFile,
+    mcpCredentialFile,
+  })
   return createEmbeddedRuntime({
     ...options,
     sessionStore: options.sessionStore ?? createFileSessionStore({ filePath: sessionFile }),
@@ -218,7 +257,59 @@ export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefa
     eventHub: options.eventHub ?? createNexumEventHub({ filePath: eventFile }),
     memory: options.memory ?? createFileMemory({ filePath: memoryFile }),
     permissionPolicyFile,
+    ...(localMcp
+      ? {
+          mcp: localMcp.mcp,
+          mcpOAuth: localMcp.mcpOAuth,
+          mcpReady: localMcp.mcpReady,
+          mcpConfigStore: localMcp.configStore,
+        }
+      : {}),
   })
+}
+
+function createLocalMcpRuntime(options: NexumRuntimeOptions): {
+  readonly mcp: McpRegistry
+  readonly mcpOAuth: McpOAuthControlPort
+  readonly mcpReady: Promise<void>
+  readonly configStore: McpServerConfigStore
+} {
+  const configStore = options.mcpConfigStore ?? createFileMcpServerConfigStore({ filePath: options.mcpConfigFile! })
+  const credentialStore = options.mcpCredentialStore ?? createFileMcpCredentialStore({ filePath: options.mcpCredentialFile! })
+  let mcp: McpRegistry
+  let mcpOAuth: McpOAuthControlPort | undefined = options.mcpOAuth
+  const connector = options.mcpConnector ?? createMcpSdkConnector({
+    oauth: (config) => createMcpOAuthProvider({
+      serverID: config.id,
+      serverUrl: config.url,
+      credentialStore,
+      redirectUrl: MCP_OAUTH_REDIRECT_URL,
+      onAuthorization: async () => {
+        await mcpOAuth?.start({ serverID: config.id, serverUrl: config.url })
+      },
+    }),
+    onAuthorizationRequired: async (config) => {
+      await mcpOAuth?.start({ serverID: config.id, serverUrl: config.url })
+    },
+  })
+  mcpOAuth ??= createMcpOAuthManager({
+    credentialStore,
+    onAuthorized: async (serverID) => {
+      await mcp.connect(serverID)
+    },
+  })
+  mcp = createMcpRegistry({ connector })
+  return { mcp, mcpOAuth, mcpReady: restoreMcpServers(mcp, configStore), configStore }
+}
+
+async function restoreMcpServers(mcp: McpRegistry, configStore: McpServerConfigStore): Promise<void> {
+  try {
+    const configs = await configStore.list()
+    await Promise.all(configs.map((config) => mcp.register(config)))
+  } catch (error) {
+    if (error instanceof McpError && error.code === "runtime_closed") return
+    throw error
+  }
 }
 
 export const createDefaultRuntime = createLocalRuntime

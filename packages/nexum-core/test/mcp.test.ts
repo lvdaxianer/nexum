@@ -254,8 +254,26 @@ test("reconnects once after an unexpected close and emits catalog changes", asyn
   onClose?.()
   await Bun.sleep(600)
 
-  expect(changes).toBe(1)
+  expect(changes).toBe(3)
   expect(calls).toBe(2)
+  unsubscribe()
+  await registry.close()
+})
+
+test("emits a catalog change when the initial connection becomes available", async () => {
+  let changes = 0
+  const registry = createMcpRegistry({
+    connector: { connect: async () => connection() },
+    autoConnect: false,
+  })
+  const unsubscribe = registry.subscribeToolsChanged((serverID) => {
+    if (serverID === config.id) changes += 1
+  })
+
+  await registry.register(config)
+  await registry.connect(config.id)
+
+  expect(changes).toBe(1)
   unsubscribe()
   await registry.close()
 })

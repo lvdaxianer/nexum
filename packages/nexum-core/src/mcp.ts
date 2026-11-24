@@ -321,6 +321,7 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
         entry.cleanup = watchConnection(entry, connection, generation)
         entry.server = snapshot(entry.config, "connected")
         publish(entry.server)
+        publishToolsChanged(entry.config.id)
         return entry.server
       })
       .catch((error: unknown) => {
