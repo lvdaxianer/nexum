@@ -28,6 +28,43 @@
 | Question    | `/api/nexum/session/:sessionID/question`、`/question/:requestID/reply`、`/cancel` | [Question 反问](#question-反问)                                          | 已覆盖   |
 | Skill       | `/api/nexum/skills...`                                                            | [Skill 注册管理](#skill-注册管理)                                        | 已覆盖   |
 
+### 逐路由审计
+
+以下清单逐项对应 Server Controller 的 method/path 分支；同一资源的多个方法可以共享一个章节，但每个方法都必须出现在契约或端点表中。
+
+| 方法                     | Server 路径                                                 | 文档锚点                                  | 请求/响应/错误                                   | 示例      |
+| ------------------------ | ----------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------ | --------- |
+| `GET`                    | `/health/live`                                              | [Health](#health)                         | 已记录状态、Header、无 meta 约定                 | 已有      |
+| `GET`                    | `/health/ready`                                             | [Health](#health)                         | 已记录状态、Header、无 meta 约定                 | 已有      |
+| `GET`                    | `/api/nexum/capabilities`                                   | [Capabilities](#capabilities)             | 已记录 capability、features、eventTypes          | 已有      |
+| `GET` / `PUT`            | `/api/nexum/model`                                          | [Model 配置与 Probe](#model-配置与-probe) | 已记录安全字段、校验和 Store 错误                | 已有      |
+| `POST`                   | `/api/nexum/model/probe`                                    | [Model 配置与 Probe](#model-配置与-probe) | 已记录 mode、认证失败和 Probe 错误               | 已有      |
+| `GET` / `PUT` / `DELETE` | `/api/nexum/role-prompt`                                    | [默认角色提示词](#默认角色提示词)         | 已记录 body、默认/自定义来源和恢复语义           | HTTP 示例 |
+| `GET` / `POST`           | `/api/nexum/session`                                        | [Session 资源与状态](#session-资源与状态) | 已记录 Session 字段、目录校验和创建错误          | curl      |
+| `PUT` / `DELETE`         | `/api/nexum/session/:sessionID`                             | [Session 删除](#session-删除)             | 已记录 name 更新、删除冲突和清理失败             | curl      |
+| `GET`                    | `/api/nexum/session/:sessionID/state`                       | [Session 资源与状态](#session-资源与状态) | 已记录 pending、`canContinue`、`lastSequence`    | JSON      |
+| `POST`                   | `/api/nexum/session/:sessionID/prompt`                      | [Session 运行端点](#session-运行端点)     | 已记录 admission、冲突和后台运行语义             | curl      |
+| `GET`                    | `/api/experimental/nexum/session/:sessionID/messages`       | [Session 对话历史](#session-对话历史)     | 已记录分页、snapshot、脱敏和实验性标记           | curl      |
+| `POST`                   | `/api/experimental/nexum/session/:sessionID/continue`       | [实验性：继续运行](#实验性继续运行)       | 已记录 `{}`、原子 admission 和错误               | curl      |
+| `POST`                   | `/api/nexum/session/:sessionID/cancel`                      | [Session 运行端点](#session-运行端点)     | 已记录取消冲突与不删除历史                       | curl      |
+| `GET`                    | `/api/nexum/session/:sessionID/events`                      | [事件语义](#事件语义)                     | 已记录 SSE 帧、游标、断线恢复和错误              | curl      |
+| `GET` / `POST`           | `/api/nexum/permission/policy`                              | [Permission Policy](#permission-policy)   | 已记录 scope、action、effect、冲突和策略错误     | curl      |
+| `PUT` / `DELETE`         | `/api/nexum/permission/policy/:ruleID`                      | [Permission Policy](#permission-policy)   | 已记录部分更新、删除和 not found                 | 文字示例  |
+| `GET`                    | `/api/nexum/session/:sessionID/permission`                  | [Pending Permission](#pending-permission) | 已记录 pending 快照和未配置/不存在错误           | curl      |
+| `POST`                   | `/api/nexum/session/:sessionID/permission/:requestID/reply` | [Pending Permission](#pending-permission) | 已记录三种 decision、重复回复和 Session mismatch | curl      |
+| `GET`                    | `/api/nexum/session/:sessionID/question`                    | [Question 反问](#question-反问)           | 已记录结构化问题和 pending 错误                  | curl      |
+| `POST`                   | `/api/nexum/session/:sessionID/question/:requestID/reply`   | [Question 反问](#question-反问)           | 已记录二维 answers、取消冲突和失败               | curl      |
+| `POST`                   | `/api/nexum/session/:sessionID/question/:requestID/cancel`  | [Question 反问](#question-反问)           | 已记录无伪造答案的取消语义                       | curl      |
+| `GET`                    | `/api/nexum/skills`                                         | [Skill 注册管理](#skill-注册管理)         | 已记录安全摘要和未配置错误                       | 表格      |
+| `GET`                    | `/api/nexum/skills/:id`                                     | [Skill 注册管理](#skill-注册管理)         | 已记录 not found 和安全字段                      | 表格      |
+| `POST`                   | `/api/nexum/skills/register`                                | [Skill 注册管理](#skill-注册管理)         | 已记录 address、幂等和注册失败                   | HTTP      |
+| `POST`                   | `/api/nexum/skills/refresh`                                 | [Skill 注册管理](#skill-注册管理)         | 已记录可选 id 和刷新结果                         | HTTP      |
+| `POST`                   | `/api/nexum/skills/validate`                                | [Skill 注册管理](#skill-注册管理)         | 已记录 valid、诊断和 safe summary                | HTTP      |
+| `POST`                   | `/api/nexum/skills/:id/activate`                            | [Skill 注册管理](#skill-注册管理)         | 已记录 sessionID/text、权限和激活错误            | 表格      |
+| `DELETE`                 | `/api/nexum/skills/:id`                                     | [Skill 注册管理](#skill-注册管理)         | 已记录 deleted、源目录保留和 not found           | HTTP      |
+
+未知信息明确标记为“当前认证约定待确认；服务实现未校验认证信息”。当前实现不读取 Cookie，相关章节均标注“不适用”；不要把这些说明解释成已实现的认证承诺。
+
 ## 协议约定
 
 | 项目      | 约定                                                                      |
