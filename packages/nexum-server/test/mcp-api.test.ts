@@ -45,6 +45,33 @@ test("waits for local MCP config restoration without waiting for remote initiali
   release?.()
 })
 
+test("persists MCP registration and removal through the runtime config store", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-mcp-store-"))
+  directories.push(directory)
+  const configs = createInMemoryMcpServerConfigStore()
+  const runtime = createLocalRuntime({
+    dataDirectory: join(directory, ".nexum"),
+    mcpConfigStore: configs,
+    mcpConnector: { connect: async () => createConnection() },
+  })
+  const server = await startNexumServer({ port: 0, runtime })
+  servers.push(server)
+
+  const addResponse = await fetch(new URL("/api/experimental/nexum/mcp", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "persisted", name: "Persisted MCP", url: "https://persisted.example.test/mcp" }),
+  })
+  const added = await configs.get("persisted")
+  expect(addResponse.status).toBe(200)
+  expect(added).toMatchObject({ id: "persisted", url: "https://persisted.example.test/mcp" })
+
+  const removeResponse = await fetch(new URL("/api/experimental/nexum/mcp/persisted", server.url), { method: "DELETE" })
+  expect(removeResponse.status).toBe(200)
+  await expect(configs.get("persisted")).resolves.toBeUndefined()
+  await runtime.close()
+})
+
 test("registers and controls a remote MCP server through the experimental API", async () => {
   const connection: McpConnection = {
     listTools: async () => [{ name: "search", description: "Search remote data", inputSchema: { type: "object" } }],

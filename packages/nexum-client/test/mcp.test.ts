@@ -15,7 +15,7 @@ test("exposes MCP lifecycle and catalog controls under the experimental client n
     },
   })
 
-  await client.experimental.nexum.mcp.list()
+  const listed = await client.experimental.nexum.mcp.list()
   await client.experimental.nexum.mcp.add({ id: "remote", name: "Remote", url: "https://mcp.example.test" })
   await client.experimental.nexum.mcp.connect({ id: "remote" })
   await client.experimental.nexum.mcp.tools({ id: "remote" })
@@ -25,6 +25,8 @@ test("exposes MCP lifecycle and catalog controls under the experimental client n
   await client.experimental.nexum.mcp.authorizationStatus({ attemptID: "attempt-1" })
   await client.experimental.nexum.mcp.completeAuthorization({ attemptID: "attempt-1", redirectUrl: "http://127.0.0.1/callback?code=one" })
   await client.experimental.nexum.mcp.cancelAuthorization({ attemptID: "attempt-1" })
+
+  expect(listed.data[0]).toMatchObject({ status: "connected" })
 
   expect(requests.map((request) => [request.method, request.url])).toEqual([
     ["GET", "http://nexum.test/api/experimental/nexum/mcp"],

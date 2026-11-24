@@ -39,6 +39,7 @@ import {
   type McpPort,
   type McpOAuthControlPort,
   type McpRegistry,
+  type McpServerConfigStore,
   type McpServerConfig,
 } from "@nexum/core"
 import {
@@ -113,6 +114,7 @@ export interface NexumServerOptions {
   readonly skillRoots?: readonly string[]
   readonly mcp?: McpRegistry
   readonly mcpOAuth?: McpOAuthControlPort
+  readonly mcpConfigStore?: McpServerConfigStore
   readonly eventHub?: NexumEventHub
   readonly corsOrigins?: readonly string[]
   readonly idleTimeout?: number
@@ -176,6 +178,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const codingLoop = runtime.codingLoop
   const mcp = options.mcp ?? runtime.mcp
   const mcpOAuth = options.mcpOAuth ?? runtime.mcpOAuth
+  const mcpConfigStore = options.mcpConfigStore ?? runtime.mcpConfigStore
   assertPort(port)
   if (options.sessionStore) await options.sessionStore.list()
   if (runtimeInteractionStore) await runtimeInteractionStore.list()
@@ -207,6 +210,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
           skillInvocation,
           mcp,
           mcpOAuth,
+          mcpConfigStore,
           traceId,
         )
         const result = withCorsHeaders(response, request, corsOrigins)
@@ -307,6 +311,7 @@ async function handleRequest(
   skillInvocation?: NexumSkillInvocationPort,
   mcp?: McpPort,
   mcpOAuth?: McpOAuthControlPort,
+  mcpConfigStore?: McpServerConfigStore,
   requestTraceId?: string,
 ): Promise<Response> {
   const traceId = requestTraceId ?? traceIdFrom(request.headers.get(TRACE_ID_HEADER))
@@ -341,7 +346,7 @@ async function handleRequest(
 
   if (url.pathname === `${NEXUM_EXPERIMENTAL_API_PREFIX}/mcp`) {
     if (request.method === "GET") return listMcpServers(mcp, traceId)
-    if (request.method === "POST") return registerMcpServer(request, mcp, traceId)
+    if (request.method === "POST") return registerMcpServer(request, mcp, mcpConfigStore, traceId)
     return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 或 POST 请求", traceId)
   }
 
@@ -373,7 +378,7 @@ async function handleRequest(
   if (mcpMatch) {
     const serverID = decodeURIComponent(mcpMatch[1]!)
     const operation = mcpMatch[2]
-    if (!operation && request.method === "DELETE") return removeMcpServer(serverID, mcp, traceId)
+    if (!operation && request.method === "DELETE") return removeMcpServer(serverID, mcp, mcpConfigStore, traceId)
     if (operation === "tools" && request.method === "GET") return listMcpTools(serverID, mcp, traceId)
     if (operation === "resources" && request.method === "GET") return listMcpResources(serverID, mcp, traceId)
     if (operation === "prompts" && request.method === "GET") return listMcpPrompts(serverID, mcp, traceId)
@@ -852,7 +857,12 @@ async function listMcpServers(mcp: McpPort | undefined, traceId: string): Promis
   return jsonResponse({ data: await mcp.listServers() }, traceId)
 }
 
-async function registerMcpServer(request: Request, mcp: McpPort | undefined, traceId: string): Promise<Response> {
+async function registerMcpServer(
+  request: Request,
+  mcp: McpPort | undefined,
+  configStore: McpServerConfigStore | undefined,
+  traceId: string,
+): Promise<Response> {
   const registry = requireMcpRegistry(mcp)
   if (!registry) return mcpControlUnavailable(traceId)
   const payload = await request.json().catch(() => undefined)
@@ -860,7 +870,14 @@ async function registerMcpServer(request: Request, mcp: McpPort | undefined, tra
   const config = parseMcpServerConfig(payload)
   if (!config) return errorResponse(400, "NEXUM_MCP_INVALID_CONFIG", "MCP Server 配置无效", traceId)
   try {
-    return jsonResponse({ data: await registry.register(config) }, traceId)
+    const server = await registry.register(config)
+    try {
+      await configStore?.save(config)
+    } catch {
+      await registry.remove(config.id)
+      return errorResponse(500, "NEXUM_MCP_CONFIG_SAVE_FAILED", "MCP Server 配置保存失败", traceId)
+    }
+    return jsonResponse({ data: server }, traceId)
   } catch (error) {
     return mcpErrorResponse(error, traceId)
   }
@@ -889,11 +906,21 @@ async function disconnectMcpServer(serverID: string, mcp: McpPort | undefined, t
   }
 }
 
-async function removeMcpServer(serverID: string, mcp: McpPort | undefined, traceId: string): Promise<Response> {
+async function removeMcpServer(
+  serverID: string,
+  mcp: McpPort | undefined,
+  configStore: McpServerConfigStore | undefined,
+  traceId: string,
+): Promise<Response> {
   const registry = requireMcpRegistry(mcp)
   if (!registry) return mcpControlUnavailable(traceId)
   try {
     await registry.remove(serverID)
+    try {
+      await configStore?.remove(serverID)
+    } catch {
+      return errorResponse(500, "NEXUM_MCP_CONFIG_REMOVE_FAILED", "MCP Server 配置删除失败", traceId)
+    }
     return jsonResponse({ data: { id: serverID, deleted: true } }, traceId)
   } catch (error) {
     return mcpErrorResponse(error, traceId)

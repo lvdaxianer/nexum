@@ -210,8 +210,10 @@ export type NexumSkill = {
 export type NexumMcpServer = {
   readonly id: string
   readonly name: string
-  readonly status: "disabled" | "pending" | "connected" | "failed" | "needs_auth" | "available" | "unavailable"
+  readonly status: "disabled" | "pending" | "retrying" | "connected" | "failed" | "needs_auth" | "available" | "unavailable"
   readonly url?: string
+  readonly retryAttempt?: number
+  readonly nextRetryAt?: number
   readonly error?: { readonly code: string; readonly message: string }
 }
 
