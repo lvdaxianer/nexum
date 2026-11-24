@@ -42,6 +42,7 @@ Core 不依赖 HTTP、具体 UI、文件格式或外部模型供应商。外层�
 - Permission、Question、工具审批：[`docs/ui/permission.md`](../ui/permission.md)、[`docs/ui/question.md`](../ui/question.md)。
 - 上下文预算和压缩：[`docs/capabilities/context-and-history.md`](../capabilities/context-and-history.md)。
 - Model、Skill、Runtime：[`docs/capabilities/model-runtime.md`](../capabilities/model-runtime.md)、[`docs/capabilities/skills.md`](../capabilities/skills.md)。
+- 对外 HTTP/SSE 映射：[`apis/nexum.md`](../../apis/nexum.md)。
 
 ## 依赖边界
 

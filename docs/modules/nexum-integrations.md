@@ -40,6 +40,8 @@ Model 适配器只访问配置中的活动 `baseUrl`，请求凭据通过 Author
 
 权限、Skill 注册和 Runtime 组合由 Core/Application 负责，不能在 Integration 适配器中绕过这些边界。
 
+外部适配产生的模型、工具和运行状态最终由 Server 映射到 [`apis/nexum.md`](../../apis/nexum.md)；本包不直接暴露 HTTP API。
+
 ## 依赖边界
 
 Integrations 只依赖 Core；不能依赖 Persistence、Application、Server、Client 或 UI。它是可替换的外部系统适配器，Application 在 Runtime 创建时注入它。

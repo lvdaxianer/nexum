@@ -12,6 +12,8 @@
 
 Application 不定义通用存储格式，也不直接处理 HTTP/UI。替换模型、Host 或文件 Store 时，应替换端口实现，而不是把适配逻辑复制到编排层。
 
+它通过 Server 映射为 [`apis/nexum.md`](../../apis/nexum.md) 中的 HTTP/SSE 能力；Application 本身不是公共 HTTP API。
+
 ## 公开入口与组合方式
 
 入口 [`src/index.ts`](../../packages/nexum-application/src/index.ts) 主要导出：
