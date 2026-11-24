@@ -4,7 +4,7 @@
 import { createInterface } from "node:readline/promises"
 import { parseArgs } from "node:util"
 import { Nexum, NexumClientError } from "@nexum/client"
-import { createChatProtocolAdapter } from "@nexum/surface-adapter"
+import { ChatProtocolError, createChatProtocolAdapter } from "@nexum/surface-adapter"
 import {
   cmdDoctor,
   cmdMcpAdd,
@@ -31,11 +31,12 @@ import {
   cmdTheme,
 } from "./admin"
 import { cmdPrompt, cmdResume, cmdSessionCreate, cmdSessionList, resolveSessionID } from "./commands"
+import { logoLines } from "./anim"
 import { loadCliConfig, resolveTheme } from "./config"
 import type { Prompter } from "./interact"
 import { createIO } from "./io"
 import { readlineLineSource, runRepl } from "./repl"
-import { detectCaps } from "./term"
+import { detectCaps, paint } from "./term"
 
 export const USAGE = `Nexum CLI — 与 Web UI 同级的终端 Surface
 
@@ -118,6 +119,8 @@ export async function run(argv: string[]): Promise<number> {
   try {
     if (command === undefined || command === "resume") {
       const skills = await adapter.listSkills()
+      for (const logoLine of logoLines(io.caps)) io.line(logoLine)
+      io.line(paint(io.caps, "dim", "v0.1.0 · 协议 nexum.runtime.v1"))
       const lineSource = readlineLineSource(() => skills.filter((skill) => skill.status === "ready").map((skill) => skill.id))
       try {
         let sessionID: string | undefined
@@ -184,11 +187,11 @@ export async function run(argv: string[]): Promise<number> {
       prompter.close()
     }
   } catch (error) {
-    if (error instanceof NexumClientError) {
-      io.line(`${error.code}: ${error.message}${error.traceId ? `(traceId: ${error.traceId})` : ""}`)
+    if (error instanceof ChatProtocolError || error instanceof NexumClientError) {
+      process.stderr.write(`${error.code}: ${error.message}${error.traceId ? `(traceId: ${error.traceId})` : ""}\n`)
       return 1
     }
-    io.line(error instanceof Error ? error.message : "命令执行失败")
+    process.stderr.write(`${error instanceof Error ? error.message : "命令执行失败"}\n`)
     return 1
   }
 }

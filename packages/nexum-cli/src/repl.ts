@@ -13,6 +13,7 @@ import type { CliIO } from "./io"
 export type LineSource = {
   next(): Promise<string | null>
   close(): void
+  setSigintHandler?(handler: () => void): void
 }
 
 export function arrayLineSource(lines: readonly string[]): LineSource {
@@ -46,6 +47,11 @@ export function readlineLineSource(
   const lines: string[] = []
   const waiters: ((line: string | null) => void)[] = []
   let closed = false
+  let sigintHandler: (() => void) | undefined
+  rl.on("SIGINT", () => {
+    if (sigintHandler) sigintHandler()
+    else rl.close()
+  })
   let notifyClosed: () => void = () => {}
   const closedSignal = new Promise<never>((_, reject) => {
     notifyClosed = () => reject(new Error("readline closed"))
@@ -75,6 +81,9 @@ export function readlineLineSource(
         return answer
       }),
     close: () => rl.close(),
+    setSigintHandler: (handler) => {
+      sigintHandler = handler
+    },
   }
 }
 
@@ -97,6 +106,7 @@ export type ReplOptions = {
   readonly lineSource: LineSource
   readonly prompter: Prompter
   readonly baseUrl?: string
+  readonly reconnectDelayMs?: number
 }
 
 export async function runRepl(options: ReplOptions): Promise<void> {
@@ -112,8 +122,14 @@ export async function runRepl(options: ReplOptions): Promise<void> {
       let interactionQueue = Promise.resolve()
       let switchTo: string | undefined
 
-      const state = await adapter.loadState(sessionID)
-      const history = await adapter.loadHistory({ sessionID, limit: 50 })
+      const failOpen = (error: unknown) => {
+        io.line(paint(io.caps, "red", `会话打开失败:${error instanceof Error ? error.message : "未知错误"}`))
+        return undefined
+      }
+      const state = await adapter.loadState(sessionID).catch(failOpen)
+      if (!state) return
+      const history = await adapter.loadHistory({ sessionID, limit: 50 }).catch(failOpen)
+      if (!history) return
       io.line(paint(io.caps, "dim", `会话 ${sessionID} · ${state.session.name} · 已回放历史 ${history.messages.length} 条`))
       for (const line of historyLines(io.caps, history.messages)) io.line(line)
       let afterSequence = state.lastSequence
@@ -145,23 +161,38 @@ export async function runRepl(options: ReplOptions): Promise<void> {
       }
 
       const pump = (async () => {
-        try {
-          for await (const event of adapter.subscribeEvents({ sessionID, afterSequence, signal: controller.signal })) {
-            if (controller.signal.aborted) return
-            if (seen.has(event.eventID)) continue
-            seen.add(event.eventID)
-            afterSequence = event.sequence
-            recentEvents.push(`${event.sequence} ${event.type}`)
-            if (recentEvents.length > 50) recentEvents.shift()
-            renderer.event(event)
-            if (event.type === "permission.requested" || event.type === "question.request") enqueueInteraction(event)
+        while (!controller.signal.aborted) {
+          try {
+            for await (const event of adapter.subscribeEvents({ sessionID, afterSequence, signal: controller.signal })) {
+              if (controller.signal.aborted) return
+              if (seen.has(event.eventID)) continue
+              if (event.sequence <= afterSequence) continue
+              seen.add(event.eventID)
+              afterSequence = event.sequence
+              recentEvents.push(`${event.sequence} ${event.type}`)
+              if (recentEvents.length > 50) recentEvents.shift()
+              renderer.event(event)
+              if (event.type === "permission.requested" || event.type === "question.request") enqueueInteraction(event)
+            }
+            if (!controller.signal.aborted) io.line(paint(io.caps, "yellow", "事件流已断开,3s 后重连…"))
+          } catch {
+            if (!controller.signal.aborted) io.line(paint(io.caps, "yellow", "事件流已断开,3s 后重连…"))
           }
-        } catch {
-          if (!controller.signal.aborted) io.line(paint(io.caps, "yellow", "事件流已断开,重新输入任意内容将继续"))
+          if (controller.signal.aborted) return
+          await new Promise((resolve) => setTimeout(resolve, options.reconnectDelayMs ?? 3000))
         }
       })()
 
       const locked = () => ["running", "retrying", "awaiting permission", "awaiting question"].includes(renderer.status())
+
+      options.lineSource.setSigintHandler?.(() => {
+        if (locked()) {
+          io.line(paint(io.caps, "dim", "已请求取消运行(Ctrl+C)"))
+          void adapter.cancelRun(sessionID).catch(() => {})
+          return
+        }
+        options.lineSource.close()
+      })
 
       try {
         while (true) {
@@ -221,7 +252,9 @@ export async function runRepl(options: ReplOptions): Promise<void> {
             io.line(paint(io.caps, "yellow", "Agent 正在回复,/cancel 取消本轮"))
             continue
           }
-          await adapter.sendMessage({ sessionID, text })
+          await adapter.sendMessage({ sessionID, text }).catch((error: unknown) => {
+            io.line(paint(io.caps, "red", `发送失败:${error instanceof Error ? error.message : "未知错误"}`))
+          })
         }
       } finally {
         controller.abort()

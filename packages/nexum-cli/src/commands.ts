@@ -55,7 +55,7 @@ export async function resolveSessionID(client: NexumClient, io: CliIO, requested
 
 /** 交互式恢复会话:编号列出,选择后返回会话 ID;取消或无效返回 undefined。 */
 export async function cmdResume(client: NexumClient, io: CliIO, prompter: Prompter): Promise<string | undefined> {
-  const sessions = (await client.experimental.nexum.session.list()).data
+  const sessions = [...(await client.experimental.nexum.session.list()).data].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   if (sessions.length === 0) {
     io.line(paint(io.caps, "dim", "暂无可恢复的会话,nexum session create 创建"))
     return undefined
@@ -97,8 +97,15 @@ export async function cmdPrompt(options: PromptOptions): Promise<number> {
   }
   process.once("SIGINT", onSigint)
   try {
+    const state = await adapter.loadState(sessionID)
+    let afterSequence = state.lastSequence
+    const seen = new Set<string>()
     await adapter.sendMessage({ sessionID, text: options.text })
-    for await (const event of adapter.subscribeEvents({ sessionID })) {
+    for await (const event of adapter.subscribeEvents({ sessionID, afterSequence })) {
+      if (seen.has(event.eventID)) continue
+      if (event.sequence <= afterSequence) continue
+      seen.add(event.eventID)
+      afterSequence = event.sequence
       renderer.event(event)
       if (event.type === "permission.requested") {
         const request = permissionFromEvent((event.data ?? {}) as Record<string, unknown>, sessionID)

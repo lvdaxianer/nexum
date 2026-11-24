@@ -30,13 +30,6 @@ export function shimmer(caps: TermCaps, text: string, tick: number): string {
     .join("")
 }
 
-/** 确定进度条:▓ 已完成 + ░ 剩余。 */
-export function progressBar(percent: number, width = 13): string {
-  const clamped = Math.max(0, Math.min(100, Math.round(percent)))
-  const filled = Math.round((clamped / 100) * width)
-  return "▓".repeat(filled) + "░".repeat(width - filled)
-}
-
 /** 不确定进度条(理发店杆):条纹随 tick 平移,用于无百分比的长任务。 */
 export function barberPole(tick: number, width = 13, period = 4): string {
   const unit = "▓▓▓░"

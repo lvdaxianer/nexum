@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { barberPole, breathing, logoLines, progressBar, shimmer, SPINNER_FRAMES, spinnerFrame } from "../src/anim.ts"
+import { barberPole, breathing, logoLines, shimmer, SPINNER_FRAMES, spinnerFrame } from "../src/anim.ts"
 
 const ansi16 = { isTTY: true, color: "ansi16", anim: true, theme: "dark" } as const
 const light16 = { isTTY: true, color: "ansi16", anim: true, theme: "light" } as const
@@ -24,13 +24,6 @@ test("shimmer moves a highlight window across the text", () => {
   const at1 = shimmer(ansi16, "正在思考", 1)
   expect(at1).toContain("\x1b[36;1m在")
   expect(shimmer(none, "正在思考", 3)).toBe("正在思考")
-})
-
-test("progressBar renders filled and empty cells", () => {
-  expect(progressBar(0)).toBe("░".repeat(13))
-  expect(progressBar(100)).toBe("▓".repeat(13))
-  expect(progressBar(50, 10)).toBe("▓▓▓▓▓░░░░░")
-  expect(progressBar(140)).toBe("▓".repeat(13))
 })
 
 test("barberPole shifts stripes with tick", () => {

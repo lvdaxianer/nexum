@@ -151,6 +151,78 @@ test("readlineLineSource serializes main prompt and interaction prompt without d
   expect(await source.next()).toBe(null)
 })
 
+test("repl Ctrl+C cancels a running session and exits when idle", async () => {
+  const io = memoryIO()
+  const { adapter, calls } = fakeAdapter({
+    onSend: () => [makeEvent("assistant.thinking", { message: "思考" }, 1)],
+  })
+  let sigint: (() => void) | undefined
+  let pending: ((line: string | null) => void) | undefined
+  const queue = ["你好"]
+  const lineSource = {
+    next: () => (queue.length > 0 ? Promise.resolve(queue.shift()!) : new Promise<string | null>((resolve) => { pending = resolve })),
+    close: () => {
+      sigint = undefined
+      pending?.(null)
+    },
+    setSigintHandler: (handler: () => void) => {
+      sigint = handler
+    },
+  }
+  const run = runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource, prompter: async () => "" })
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  // 运行中 ^C → 取消运行,不退出
+  sigint!()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  expect(calls).toContain("cancelRun")
+  expect(io.plain()).toContain("已请求取消运行")
+  // 空闲时 close(等价于空闲 ^C 触发 close)→ next  resolve null → REPL 退出
+  lineSource.close()
+  await run
+})
+
+test("repl reconnects after the event stream drops and resumes from the cursor", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  let subscriptions = 0
+  adapter.subscribeEvents = async function* (input) {
+    subscriptions += 1
+    if (subscriptions === 1) {
+      yield makeEvent("assistant.text", { content: "第一段" }, 1)
+      throw new Error("连接断开")
+    }
+    yield makeEvent("assistant.text", { content: "第二段" }, 2)
+    yield makeEvent("run.settled", { result: "completed" }, 3)
+    while (!input.signal?.aborted) await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: slowLineSource(["/quit"]), reconnectDelayMs: 10, prompter: async () => "" })
+  const out = io.plain()
+  expect(subscriptions).toBeGreaterThanOrEqual(2)
+  expect(out).toContain("事件流已断开,3s 后重连…")
+  expect(out).toContain("第二段")
+  expect(out).toContain("✓ 运行完成")
+})
+
+test("repl send failure prints a notice and keeps the input loop alive", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  adapter.sendMessage = async () => {
+    throw new Error("网络抖动")
+  }
+  await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: slowLineSource(["你好", "/quit"]), prompter: async () => "" })
+  expect(io.plain()).toContain("发送失败:网络抖动")
+})
+
+test("repl exits when the session cannot be opened", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  adapter.loadState = async () => {
+    throw new Error("会话不存在")
+  }
+  await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: arrayLineSource(["/quit"]), prompter: async () => "" })
+  expect(io.plain()).toContain("会话打开失败:会话不存在")
+})
+
 test("readlineLineSource completes @skill tokens in place", async () => {
   const { input, source } = ttySource(["tdd"])
   const line = source.next()
