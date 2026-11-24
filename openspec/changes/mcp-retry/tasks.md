@@ -6,4 +6,4 @@
 - [x] 2.2 验证无 MCP 配置启动路径不变，并确保工具 Registry 的初始 ready 与 MCP 状态一致
 - [x] 3.1 更新 Protocol、Server、Client 的 retrying 状态 DTO 与控制 API
 - [x] 3.2 在 Client 页面启动时读取 MCP 列表并展示 pending/retrying/connected/needs_auth/failed 状态
-- [ ] 4.1 更新 MCP 生命周期文档、API 文档和 OpenSpec；运行受影响包测试、typecheck 与根 `bun run check`
+- [x] 4.1 更新 MCP 生命周期文档、API 文档和 OpenSpec；运行受影响包测试、typecheck 与根 `bun run check`
