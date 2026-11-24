@@ -14,13 +14,14 @@ CLI 与 UI 同层：两者都是 Surface，通过同一个协议适配层对接�
 - 抽出 `@nexum/surface-adapter` 包承载契约与默认实现，chat-surface 改为 re-export，公开 API 不破坏。
 - 提供 REPL（核心）与一次性命令（可脚本化）两种形态。
 - 覆盖完整交互链路：prompt、流式事件、Permission、Question、取消/继续、历史回放与断线恢复。
+- 覆盖管理面模块的终端设计：思考（Reasoning）展示、模型配置与探测、角色 Prompt、Skill 查询、MCP 连接管理。
 - 零新增运行时三方依赖。
 
 ## 非目标
 
 - 全屏 TUI（ink / opentui 等终端 UI 框架）。
 - Server 生命周期管理（不自动拉起、不守护进程）。
-- model / mcp / skill 管理命令（继续由 Web 工作台承担）。
+- Skill 注册源的文件编辑、MCP Server 的部署（CLI 只做协议层管理操作）。
 - 二进制编译与发布分发。
 
 ## 方案
@@ -38,8 +39,10 @@ CLI 与 UI 同层：两者都是 Surface，通过同一个协议适配层对接�
 nexum-surface-adapter ──> nexum-client ──> nexum-protocol
 nexum-chat-surface ────> nexum-surface-adapter
 nexum-surfaces ────────> nexum-client + nexum-chat-surface
-nexum-cli ─────────────> nexum-surface-adapter
+nexum-cli ─────────────> nexum-surface-adapter + nexum-client
 ```
+
+CLI 的聊天链路（REPL、prompt、事件流）走 `@nexum/surface-adapter` 的 `ChatProtocolAdapter`；管理面命令（model / role-prompt / skill / mcp）是简单的请求-响应，直接消费 `@nexum/client` 对应方法组，不新增抽象。
 
 ### 2. CLI 组成
 
@@ -49,7 +52,8 @@ packages/nexum-cli/src/
   repl.ts       交互式会话循环（核心）
   render.ts     NexumEvent → 终端文本行投影（对应 UI 的 projectChatEvent）
   interact.ts   Permission / Question 的终端问答流
-  commands.ts   一次性命令：session list / session create / prompt
+  commands.ts   会话类一次性命令：session list / session create / prompt
+  admin.ts      管理面一次性命令：model / role-prompt / skill / mcp
 ```
 
 入口以 `#!/usr/bin/env bun` shebang 暴露 bin；开发期通过 `bun run --cwd packages/nexum-cli start` 或 `bun packages/nexum-cli/src/main.ts` 运行。
@@ -67,7 +71,7 @@ packages/nexum-cli/src/
 - 运行中输入锁定；`Ctrl+C` 在运行中触发 `cancelRun`，空闲时退出 REPL。
 - Permission：事件到达即打印 `action / resource / reason`，提示 `允许一次 / 始终允许 / 拒绝` 三选一，调用 `replyPermission`。
 - Question：按题号渲染编号选项，单选输入序号、多选逗号分隔，按问题顺序提交二维字符串数组；支持取消，取消不伪造答案——与 UI 的 `questionAnswers` 语义一致。
-- REPL slash 命令：`/help`、`/new`、`/use <sessionID>`、`/sessions`、`/cancel`、`/continue`、`/skills`、`/events`、`/quit`。
+- REPL slash 命令：`/help`、`/new`、`/use <sessionID>`、`/sessions`、`/cancel`、`/continue`、`/skills`、`/events`、`/thinking [summary|full]`、`/expand`、`/quit`。
 
 ### 5. 渲染约定与终端样式
 
@@ -85,22 +89,55 @@ packages/nexum-cli/src/
 - 零新增依赖：`node:readline/promises` 做输入，`node:util` 的 `parseArgs` 做参数解析，ANSI 转义做颜色并尊重 `NO_COLOR`。
 - 同一 run 的瞬时状态在 `run.settled` 时收敛，语义等价于 UI 的 `settleRunItems`。
 
-### 6. 一次性命令与退出码
+### 6. 思考（Reasoning）展示
+
+三种形态，对应 UI 的 ReasoningView 生命周期：
+
+- 流式中：单行 spinner `⠋ 正在思考 · 已 N 字` + 暗色滚动摘要行（同一块原地刷新，不刷屏）。
+- 完成收敛：折叠为 `✓ 思考过程 · N 字 · 用时 Xs`，不占用滚动历史；`/expand` 重新完整打印最近一次思考。
+- `/thinking full` 切换后，新运行的思考全文以暗色直接输出；`/thinking summary` 恢复默认折叠。
+
+### 7. 管理面命令
+
+管理面为一次性子命令，直接消费 `@nexum/client` 方法组；状态文案与协议枚举一一对应：
+
+| 命令 | 协议方法 | 输出要点 |
+| --- | --- | --- |
+| `model get` | `model.get` | baseUrl / model / `credentialConfigured`（凭据只显示已配置与 credentialRef，永不回显原文） |
+| `model set` | `model.update` | 交互式逐项输入，API Key 仅写入不回显 |
+| `model probe` | `model.probe` | 文本 / Function Calling 两通道，只显示 `pass / skipped` |
+| `role-prompt get` | `rolePrompt.get` | 来源 default/custom、updatedAt、内容摘要（前 60 字） |
+| `role-prompt set <file>` | `rolePrompt.update` | 从文件读入，避免 shell 转义问题 |
+| `role-prompt reset` | `rolePrompt.reset` | 重置为默认 |
+| `skill list` | `skill.list` | ID / 状态（ready 绿、invalid 黄、conflict 红）/ 文件数 / 描述 |
+| `skill detail <id>` | `skill.detail` | 版本、文件清单、digest、注册时间 |
+| `skill validate [id]` | `skill.validate` | valid 结果与诊断 |
+| `skill refresh [id]` | `skill.refresh` | 刷新注册状态 |
+| `skill register <address>` / `skill unregister <id>` | `skill.register` / `skill.unregister` | 注册本地目录源；注销只移除注册记录，不动源目录 |
+| `mcp list` | `mcp.list` | 状态映射：connected 绿、needs_auth 黄、retrying 青（含第 N 次与下次时间）、failed 红（含 error.code）、disabled/pending 灰 |
+| `mcp add` | `mcp.add` | 交互式录入 id/name/url 等 |
+| `mcp connect <id>` | `mcp.connect` + `mcp.authorize` 系列 | needs_auth 时进入 OAuth：打印授权地址并尝试打开浏览器，支持粘贴回调 URL（`completeAuthorization`），轮询 `authorizationStatus` 直到 authorized/failed/expired |
+| `mcp disconnect <id>` / `mcp remove <id>` | `mcp.disconnect` / `mcp.remove` | 断开与移除 |
+| `mcp tools/resources/prompts <id>` | `mcp.tools` 等 | 名称 + 描述列表 |
+
+REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status === "ready"` 的 Skill，与 UI 一致。
+
+### 8. 一次性命令与退出码
 
 - `nexum session list`、`nexum session create --dir <path> [--name <name>]`：JSON 或紧凑表格输出，供脚本消费。
 - `nexum prompt "..."`（可带 `--session <id>` 复用已有会话；不带时以当前工作目录为 `directory` 隐式创建新会话）：流式输出到 stdout，`run.settled` 后按结果退出：completed → 0，failed → 1，cancelled → 130；协议错误输出到 stderr 并非零退出。
 
-### 7. 错误处理
+### 9. 错误处理
 
 - `ChatProtocolError` 透传 `code / message / traceId`，REPL 显示为 notice 行，不中断会话。
 - 事件流断开且非用户主动断开时提示重连；重连复用 `afterSequence` 游标。
 - 参数错误、Server 不可达、协议版本不匹配（`NEXUM_INVALID_RESPONSE`）直接非零退出并给出修复提示。
 
-### 8. 测试策略
+### 10. 测试策略
 
-- `render.ts`：事件序列 → 输出行断言，覆盖流式文本合并、reasoning 收敛、run.settled 终态收敛。
+- `render.ts`：事件序列 → 输出行断言，覆盖流式文本合并、reasoning 三形态收敛、run.settled 终态收敛。
 - `repl.ts`：脚本化假 `ChatProtocolAdapter`（接口天然可注入，不 mock 全局对象）+ 注入 input/output 流，驱动 prompt、permission、question、取消全流程。
-- `commands.ts`：参数解析、输出格式与退出码。
+- `commands.ts` / `admin.ts`：参数解析、输出格式与退出码；管理面状态文案与协议枚举（MCP status、Skill status、probe pass/skipped）一一对应。
 - 验收命令：`cd packages/nexum-cli && bun test && bun run typecheck:tsc`；`packages/nexum-chat-surface` 回归测试与类型检查；根目录 `bun run check`。
 
 ## 文档同步
@@ -113,9 +150,11 @@ packages/nexum-cli/src/
 
 ## 验收
 
-- 终端样式与 `artifacts/nexum-cli-demo.png` 设计稿一致，经确认后才进入实现。
+- 终端样式与 `artifacts/nexum-cli-demo.png` / `nexum-cli-demo-light.png` 设计稿一致，经确认后才进入实现。
 - CLI 与 UI 同层复用同一 `@nexum/surface-adapter` 契约；chat-surface 公开 API 不破坏，现有测试通过。
 - REPL 完成一轮包含 Permission 与 Question 的运行，`Ctrl+C` 取消生效，断线重连后事件不丢不重。
+- 思考展示覆盖流式、折叠、`/thinking full` 三形态。
+- 管理面命令覆盖 model / role-prompt / skill / mcp，状态文案与协议枚举一致，凭据不出的边界不破坏。
 - 一次性命令可脚本化，退出码符合约定。
 - 零新增运行时三方依赖（`packages/nexum-cli/package.json` 仅含 workspace 依赖）。
 - 受影响包测试、类型检查与根目录 `bun run check` 通过。
