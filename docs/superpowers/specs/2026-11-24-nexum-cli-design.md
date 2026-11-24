@@ -84,12 +84,18 @@ packages/nexum-cli/src/
 - 底部状态栏：左段 `sessionID · 状态 · 上下文`，右段键位提示（`Enter 发送 · @ 引用 Skill · Ctrl+C 取消 · /help 命令`）。
 - 颜色遵循语义：绿=成功/完成，黄=等待权限，青=信息/提问，红=失败/取消，暗灰=历史与次要信息；尊重 `NO_COLOR`。
 
-动画系统（全部用 ANSI 转义 + 光标控制实现，零依赖；演示见 `artifacts/nexum-cli-thinking.gif` / `nexum-cli-thinking-light.gif`，源文件 `nexum-cli-thinking.html`，demo 主页面所有 spinner 实时转动）：
+动画系统（全部用 ANSI 转义 + 光标控制实现，零依赖；演示见 `artifacts/nexum-cli-thinking.gif`（基础）与 `artifacts/nexum-cli-cool.gif`（酷炫全效果），源文件 `nexum-cli-thinking.html` / `nexum-cli-cool.html`，demo 主页面所有 spinner 实时转动）：
 
 - spinner：braille 10 帧 `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`，80ms/帧，用于思考中、工具执行中、MCP 连接中。
 - 呼吸：「正在思考」文字 dim ↔ 正常色交替，1.2s 周期。
+- 扫描光（shimmer）：高亮窗口从左向右扫过思考文字，55ms/步，拖尾 5 字符渐隐；需 truecolor/256 色，16 色终端降级为呼吸。
+- 渐变 Logo：启动横幅 ASCII Logo，青→品红→红渐变；属装饰元素，16 色终端降级为单色 cyan。
+- 实时计时：工具行耗时 100ms 刷新，收敛时定格总耗时。
+- 进度条：`▓░` 条纹 + 百分比，用于上下文压缩等长任务。
+- 速率统计：运行完成行尾追加 `N tok · tok/s`。
 - 光标：流式输出末尾块光标 `▍`，530ms 闪烁，跟随 assistant 文本与思考摘要。
 - 收敛：工具行 spinner → `✓`/`✗`；运行行 spinner → `✓ 运行完成` / `✗ 失败` / `— 已取消`，瞬时行不留在滚动历史。
+- 能力分层：语义内容始终使用 ANSI 16 色；装饰元素（Logo、扫描光、进度条）按 `COLORTERM`/终端能力使用 256/truecolor，降级链 truecolor → 256 → 16 → 静态。
 - 降级：非 TTY（CI、管道）、`TERM=dumb` 或 `--no-anim` 时全部静态输出，不刷帧。
 
 实现约束：
@@ -158,7 +164,7 @@ REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status 
 
 ## 验收
 
-- 终端样式与 `artifacts/nexum-cli-demo.png` / `nexum-cli-demo-light.png` 设计稿一致，思考动画与 `nexum-cli-thinking.gif` 一致，经确认后才进入实现。
+- 终端样式与 `artifacts/nexum-cli-demo.png` / `nexum-cli-demo-light.png` 设计稿一致，思考动画与 `nexum-cli-thinking.gif`、酷炫效果与 `nexum-cli-cool.gif` 一致，经确认后才进入实现。
 - CLI 与 UI 同层复用同一 `@nexum/surface-adapter` 契约；chat-surface 公开 API 不破坏，现有测试通过。
 - REPL 完成一轮包含 Permission 与 Question 的运行，`Ctrl+C` 取消生效，断线重连后事件不丢不重。
 - 思考展示覆盖流式、折叠、`/thinking full` 三形态。
