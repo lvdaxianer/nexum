@@ -7,8 +7,8 @@
 
 ## 2. 配置与凭据持久化
 
-- [ ] 2.1 实现 MCP 配置存储和 OAuth CredentialStore 的最小持久化接口，验证重启可恢复配置但不会回显 token/header
-- [ ] 2.2 实现配置边界校验、URL 规范化、Authorization 脱敏和凭据错误分类；补充安全序列化测试并通过受影响包的 typecheck
+- [x] 2.1 实现 MCP 配置存储和 OAuth CredentialStore 的最小持久化接口，验证重启可恢复配置但不会回显 token/header
+- [x] 2.2 实现配置边界校验、URL 规范化、Authorization 脱敏和凭据错误分类；补充安全序列化测试并通过受影响包的 typecheck
 
 ## 3. 官方 SDK 连接与 OAuth
 

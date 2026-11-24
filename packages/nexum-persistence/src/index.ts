@@ -19,3 +19,15 @@ export { createFilePermissionPolicyStore, createInMemoryPermissionPolicyStore } 
 export type { FilePermissionPolicyStoreOptions } from "./permission-policy-store.ts"
 export { createFileSkillRegistrationStore, createInMemorySkillRegistrationStore } from "./skill-registration-store.ts"
 export type { FileSkillRegistrationStoreOptions } from "./skill-registration-store.ts"
+export {
+  createFileMcpCredentialStore,
+  createFileMcpServerConfigStore,
+  createInMemoryMcpCredentialStore,
+  createInMemoryMcpServerConfigStore,
+  McpStoreError,
+} from "./mcp-store.ts"
+export type {
+  FileMcpCredentialStoreOptions,
+  FileMcpServerConfigStoreOptions,
+  McpStoreErrorCode,
+} from "./mcp-store.ts"

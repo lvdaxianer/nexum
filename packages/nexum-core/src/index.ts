@@ -1488,8 +1488,10 @@ export type {
   McpConnection,
   McpConnectionErrorCode,
   McpConnector,
+  McpCredentialStore,
   McpErrorSummary,
   McpLegacyServerStatus,
+  McpOAuthCredential,
   McpPort,
   McpPrompt,
   McpRegistry,
@@ -1497,10 +1499,12 @@ export type {
   McpResource,
   McpServer,
   McpServerConfig,
+  McpServerConfigStore,
   McpServerStatus,
   McpTool,
   McpToolCall,
 } from "./mcp.js"
+export { normalizeMcpServerConfig, validateMcpServerConfig } from "./mcp.js"
 export { createNexumRuntime, NexumRuntimeError } from "./runtime.js"
 export type {
   NexumCapability,
