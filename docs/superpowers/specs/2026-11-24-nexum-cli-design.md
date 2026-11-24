@@ -84,6 +84,14 @@ packages/nexum-cli/src/
 - 底部状态栏：左段 `sessionID · 状态 · 上下文`，右段键位提示（`Enter 发送 · @ 引用 Skill · Ctrl+C 取消 · /help 命令`）。
 - 颜色遵循语义：绿=成功/完成，黄=等待权限，青=信息/提问，红=失败/取消，暗灰=历史与次要信息；尊重 `NO_COLOR`。
 
+动画系统（全部用 ANSI 转义 + 光标控制实现，零依赖；演示见 `artifacts/nexum-cli-thinking.gif` / `nexum-cli-thinking-light.gif`，源文件 `nexum-cli-thinking.html`，demo 主页面所有 spinner 实时转动）：
+
+- spinner：braille 10 帧 `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`，80ms/帧，用于思考中、工具执行中、MCP 连接中。
+- 呼吸：「正在思考」文字 dim ↔ 正常色交替，1.2s 周期。
+- 光标：流式输出末尾块光标 `▍`，530ms 闪烁，跟随 assistant 文本与思考摘要。
+- 收敛：工具行 spinner → `✓`/`✗`；运行行 spinner → `✓ 运行完成` / `✗ 失败` / `— 已取消`，瞬时行不留在滚动历史。
+- 降级：非 TTY（CI、管道）、`TERM=dumb` 或 `--no-anim` 时全部静态输出，不刷帧。
+
 实现约束：
 
 - 零新增依赖：`node:readline/promises` 做输入，`node:util` 的 `parseArgs` 做参数解析，ANSI 转义做颜色并尊重 `NO_COLOR`。
@@ -135,7 +143,7 @@ REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status 
 
 ### 10. 测试策略
 
-- `render.ts`：事件序列 → 输出行断言，覆盖流式文本合并、reasoning 三形态收敛、run.settled 终态收敛。
+- `render.ts`：事件序列 → 输出行断言，覆盖流式文本合并、reasoning 三形态收敛、run.settled 终态收敛；动画帧序列与降级（非 TTY 静态输出）可断言。
 - `repl.ts`：脚本化假 `ChatProtocolAdapter`（接口天然可注入，不 mock 全局对象）+ 注入 input/output 流，驱动 prompt、permission、question、取消全流程。
 - `commands.ts` / `admin.ts`：参数解析、输出格式与退出码；管理面状态文案与协议枚举（MCP status、Skill status、probe pass/skipped）一一对应。
 - 验收命令：`cd packages/nexum-cli && bun test && bun run typecheck:tsc`；`packages/nexum-chat-surface` 回归测试与类型检查；根目录 `bun run check`。
@@ -150,7 +158,7 @@ REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status 
 
 ## 验收
 
-- 终端样式与 `artifacts/nexum-cli-demo.png` / `nexum-cli-demo-light.png` 设计稿一致，经确认后才进入实现。
+- 终端样式与 `artifacts/nexum-cli-demo.png` / `nexum-cli-demo-light.png` 设计稿一致，思考动画与 `nexum-cli-thinking.gif` 一致，经确认后才进入实现。
 - CLI 与 UI 同层复用同一 `@nexum/surface-adapter` 契约；chat-surface 公开 API 不破坏，现有测试通过。
 - REPL 完成一轮包含 Permission 与 Question 的运行，`Ctrl+C` 取消生效，断线重连后事件不丢不重。
 - 思考展示覆盖流式、折叠、`/thinking full` 三形态。
