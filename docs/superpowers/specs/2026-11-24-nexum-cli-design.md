@@ -69,10 +69,19 @@ packages/nexum-cli/src/
 - Question：按题号渲染编号选项，单选输入序号、多选逗号分隔，按问题顺序提交二维字符串数组；支持取消，取消不伪造答案——与 UI 的 `questionAnswers` 语义一致。
 - REPL slash 命令：`/help`、`/new`、`/use <sessionID>`、`/sessions`、`/cancel`、`/continue`、`/skills`、`/events`、`/quit`。
 
-### 5. 渲染约定
+### 5. 渲染约定与终端样式
+
+样式设计稿（已确认前不进入实现）：
+
+- 高保真 demo：[`artifacts/nexum-cli-demo.png`](../../../artifacts/nexum-cli-demo.png)（源文件 `artifacts/nexum-cli-demo.html`，Playwright 截图，可直接改 HTML 重新出图）。
+- 视觉语言：深色终端；用户输入用 `nexum ▸` 提示符；assistant 洋红 `Agent` 标签 + 流式原文直出（终端不做 HTML/Markdown 渲染）；reasoning 暗色单行摘要（默认折叠）；工具调用 `●` / 结果 `✓` 单行状态。
+- Permission 用黄色左边线卡片：`action · resource · reason` + `[1] 允许一次 [2] 始终允许 [3] 拒绝`；Question 用青色左边线卡片：按题号编号选项，回答按题序、多选逗号分隔。
+- 底部状态栏：左段 `sessionID · 状态 · 上下文`，右段键位提示（`Enter 发送 · @ 引用 Skill · Ctrl+C 取消 · /help 命令`）。
+- 颜色遵循语义：绿=成功/完成，黄=等待权限，青=信息/提问，红=失败/取消，暗灰=历史与次要信息；尊重 `NO_COLOR`。
+
+实现约束：
 
 - 零新增依赖：`node:readline/promises` 做输入，`node:util` 的 `parseArgs` 做参数解析，ANSI 转义做颜色并尊重 `NO_COLOR`。
-- assistant 文本流式直出原文（终端不做 HTML/Markdown 渲染）；reasoning 以暗色输出；tool 调用/结果、上下文压缩、Skill 激活、模型重试均为单行状态；notice 行承载提示与错误。
 - 同一 run 的瞬时状态在 `run.settled` 时收敛，语义等价于 UI 的 `settleRunItems`。
 
 ### 6. 一次性命令与退出码
@@ -103,6 +112,7 @@ packages/nexum-cli/src/
 
 ## 验收
 
+- 终端样式与 `artifacts/nexum-cli-demo.png` 设计稿一致，经确认后才进入实现。
 - CLI 与 UI 同层复用同一 `@nexum/surface-adapter` 契约；chat-surface 公开 API 不破坏，现有测试通过。
 - REPL 完成一轮包含 Permission 与 Question 的运行，`Ctrl+C` 取消生效，断线重连后事件不丢不重。
 - 一次性命令可脚本化，退出码符合约定。
