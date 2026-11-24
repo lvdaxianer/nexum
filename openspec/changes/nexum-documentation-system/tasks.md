@@ -29,7 +29,7 @@
 ## 5. 集成验证与交付
 
 - [x] 5.1 统一所有文档的相对链接、状态标签、权威来源和最后核对日期；验证根 README 可以导航到所有交付文档，且不存在失效本地链接。
-- [ ] 5.2 执行全量文档交付检查：`openspec validate --change nexum-documentation-system`、`git diff --check`、`bunx prettier --check "README.md" "docs/**/*.md" "apis/**/*.md" "packages/README.md"`，并完成路由/模块清单逐项审计。
+- [x] 5.2 执行全量文档交付检查：`openspec validate --change nexum-documentation-system`、`git diff --check`、`bunx prettier --check "README.md" "docs/**/*.md" "apis/**/*.md" "packages/README.md"`，并完成路由/模块清单逐项审计。
 
 ## Workflow follow-up
 
