@@ -12,6 +12,7 @@ import type {
   NexumModelRetryEventData,
   NexumReasoningEventData,
   NexumRunSettledEventData,
+  NexumMcpServer,
   NexumSessionMessages,
   NexumTextEventData,
   NexumThinkingEventData,
@@ -111,4 +112,20 @@ test("types canonical session messages and pagination metadata", () => {
 
   expect(page.messages[0]?.message).toEqual(message)
   expect(page.nextBefore).toBe(3)
+})
+
+test("types MCP retry snapshots without exposing connection credentials", () => {
+  const server: NexumMcpServer = {
+    id: "remote",
+    name: "Remote MCP",
+    status: "retrying",
+    url: "https://mcp.example.test/server",
+    retryAttempt: 1,
+    nextRetryAt: 1795505000000,
+    error: { code: "connection_failed", message: "连接失败" },
+  }
+
+  expect(server.status).toBe("retrying")
+  expect(server.retryAttempt).toBe(1)
+  expect(JSON.stringify(server)).not.toContain("token")
 })

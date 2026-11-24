@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onMount } from "solid-js"
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { render } from "solid-js/web"
 import { Nexum } from "@nexum/client"
 import { ChatSurface } from "@nexum/chat-surface"
@@ -6,7 +6,9 @@ import { Drawer } from "./drawer"
 import { ConfirmDialog } from "./confirm-dialog"
 import { Popover } from "@kobalte/core/popover"
 import { mergeSessionStatus } from "./session-state"
+import { mergeMcpServers, mcpStatusLabel } from "./mcp-state"
 import type {
+  NexumMcpServer,
   NexumModelProbe,
   NexumRolePrompt,
   NexumSession,
@@ -91,6 +93,10 @@ function App() {
   const [skillUnregisterID, setSkillUnregisterID] = createSignal("")
   const [skillUnregisterBusy, setSkillUnregisterBusy] = createSignal(false)
   const [skillUnregisterConfirmOpen, setSkillUnregisterConfirmOpen] = createSignal(false)
+  const [mcpServers, setMcpServers] = createSignal<NexumMcpServer[]>([])
+  const [mcpLoading, setMcpLoading] = createSignal(false)
+  const [mcpError, setMcpError] = createSignal("")
+  const [mcpActionID, setMcpActionID] = createSignal("")
   const [rolePrompt, setRolePrompt] = createSignal<NexumRolePrompt | undefined>()
   const [rolePromptDraft, setRolePromptDraft] = createSignal("")
   const [rolePromptBusy, setRolePromptBusy] = createSignal(false)
@@ -108,6 +114,8 @@ function App() {
   const [deleteMessage, setDeleteMessage] = createSignal("")
   const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false)
   let sessionSelectSequence = 0
+  let mcpPollingActive = false
+  let mcpRefreshTimer: ReturnType<typeof setTimeout> | undefined
 
   onMount(async () => {
     const active = await client.experimental.nexum.model.get().catch(() => undefined)
@@ -120,6 +128,26 @@ function App() {
     }
     await Promise.all([restoreSession().catch(() => undefined), loadSkills(), loadRolePrompt()])
     if (!active) setNotice("Nexum API 尚未连接")
+  })
+
+  onMount(() => {
+    mcpPollingActive = true
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (mcpRefreshTimer) clearTimeout(mcpRefreshTimer)
+        mcpRefreshTimer = undefined
+        return
+      }
+      void refreshMcpServers()
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    void refreshMcpServers()
+    onCleanup(() => {
+      mcpPollingActive = false
+      if (mcpRefreshTimer) clearTimeout(mcpRefreshTimer)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    })
   })
 
 
@@ -338,6 +366,68 @@ function App() {
       setSkills([...(await client.experimental.nexum.skill.list()).data])
     } catch (error) {
       setNotice(messageFrom(error, "Skill 目录暂时不可用"))
+    }
+  }
+
+  async function loadMcpServers() {
+    if (mcpLoading()) return
+    setMcpLoading(true)
+    try {
+      const result = await client.experimental.nexum.mcp.list()
+      setMcpServers((current) => mergeMcpServers(current, result.data))
+      setMcpError("")
+    } catch (error) {
+      setMcpError(messageFrom(error, "MCP 状态暂时不可用"))
+    } finally {
+      setMcpLoading(false)
+    }
+  }
+
+  async function refreshMcpServers() {
+    await loadMcpServers()
+    if (mcpPollingActive && mcpServers().some((server) => server.status === "pending" || server.status === "retrying")) {
+      scheduleMcpRefresh()
+    }
+  }
+
+  function scheduleMcpRefresh() {
+    if (!mcpPollingActive || document.visibilityState === "hidden") return
+    if (mcpRefreshTimer) clearTimeout(mcpRefreshTimer)
+    mcpRefreshTimer = setTimeout(() => void refreshMcpServers(), 1000)
+  }
+
+  async function retryMcp(serverID: string) {
+    if (mcpActionID()) return
+    setMcpActionID(serverID)
+    try {
+      const result = await client.experimental.nexum.mcp.connect({ id: serverID })
+      setMcpServers((current) => mergeMcpServers(current, [result.data]))
+      setMcpError("")
+      setNotice(`MCP ${serverID} 已重新发起连接`)
+      if (result.data.status === "pending" || result.data.status === "retrying") scheduleMcpRefresh()
+    } catch (error) {
+      const message = messageFrom(error, "MCP 重试失败，请稍后再试")
+      setMcpError(message)
+      setNotice(message)
+    } finally {
+      setMcpActionID("")
+    }
+  }
+
+  async function authorizeMcp(serverID: string) {
+    if (mcpActionID()) return
+    setMcpActionID(serverID)
+    try {
+      const attempt = await client.experimental.nexum.mcp.authorize({ id: serverID })
+      if (attempt.data.authorizationUrl) window.open(attempt.data.authorizationUrl, "_blank", "noopener,noreferrer")
+      setNotice(`MCP ${serverID} 等待 OAuth 授权`)
+      await loadMcpServers()
+    } catch (error) {
+      const message = messageFrom(error, "MCP 授权失败，请稍后再试")
+      setMcpError(message)
+      setNotice(message)
+    } finally {
+      setMcpActionID("")
     }
   }
 
@@ -1190,6 +1280,71 @@ function App() {
                     </span>
                     <small class="session-item-directory">{session.directory}</small>
                   </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </section>
+
+        <section class="sidebar-card" id="mcp">
+          <div class="card-heading">
+            <div>
+              <span class="section-kicker">Runtime 管理</span>
+              <h2>MCP Servers</h2>
+            </div>
+            <span class="status-badge">{mcpServers().length} 个</span>
+          </div>
+          <Show when={mcpError()}>
+            <p class="field-error" role="alert">
+              {mcpError()}
+            </p>
+          </Show>
+          <Show
+            when={mcpServers().length > 0}
+            fallback={<p class="empty-copy mcp-empty">{mcpLoading() ? "正在读取 MCP 状态…" : "暂无已注册 MCP Server"}</p>}
+          >
+            <div class="mcp-list" aria-live="polite" aria-label="MCP Server 状态">
+              <For each={mcpServers()}>
+                {(server) => (
+                  <article class={`mcp-row mcp-row-${server.status}`}>
+                    <div class="mcp-row-head">
+                      <strong>{server.name}</strong>
+                      <span class="mcp-status">{mcpStatusLabel(server.status)}</span>
+                    </div>
+                    <Show when={server.url}>
+                      <small class="mcp-row-url" title={server.url}>
+                        {server.url}
+                      </small>
+                    </Show>
+                    <Show when={server.status === "retrying"}>
+                      <small class="mcp-row-detail">第 {server.retryAttempt ?? 0} 次重试，Runtime 将自动恢复</small>
+                    </Show>
+                    <Show when={server.status === "failed"}>
+                      <div class="mcp-row-action">
+                        <Show when={server.error?.message}>
+                          <small class="mcp-row-detail">{server.error?.message}</small>
+                        </Show>
+                        <button
+                          class="mcp-action-button"
+                          type="button"
+                          disabled={Boolean(mcpActionID())}
+                          onClick={() => void retryMcp(server.id)}
+                        >
+                          {mcpActionID() === server.id ? "重试中…" : "重试"}
+                        </button>
+                      </div>
+                    </Show>
+                    <Show when={server.status === "needs_auth"}>
+                      <button
+                        class="mcp-action-button"
+                        type="button"
+                        disabled={Boolean(mcpActionID())}
+                        onClick={() => void authorizeMcp(server.id)}
+                      >
+                        {mcpActionID() === server.id ? "打开授权…" : "授权"}
+                      </button>
+                    </Show>
+                  </article>
                 )}
               </For>
             </div>

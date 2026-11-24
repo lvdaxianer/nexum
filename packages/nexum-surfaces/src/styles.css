@@ -551,6 +551,117 @@ input[aria-invalid="true"]:focus {
   margin-top: 13px;
 }
 
+.mcp-empty {
+  margin-top: 13px;
+}
+
+.mcp-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #edf0f4;
+}
+
+.mcp-row {
+  display: grid;
+  gap: 6px;
+  padding: 10px 11px;
+  border: 1px solid #e2e8ee;
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.mcp-row-head,
+.mcp-row-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mcp-row-head strong {
+  overflow: hidden;
+  color: #30465d;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-status,
+.mcp-row-detail,
+.mcp-row-url {
+  color: #74839a;
+  font-size: 10px;
+}
+
+.mcp-status {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #edf1f5;
+  color: #65778b;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.mcp-row-connected,
+.mcp-row-available {
+  border-color: #bce3d9;
+}
+
+.mcp-row-connected .mcp-status,
+.mcp-row-available .mcp-status {
+  background: #e3f5ef;
+  color: #1c8a73;
+}
+
+.mcp-row-retrying,
+.mcp-row-pending {
+  border-color: #ecd6ae;
+}
+
+.mcp-row-retrying .mcp-status,
+.mcp-row-pending .mcp-status {
+  background: #fff3df;
+  color: #a76716;
+}
+
+.mcp-row-failed,
+.mcp-row-needs_auth {
+  border-color: #efc7c2;
+}
+
+.mcp-row-failed .mcp-status {
+  background: #fcebea;
+  color: #b34e47;
+}
+
+.mcp-row-needs_auth .mcp-status {
+  background: #eeeafd;
+  color: #6655a8;
+}
+
+.mcp-row-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-action-button {
+  justify-self: start;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #b8deda;
+  border-radius: 8px;
+  background: #f2fbf9;
+  color: #167d70;
+  font-size: 11px;
+}
+
+.mcp-action-button:hover:not(:disabled) {
+  background: #dff4ef;
+}
+
 .session-item:hover,
 .session-item.is-active {
   border-color: #8acbca;
