@@ -8,7 +8,7 @@
 ## 2. 完整聊天组件与 Web Component
 
 - [x] 2.1 将消息历史、事件投影、reasoning、工具、Permission、Question、Skill 和运行状态抽为 Solid `ChatSurface`，验证加载、发送、重连、取消、继续和交互状态测试通过。
-- [ ] 2.2 增加 `<nexum-chat>` Web Component 包装器、属性/事件契约和 CSS Variables，验证独立 DOM 挂载、Session 切换、卸载清理和 Modal 尺寸下的组件 smoke 测试通过。
+- [x] 2.2 增加 `<nexum-chat>` Web Component 包装器、属性/事件契约和 CSS Variables，验证独立 DOM 挂载、Session 切换、卸载清理和 Modal 尺寸下的组件 smoke 测试通过。
 
 ## 3. 现有页面宿主迁移
 
