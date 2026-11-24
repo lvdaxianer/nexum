@@ -121,6 +121,7 @@ export interface McpPort {
   readonly listResources: (serverID: string) => Promise<readonly McpResource[]>
   readonly listPrompts: (serverID: string) => Promise<readonly McpPrompt[]>
   readonly callTool: (input: McpToolCall) => Promise<ToolResult>
+  readonly subscribeToolsChanged?: (listener: (serverID: string) => void) => () => void
   readonly close?: () => Promise<void>
 }
 
