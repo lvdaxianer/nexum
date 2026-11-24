@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
+import { PassThrough } from "node:stream"
 import { Nexum, type NexumEvent, type NexumSession } from "@nexum/client"
 import type { ChatProtocolAdapter } from "@nexum/surface-adapter"
-import { arrayLineSource, runRepl } from "../src/repl.ts"
+import { arrayLineSource, readlineLineSource, runRepl } from "../src/repl.ts"
 import { memoryIO } from "../src/io.ts"
 
 const session: NexumSession = {
@@ -125,4 +126,37 @@ test("repl /resume switches session and replays its history", async () => {
   const out = io.plain()
   expect(out).toContain("选择会话")
   expect(out.match(/已回放历史/g)?.length).toBe(2)
+})
+
+function ttySource(skills: string[] = []) {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const source = readlineLineSource(() => skills, { input, output })
+  return { input, source, rendered: () => rendered }
+}
+
+test("readlineLineSource serializes main prompt and interaction prompt without deadlock", async () => {
+  const { input, source } = ttySource()
+  const first = source.next()
+  const decision = source.prompter("选择 › ")
+  input.write("1\n")
+  expect(await decision).toBe("1")
+  input.write("继续输入\n")
+  expect(await first).toBe("继续输入")
+  source.close()
+  expect(await source.next()).toBe(null)
+})
+
+test("readlineLineSource completes @skill tokens in place", async () => {
+  const { input, source } = ttySource(["tdd"])
+  const line = source.next()
+  input.write("用 @td\t")
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  input.write("\n")
+  expect(await line).toBe("用 @tdd ")
+  source.close()
 })

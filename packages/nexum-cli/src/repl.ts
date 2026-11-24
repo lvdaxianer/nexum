@@ -23,10 +23,16 @@ export function arrayLineSource(lines: readonly string[]): LineSource {
   }
 }
 
-export function readlineLineSource(skills: () => readonly string[]): LineSource & { prompter: Prompter } {
+export function readlineLineSource(
+  skills: () => readonly string[],
+  options: { input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream } = {},
+): LineSource & { prompter: Prompter } {
   const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
+    input: options.input ?? process.stdin,
+    output: options.output ?? process.stdout,
+    // 注入测试流时强制终端模式,补全器才会在 Tab 时触发;生产路径保持默认(随 stdout.isTTY)。
+    ...(options.input ? { terminal: true } : {}),
+    prompt: "nexum ▸ ",
     completer: (line: string): [string[], string] => {
       const match = line.match(/(?:^|\s)@([a-z0-9-]*)$/i)
       if (!match) return [[], line]
@@ -34,12 +40,40 @@ export function readlineLineSource(skills: () => readonly string[]): LineSource 
       const hits = skills()
         .filter((id) => id.toLowerCase().startsWith(query))
         .map((id) => `@${id} `)
-      return [hits, line.slice(0, line.length - match[1]!.length - 1)]
+      return [hits, line.slice(line.length - match[1]!.length - 1)]
     },
   })
+  const lines: string[] = []
+  const waiters: ((line: string | null) => void)[] = []
+  let closed = false
+  let notifyClosed: () => void = () => {}
+  const closedSignal = new Promise<never>((_, reject) => {
+    notifyClosed = () => reject(new Error("readline closed"))
+  })
+  closedSignal.catch(() => {})
+  rl.on("line", (line) => {
+    const waiter = waiters.shift()
+    if (waiter) waiter(line)
+    else lines.push(line)
+    if (!closed) rl.prompt()
+  })
+  rl.on("close", () => {
+    closed = true
+    notifyClosed()
+    while (waiters.length > 0) waiters.shift()!(null)
+  })
+  rl.prompt()
   return {
-    next: () => rl.question("nexum ▸ ").then((answer) => answer, () => null),
-    prompter: (query) => rl.question(query),
+    next: () => {
+      if (lines.length > 0) return Promise.resolve(lines.shift()!)
+      if (closed) return Promise.resolve(null)
+      return new Promise<string | null>((resolve) => waiters.push(resolve))
+    },
+    prompter: (query) =>
+      Promise.race([rl.question(query), closedSignal]).then((answer) => {
+        if (!closed) rl.prompt()
+        return answer
+      }),
     close: () => rl.close(),
   }
 }
@@ -85,27 +119,29 @@ export async function runRepl(options: ReplOptions): Promise<void> {
       let afterSequence = state.lastSequence
 
       function enqueueInteraction(event: NexumEvent) {
-        interactionQueue = interactionQueue.then(async () => {
-          const data = (event.data ?? {}) as Record<string, unknown>
-          if (event.type === "permission.requested") {
-            const request = permissionFromEvent(data, sessionID)
+        interactionQueue = interactionQueue
+          .then(async () => {
+            const data = (event.data ?? {}) as Record<string, unknown>
+            if (event.type === "permission.requested") {
+              const request = permissionFromEvent(data, sessionID)
+              if (!request) return
+              const decision = await askPermission(io, options.prompter, request)
+              await adapter.replyPermission({ sessionID, requestID: request.id, decision })
+              io.line(paint(io.caps, "green", decision === "deny" ? "权限已拒绝" : "权限已通过"))
+              return
+            }
+            const request = questionFromEvent(data, sessionID)
             if (!request) return
-            const decision = await askPermission(io, options.prompter, request)
-            await adapter.replyPermission({ sessionID, requestID: request.id, decision })
-            io.line(paint(io.caps, "green", decision === "deny" ? "权限已拒绝" : "权限已通过"))
-            return
-          }
-          const request = questionFromEvent(data, sessionID)
-          if (!request) return
-          const answers = await askQuestion(io, options.prompter, request)
-          if (answers === "cancel") {
-            await adapter.cancelQuestion({ sessionID, requestID: request.id })
-            io.line(paint(io.caps, "dim", "已取消补充信息"))
-            return
-          }
-          await adapter.replyQuestion({ sessionID, requestID: request.id, answers })
-          io.line(paint(io.caps, "green", "补充信息已提交,运行继续"))
-        })
+            const answers = await askQuestion(io, options.prompter, request)
+            if (answers === "cancel") {
+              await adapter.cancelQuestion({ sessionID, requestID: request.id })
+              io.line(paint(io.caps, "dim", "已取消补充信息"))
+              return
+            }
+            await adapter.replyQuestion({ sessionID, requestID: request.id, answers })
+            io.line(paint(io.caps, "green", "补充信息已提交,运行继续"))
+          })
+          .catch((error) => io.line(paint(io.caps, "red", `交互处理失败:${error instanceof Error ? error.message : "未知错误"}`)))
       }
 
       const pump = (async () => {
