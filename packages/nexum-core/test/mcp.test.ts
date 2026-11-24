@@ -91,7 +91,7 @@ test("stores a safe failure summary and closes owned connections idempotently", 
     autoConnect: false,
   })
   await registry.register(config)
-  await registry.connect(config.id)
+  await expect(registry.connect(config.id)).resolves.toMatchObject({ status: "connected" })
   await registry.disconnect(config.id)
   await registry.disconnect(config.id)
   expect(closed).toBe(1)
@@ -105,10 +105,121 @@ test("stores a safe failure summary and closes owned connections idempotently", 
     autoConnect: false,
   })
   await failed.register(config)
-  await expect(failed.connect(config.id)).resolves.toMatchObject({ status: "failed" })
+  await expect(failed.connect(config.id)).resolves.toMatchObject({ status: "retrying", retryAttempt: 1 })
   expect((await failed.get(config.id))?.error?.message).not.toContain("secret-token")
   await failed.close()
   await failed.close()
+})
+
+test("stops retrying after the bounded connection budget", async () => {
+  let calls = 0
+  const registry = createMcpRegistry({
+    connector: {
+      connect: async () => {
+        calls += 1
+        throw new Error("permanent network failure")
+      },
+    },
+    autoConnect: false,
+  })
+  await registry.register(config)
+  await registry.connect(config.id)
+  await Bun.sleep(4500)
+
+  await expect(registry.get(config.id)).resolves.toMatchObject({ status: "failed" })
+  expect(calls).toBe(4)
+  expect((await registry.get(config.id))?.retryAttempt).toBeUndefined()
+  expect((await registry.get(config.id))?.nextRetryAt).toBeUndefined()
+  await registry.close()
+})
+
+test("retries an initial connection failure and resets the retry snapshot after recovery", async () => {
+  let calls = 0
+  const registry = createMcpRegistry({
+    connector: {
+      connect: async () => {
+        calls += 1
+        if (calls === 1) throw new Error("temporary network failure")
+        return connection()
+      },
+    },
+    autoConnect: false,
+  })
+  await registry.register(config)
+
+  await expect(registry.connect(config.id)).resolves.toMatchObject({
+    status: "retrying",
+    retryAttempt: 1,
+    nextRetryAt: expect.any(Number),
+  })
+  await Bun.sleep(400)
+
+  await expect(registry.get(config.id)).resolves.toMatchObject({ status: "connected" })
+  expect(calls).toBe(2)
+  expect((await registry.get(config.id))?.retryAttempt).toBeUndefined()
+  expect((await registry.get(config.id))?.nextRetryAt).toBeUndefined()
+  await registry.close()
+})
+
+test("does not retry an OAuth-required connection", async () => {
+  let calls = 0
+  const registry = createMcpRegistry({
+    connector: {
+      connect: async () => {
+        calls += 1
+        throw new McpError("needs_auth", "授权需要用户操作")
+      },
+    },
+    autoConnect: false,
+  })
+  await registry.register(config)
+
+  await expect(registry.connect(config.id)).resolves.toMatchObject({ status: "needs_auth" })
+  await Bun.sleep(350)
+
+  expect(calls).toBe(1)
+  await registry.close()
+})
+
+test("does not retry an invalid connection configuration", async () => {
+  let calls = 0
+  const registry = createMcpRegistry({
+    connector: {
+      connect: async () => {
+        calls += 1
+        throw new McpError("invalid_config", "MCP transport 配置无效")
+      },
+    },
+    autoConnect: false,
+  })
+  await registry.register(config)
+
+  await expect(registry.connect(config.id)).resolves.toMatchObject({ status: "failed" })
+  await Bun.sleep(350)
+
+  expect(calls).toBe(1)
+  await registry.close()
+})
+
+test("cancels an initial retry when the server is disconnected", async () => {
+  let calls = 0
+  const registry = createMcpRegistry({
+    connector: {
+      connect: async () => {
+        calls += 1
+        throw new Error("temporary network failure")
+      },
+    },
+    autoConnect: false,
+  })
+  await registry.register(config)
+  await expect(registry.connect(config.id)).resolves.toMatchObject({ status: "retrying" })
+  await registry.disconnect(config.id)
+  await Bun.sleep(400)
+
+  expect(calls).toBe(1)
+  expect((await registry.get(config.id))?.status).toBe("disabled")
+  await registry.close()
 })
 
 test("reconnects once after an unexpected close and emits catalog changes", async () => {
