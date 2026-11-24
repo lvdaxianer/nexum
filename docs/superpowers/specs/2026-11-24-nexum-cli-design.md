@@ -65,11 +65,13 @@ packages/nexum-cli/src/
 - 启动先调 `capabilities()` 探测；不可达时打印 Server 启动方式（`bun run --cwd packages/nexum-server dev`）并以非零退出。
 - 事件消费与 ChatSurface 一致：`eventID` 去重、`sequence` 单调递增校验、断线后按最后已知 `afterSequence` 重连续传，不假设 SSE 从未中断。
 - 打开会话时先 `loadState` + `loadHistory` 打印紧凑 transcript（用户/助手/工具摘要），再进入实时事件流；历史快照失效（`NEXUM_HISTORY_SNAPSHOT_EXPIRED`）时停止向前翻页，与 UI 处理一致。
+- 默认启动不恢复会话：首条非 slash 消息到达时才懒创建会话（空会话不产生）；`resume`、`-c`/`--continue`、`--session <id>` 显式恢复。
 
 ### 4. 交互语义
 
 - 状态机完全复用协议事实：`idle / running / retrying / awaiting permission / awaiting question / completed / failed / cancelled`；终态只认 `run.settled` 与 `session.*` 事件，不从文本猜测。
 - 运行中输入锁定；`Ctrl+C` 在运行中触发 `cancelRun`，空闲时退出 REPL。
+- 输入框仅空闲时绘制（框内提示行 + `›` 输入行，提交后闭合；运行中不显示，非 TTY 降级为普通 `nexum ▸ ` 提示符）。
 - Permission：事件到达即打印 `action / resource / reason`，提示 `允许一次 / 始终允许 / 拒绝` 三选一，调用 `replyPermission`。
 - Question：按题号渲染编号选项，单选输入序号、多选逗号分隔，按问题顺序提交二维字符串数组；支持取消，取消不伪造答案——与 UI 的 `questionAnswers` 语义一致。
 - REPL slash 命令：`/help`、`/new [名称]`、`/use <sessionID>`、`/sessions`、`/resume`、`/cancel`、`/continue`、`/skills`、`/mcp`、`/model`、`/status`、`/theme [dark|light|auto]`、`/clear`、`/events`、`/thinking [summary|full]`、`/expand`、`/quit`。其中 `/new`、`/use`、`/resume` 直接切换会话（重建事件订阅并回放历史），`/skills`、`/mcp`、`/model`、`/status` 与同名一次性命令输出一致。
@@ -144,7 +146,8 @@ REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status 
 | 命令 | 作用 | 说明 |
 | --- | --- | --- |
 | `nexum resume` | 交互式恢复会话 | 编号列出会话（ID/名称/目录/状态/更新时间），选择后进入 REPL 并回放历史 |
-| `nexum -c` / `--continue` | 恢复最近会话 | 等价 resume 选第一项；`--session <id>` 恢复指定会话 |
+| `nexum session delete <id>` | 删除会话 | 清理不再需要的会话（含懒创建前遗留的空会话） |
+| `nexum -c` / `--continue` | 恢复最近会话 | 等价 resume 选第一项；无会话时进入懒创建；`--session <id>` 恢复指定会话 |
 | `nexum theme [dark\|light\|auto]` | 查看/切换主题 | 写入 `~/.nexum/cli.json`，下次启动生效；只影响装饰色板（Logo 渐变、扫描光色相），语义色仍随终端 |
 | `nexum status` | 总览 | Server 连接与协议版本、模型与凭据、主题、会话/Skill/MCP 统计 |
 | `nexum doctor` | 诊断 | 逐项 ✓/⚠/✗：Server 可达、协议匹配、模型探测、MCP 待授权、invalid Skill，并给出修复命令；存在 ✗ 时退出码 1 |

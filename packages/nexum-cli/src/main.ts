@@ -30,22 +30,23 @@ import {
   cmdStatus,
   cmdTheme,
 } from "./admin"
-import { cmdPrompt, cmdResume, cmdSessionCreate, cmdSessionList, resolveSessionID } from "./commands"
+import { cmdPrompt, cmdResume, cmdSessionCreate, cmdSessionDelete, cmdSessionList, latestSessionID } from "./commands"
 import { logoLines } from "./anim"
 import { loadCliConfig, resolveTheme } from "./config"
 import type { Prompter } from "./interact"
 import { createIO } from "./io"
-import { readlineLineSource, runRepl } from "./repl"
+import { inputBoxLines, readlineLineSource, runRepl } from "./repl"
 import { detectCaps, paint } from "./term"
 
 export const USAGE = `Nexum CLI — 与 Web UI 同级的终端 Surface
 
 用法: nexum [--server <url>] [--session <id>] [--theme <主题>] [--no-anim] [命令]
 
-  (无命令)                进入 REPL(复用最近会话或新建)
+  (无命令)                进入 REPL(新会话,首条消息时创建)
   resume                  交互式选择会话恢复(-c/--continue 跳过选择直接恢复最近)
   session list            列出会话
   session create [--dir <路径>] [--name <名称>]
+  session delete <id>     删除会话
   prompt <文本> [--session <id>]   流式执行,退出码 0/1/130
   status                  连接与配置总览
   doctor                  逐项诊断(存在失败项时退出码 1)
@@ -121,16 +122,22 @@ export async function run(argv: string[]): Promise<number> {
       const skills = await adapter.listSkills()
       for (const logoLine of logoLines(io.caps)) io.line(logoLine)
       io.line(paint(io.caps, "dim", "v0.1.0 · 协议 nexum.runtime.v1"))
-      const lineSource = readlineLineSource(() => skills.filter((skill) => skill.status === "ready").map((skill) => skill.id))
+      const lineSource = readlineLineSource(
+        () => skills.filter((skill) => skill.status === "ready").map((skill) => skill.id),
+        { box: inputBoxLines(io.caps, process.stdout.columns ?? 80) },
+      )
       try {
         let sessionID: string | undefined
         if (command === "resume") {
-          sessionID = values.continue ? await resolveSessionID(client, io) : await cmdResume(client, io, lineSource.prompter)
-          if (!sessionID) return 1
-        } else {
-          sessionID = await resolveSessionID(client, io, values.session)
+          sessionID = values.continue ? await latestSessionID(client) : await cmdResume(client, io, lineSource.prompter)
+          if (!sessionID && !values.continue) return 1
+        } else if (values.session) {
+          sessionID = values.session
+        } else if (values.continue) {
+          sessionID = await latestSessionID(client)
         }
-        await runRepl({ adapter, client, io, sessionID, lineSource, prompter: lineSource.prompter, baseUrl })
+        // 默认:sessionID 保持 undefined → 首条消息时懒创建
+        await runRepl({ adapter, client, io, ...(sessionID ? { sessionID } : {}), lineSource, prompter: lineSource.prompter, baseUrl })
         return 0
       } finally {
         lineSource.close()
@@ -143,6 +150,7 @@ export async function run(argv: string[]): Promise<number> {
       if (command === "session") {
         if (rest[0] === "list") return await cmdSessionList(client, io).then(() => 0)
         if (rest[0] === "create") return await cmdSessionCreate(client, io, { directory: values.dir ?? process.cwd(), ...(values.name ? { name: values.name } : {}) }).then(() => 0)
+        if (rest[0] === "delete" && rest[1]) return await cmdSessionDelete(client, io, rest[1]).then(() => 0)
       }
       if (command === "prompt") {
         const text = rest.join(" ").trim()

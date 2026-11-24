@@ -8,7 +8,7 @@ test("resolveBaseUrl prefers flag over env over default", () => {
 })
 
 test("USAGE documents all command groups", () => {
-  for (const group of ["session list", "session create", "prompt", "resume", "status", "doctor", "theme", "model get", "model set", "model probe", "role-prompt", "skill list", "skill register", "mcp list", "mcp connect", "--server", "--session", "--continue", "--theme", "--no-anim", "--version"]) {
+  for (const group of ["session list", "session create", "session delete", "prompt", "resume", "status", "doctor", "theme", "model get", "model set", "model probe", "role-prompt", "skill list", "skill register", "mcp list", "mcp connect", "--server", "--session", "--continue", "--theme", "--no-anim", "--version"]) {
     expect(USAGE).toContain(group)
   }
 })

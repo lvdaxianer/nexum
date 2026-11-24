@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { Nexum } from "@nexum/client"
 import type { ChatProtocolAdapter } from "@nexum/surface-adapter"
-import { cmdPrompt, cmdResume, cmdSessionCreate, cmdSessionList, resolveSessionID } from "../src/commands.ts"
+import { cmdPrompt, cmdResume, cmdSessionCreate, cmdSessionDelete, cmdSessionList, latestSessionID } from "../src/commands.ts"
 import { memoryIO } from "../src/io.ts"
 
 const meta = { protocolVersion: "nexum.runtime.v1", traceId: "trace_test" } as const
@@ -57,19 +57,26 @@ test("cmdSessionCreate prints the created session id", async () => {
   expect(io.plain()).toContain("new_session_1")
 })
 
-test("resolveSessionID prefers requested, then latest, then creates", async () => {
+test("latestSessionID returns the most recently updated session, undefined when empty", async () => {
+  const client = fakeClient(() => [
+    { id: "old", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "2026-11-20T00:00:00Z" },
+    { id: "new", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "2026-11-24T00:00:00Z" },
+  ])
+  expect(await latestSessionID(client)).toBe("new")
+  expect(await latestSessionID(fakeClient(() => []))).toBeUndefined()
+})
+
+test("cmdSessionDelete deletes by id and prints it", async () => {
   const io = memoryIO()
+  const calls: string[] = []
   const client = fakeClient((request) => {
-    if (request.method === "POST") return { id: "created_1", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }
-    return [
-      { id: "old", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "2026-11-20T00:00:00Z" },
-      { id: "new", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "2026-11-24T00:00:00Z" },
-    ]
+    calls.push(`${request.method} ${new URL(request.url).pathname}`)
+    return { id: "s1", deleted: true }
   })
-  expect(await resolveSessionID(client, io, "given")).toBe("given")
-  expect(await resolveSessionID(client, io)).toBe("new")
-  const empty = fakeClient((request) => (request.method === "POST" ? { id: "created_1", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" } : []))
-  expect(await resolveSessionID(empty, io)).toBe("created_1")
+  await cmdSessionDelete(client, io, "s1")
+  expect(calls).toEqual(["DELETE /api/nexum/session/s1"])
+  expect(io.plain()).toContain("已删除会话")
+  expect(io.plain()).toContain("s1")
 })
 
 test("cmdResume lists sessions and returns the picked id", async () => {

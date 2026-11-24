@@ -1,4 +1,4 @@
-/** 会话类一次性命令:session list / session create / prompt(流式,退出码 0/1/130)。 */
+/** 会话类一次性命令:session list / session create / session delete / prompt(流式,退出码 0/1/130)。 */
 
 import { Nexum } from "@nexum/client"
 import type { ChatProtocolAdapter } from "@nexum/surface-adapter"
@@ -43,14 +43,15 @@ export async function cmdSessionCreate(client: NexumClient, io: CliIO, input: { 
   io.line(`${paint(io.caps, "green", "✓")} 已创建会话 ${paint(io.caps, "blue", session.id)}`)
 }
 
-export async function resolveSessionID(client: NexumClient, io: CliIO, requested?: string): Promise<string> {
-  if (requested) return requested
+/** 最近更新的会话 ID;没有会话时返回 undefined,由调用方决定进入懒创建。 */
+export async function latestSessionID(client: NexumClient): Promise<string | undefined> {
   const sessions = (await client.experimental.nexum.session.list()).data
-  const latest = [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
-  if (latest) return latest.id
-  const created = (await client.experimental.nexum.session.create({ directory: process.cwd() })).data
-  io.line(paint(io.caps, "dim", `已创建会话 ${created.id}`))
-  return created.id
+  return [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.id
+}
+
+export async function cmdSessionDelete(client: NexumClient, io: CliIO, id: string): Promise<void> {
+  await client.experimental.nexum.session.delete({ sessionID: id })
+  io.line(`${paint(io.caps, "green", "✓")} 已删除会话 ${id}`)
 }
 
 /** 交互式恢复会话:编号列出,选择后返回会话 ID;取消或无效返回 undefined。 */

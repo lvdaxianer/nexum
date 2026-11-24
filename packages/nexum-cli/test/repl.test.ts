@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { PassThrough } from "node:stream"
 import { Nexum, type NexumEvent, type NexumSession } from "@nexum/client"
 import type { ChatProtocolAdapter } from "@nexum/surface-adapter"
-import { arrayLineSource, readlineLineSource, runRepl } from "../src/repl.ts"
+import { arrayLineSource, inputBoxLines, readlineLineSource, runRepl } from "../src/repl.ts"
 import { memoryIO } from "../src/io.ts"
 
 const session: NexumSession = {
@@ -223,6 +223,100 @@ test("repl exits when the session cannot be opened", async () => {
   expect(io.plain()).toContain("会话打开失败:会话不存在")
 })
 
+test("inputBoxLines returns undefined for non-TTY and box strings for ansi16", () => {
+  expect(inputBoxLines({ isTTY: false, color: "none", anim: false, theme: "dark" }, 80)).toBeUndefined()
+  expect(inputBoxLines({ isTTY: true, color: "none", anim: false, theme: "dark" }, 80)).toBeUndefined()
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 80)!
+  expect(box.top).toContain("╭")
+  expect(box.top).toContain("╮")
+  expect(box.hint).toContain("输入任务")
+  expect(box.hint).toContain("/help 命令")
+  expect(box.inputPrefix).toContain("›")
+  expect(box.bottom).toContain("╰")
+  expect(box.bottom).toContain("╯")
+  expect(box.top).toContain("\x1b[36m")
+})
+
+function createTrackingClient(onCreate: (body: { name?: string }) => void) {
+  return Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      const request = new Request(typeof input === "string" ? input : input.toString(), init)
+      if (request.method === "POST") {
+        onCreate(JSON.parse(await request.text()) as { name?: string })
+        return Response.json({ data: session, meta })
+      }
+      return Response.json({ data: [], meta })
+    },
+  })
+}
+
+test("repl without sessionID lazily creates the session on the first message", async () => {
+  const io = memoryIO()
+  const { adapter, sent } = fakeAdapter({
+    onSend: () => [makeEvent("assistant.text", { content: "你好" }, 1), makeEvent("run.settled", { result: "completed" }, 2)],
+  })
+  const creates: (string | undefined)[] = []
+  const client = createTrackingClient((body) => creates.push(body.name))
+  await runRepl({ adapter, client, io, lineSource: slowLineSource(["你好", "/quit"]), prompter: async () => "" })
+  expect(creates).toEqual([undefined])
+  expect(sent).toEqual(["你好"])
+  const out = io.plain()
+  expect(out).toContain("新会话 · 发送第一条消息后创建(空会话不会产生垃圾)")
+  expect(out).toContain(`会话 ${session.id} · 已创建`)
+  expect(out).toContain("✓ 运行完成")
+})
+
+test("repl quitting without a message creates no session", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  const creates: (string | undefined)[] = []
+  const client = createTrackingClient((body) => creates.push(body.name))
+  await runRepl({ adapter, client, io, lineSource: arrayLineSource(["/quit"]), prompter: async () => "" })
+  expect(creates).toEqual([])
+  expect(io.plain()).toContain("新会话 · 发送第一条消息后创建")
+})
+
+test("repl /new returns to pending state and names the next created session", async () => {
+  const io = memoryIO()
+  const { adapter, sent } = fakeAdapter({
+    onSend: () => [makeEvent("run.settled", { result: "completed" }, 1)],
+  })
+  const creates: (string | undefined)[] = []
+  const client = createTrackingClient((body) => creates.push(body.name))
+  await runRepl({ adapter, client, io, lineSource: slowLineSource(["/new 改名", "第一条", "/quit"]), prompter: async () => "" })
+  expect(creates).toEqual(["改名"])
+  expect(sent).toEqual(["第一条"])
+  expect(io.plain()).toContain(`会话 ${session.id} · 已创建`)
+})
+
+test("repl session-dependent slash commands warn before the session exists", async () => {
+  const io = memoryIO()
+  const { adapter, calls } = fakeAdapter({})
+  await runRepl({ adapter, client: fakeClient(), io, lineSource: arrayLineSource(["/cancel", "/continue", "/quit"]), prompter: async () => "" })
+  expect(io.plain().match(/会话尚未创建,发送第一条消息后可用/g)?.length).toBe(2)
+  expect(calls).not.toContain("cancelRun")
+  expect(calls).not.toContain("continueRun")
+})
+
+test("repl silently resubscribes when the stream ends after a terminal state", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  let subscriptions = 0
+  adapter.subscribeEvents = async function* (input) {
+    subscriptions += 1
+    if (subscriptions === 1) {
+      yield makeEvent("assistant.text", { content: "第一段" }, 1)
+      yield makeEvent("run.settled", { result: "completed" }, 2)
+      return
+    }
+    while (!input.signal?.aborted) await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: slowLineSource(["/quit"]), reconnectDelayMs: 10, prompter: async () => "" })
+  expect(subscriptions).toBeGreaterThanOrEqual(2)
+  expect(io.plain()).not.toContain("事件流已断开")
+})
+
 test("readlineLineSource completes @skill tokens in place", async () => {
   const { input, source } = ttySource(["tdd"])
   const line = source.next()
@@ -230,5 +324,30 @@ test("readlineLineSource completes @skill tokens in place", async () => {
   await new Promise((resolve) => setTimeout(resolve, 50))
   input.write("\n")
   expect(await line).toBe("用 @tdd ")
+  source.close()
+})
+
+test("readlineLineSource draws the box on showPrompt and closes it on submit", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 60)!
+  const source = readlineLineSource(() => [], { input, output, box })
+  source.showPrompt?.()
+  source.showPrompt?.()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(rendered.match(/╭/g)?.length).toBe(1)
+  expect(rendered).toContain("输入任务")
+  const line = source.next()
+  input.write("你好\n")
+  expect(await line).toBe("你好")
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(rendered).toContain("╰")
+  source.showPrompt?.()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(rendered.match(/╭/g)?.length).toBe(2)
   source.close()
 })
