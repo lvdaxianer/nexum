@@ -234,8 +234,11 @@ async function persistCredentialFile(filePath: string, credentials: readonly Mcp
 }
 
 function validateCredential(credential: McpOAuthCredential): void {
-  if (!credential.serverID.trim() || !credential.accessToken.trim()) {
+  if (!credential.serverID.trim() || (credential.accessToken !== undefined && !credential.accessToken.trim())) {
     throw new McpStoreError("invalid_credential", "MCP OAuth 凭据缺少 Server 或 access token")
+  }
+  if (credential.accessToken === undefined && !credential.clientId?.trim()) {
+    throw new McpStoreError("invalid_credential", "MCP OAuth 凭据缺少 access token 或 client id")
   }
   if (credential.expiresAt !== undefined && (!Number.isFinite(credential.expiresAt) || credential.expiresAt <= 0)) {
     throw new McpStoreError("invalid_credential", "MCP OAuth 凭据 expiresAt 无效")
@@ -290,7 +293,8 @@ function isMcpOAuthCredential(value: unknown): value is McpOAuthCredential {
     (value.scope === undefined || typeof value.scope === "string") &&
     (value.resource === undefined || typeof value.resource === "string") &&
     (value.clientId === undefined || typeof value.clientId === "string") &&
-    (value.clientSecret === undefined || typeof value.clientSecret === "string")
+    (value.clientSecret === undefined || typeof value.clientSecret === "string") &&
+    (value.issuer === undefined || typeof value.issuer === "string")
   )
 }
 

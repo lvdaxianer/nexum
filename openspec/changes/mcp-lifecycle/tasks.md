@@ -12,9 +12,9 @@
 
 ## 3. 官方 SDK 连接与 OAuth
 
-- [ ] 3.1 接入官方 `@modelcontextprotocol/client`，实现 Streamable HTTP 初始化、能力协商、工具/资源/prompt 目录发现、协议偏好和安全关闭；用真实测试 transport 验证初始化与调用
+- [x] 3.1 接入官方 `@modelcontextprotocol/client`，实现 Streamable HTTP 初始化、能力协商、工具/资源/prompt 目录发现、协议偏好和安全关闭；用真实测试 transport 验证初始化与调用
 - [ ] 3.2 实现 OpenCode 对齐的 OAuth discovery、PKCE/state、loopback callback、redirect paste、凭据保存、提前刷新、一次 401 重试和 needs_auth；验证成功、取消、过期、刷新拒绝和 session expired 恢复
-- [ ] 3.3 将断线、session expired、catalog changed 接入单飞重连和去抖刷新，并验证 disconnect/close 与重连竞态不会复活旧连接
+- [x] 3.3 将断线、session expired、catalog changed 接入单飞重连和去抖刷新，并验证 disconnect/close 与重连竞态不会复活旧连接
 
 ## 4. Application 工具桥接
 

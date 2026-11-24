@@ -110,3 +110,69 @@ test("stores a safe failure summary and closes owned connections idempotently", 
   await failed.close()
   await failed.close()
 })
+
+test("reconnects once after an unexpected close and emits catalog changes", async () => {
+  let calls = 0
+  let onClose: (() => void) | undefined
+  let onToolsChanged: (() => void) | undefined
+  const registry = createMcpRegistry({
+    connector: {
+      connect: async () => {
+        calls += 1
+        return connection({
+          onClose: (listener) => {
+            onClose = listener
+            return () => {}
+          },
+          onToolsChanged: (listener) => {
+            onToolsChanged = listener
+            return () => {}
+          },
+        })
+      },
+    },
+    autoConnect: false,
+  })
+  let changes = 0
+  const unsubscribe = registry.subscribeToolsChanged((serverID) => {
+    if (serverID === config.id) changes += 1
+  })
+  await registry.register(config)
+  await registry.connect(config.id)
+  onToolsChanged?.()
+  onClose?.()
+  await Bun.sleep(600)
+
+  expect(changes).toBe(1)
+  expect(calls).toBe(2)
+  unsubscribe()
+  await registry.close()
+})
+
+test("reconnects once when a tool call reports an expired MCP session", async () => {
+  let calls = 0
+  let toolCalls = 0
+  const registry = createMcpRegistry({
+    connector: {
+      connect: async () => {
+        calls += 1
+        return connection({
+          callTool: async () => {
+            toolCalls += 1
+            if (toolCalls === 1) throw new Error("MCP session expired")
+            return { ok: true, output: "recovered" }
+          },
+        })
+      },
+    },
+    autoConnect: false,
+  })
+  await registry.register(config)
+  await registry.connect(config.id)
+
+  await expect(registry.callTool({ serverID: config.id, toolName: "search", input: {} })).resolves.toEqual({
+    ok: true,
+    output: "recovered",
+  })
+  expect(calls).toBe(2)
+})
