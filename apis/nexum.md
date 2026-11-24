@@ -8,24 +8,25 @@
 
 下表以 `packages/nexum-server/src/index.ts` 的路由分支为准。路径参数使用 `:name` 表示，文档中的 `{name}` 示例值必须进行 URL path 编码。
 
-| 路由归属    | 对外端点                                                   | 文档章节                                                                 | 覆盖状态 |
-| ----------- | ---------------------------------------------------------- | ------------------------------------------------------------------------ | -------- |
-| Health      | `GET /health/live`、`GET /health/ready`                    | [Health 与 Capabilities](#health-与-capabilities)                        | 已覆盖   |
-| Runtime     | `GET /api/nexum/capabilities`                              | [Health 与 Capabilities](#health-与-capabilities)                        | 已覆盖   |
-| Model       | `GET /api/nexum/model`、`PUT /api/nexum/model`             | [Model 配置与 Probe](#model-配置与-probe)                                | 已覆盖   |
-| Model       | `POST /api/nexum/model/probe`                              | [Model 配置与 Probe](#model-配置与-probe)                                | 已覆盖   |
-| Role Prompt | `GET` / `PUT` / `DELETE /api/nexum/role-prompt`            | [默认角色提示词](#默认角色提示词)                                        | 已覆盖   |
-| Session     | `GET` / `POST /api/nexum/session`                          | [Session 资源与状态](#session-资源与状态)                                | 已覆盖   |
-| Session     | `PUT` / `DELETE /api/nexum/session/:sessionID`             | [Session 资源与状态](#session-资源与状态)；[Session 删除](#session-删除) | 已覆盖   |
-| Session     | `GET /api/nexum/session/:sessionID/state`                  | [Session 资源与状态](#session-资源与状态)                                | 已覆盖   |
-| Session     | `POST /api/nexum/session/:sessionID/prompt`                | [Session 运行端点](#session-运行端点)                                    | 已覆盖   |
-| Session     | `GET /api/experimental/nexum/session/:sessionID/messages`  | [Session 对话历史](#session-对话历史)                                    | 已覆盖   |
-| Session     | `POST /api/experimental/nexum/session/:sessionID/continue` | [实验性：继续运行](#实验性继续运行)                                      | 已覆盖   |
-| Session     | `POST /api/nexum/session/:sessionID/cancel`                | [Session 运行端点](#session-运行端点)                                    | 已覆盖   |
-| Session     | `GET /api/nexum/session/:sessionID/events`                 | [事件语义](#事件语义)                                                    | 已覆盖   |
-| Permission  | `/api/nexum/permission...`                                 | [Permission 与策略](#permission-与策略)                                  | 待补齐   |
-| Question    | `/api/nexum/session/:sessionID/question...`                | [Question 反问](#question-反问)                                          | 待补齐   |
-| Skill       | `/api/nexum/skills...`                                     | [Skill 注册管理](#skill-注册管理)                                        | 已覆盖   |
+| 路由归属    | 对外端点                                                                          | 文档章节                                                                 | 覆盖状态 |
+| ----------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------- |
+| Health      | `GET /health/live`、`GET /health/ready`                                           | [Health 与 Capabilities](#health-与-capabilities)                        | 已覆盖   |
+| Runtime     | `GET /api/nexum/capabilities`                                                     | [Health 与 Capabilities](#health-与-capabilities)                        | 已覆盖   |
+| Model       | `GET /api/nexum/model`、`PUT /api/nexum/model`                                    | [Model 配置与 Probe](#model-配置与-probe)                                | 已覆盖   |
+| Model       | `POST /api/nexum/model/probe`                                                     | [Model 配置与 Probe](#model-配置与-probe)                                | 已覆盖   |
+| Role Prompt | `GET` / `PUT` / `DELETE /api/nexum/role-prompt`                                   | [默认角色提示词](#默认角色提示词)                                        | 已覆盖   |
+| Session     | `GET` / `POST /api/nexum/session`                                                 | [Session 资源与状态](#session-资源与状态)                                | 已覆盖   |
+| Session     | `PUT` / `DELETE /api/nexum/session/:sessionID`                                    | [Session 资源与状态](#session-资源与状态)；[Session 删除](#session-删除) | 已覆盖   |
+| Session     | `GET /api/nexum/session/:sessionID/state`                                         | [Session 资源与状态](#session-资源与状态)                                | 已覆盖   |
+| Session     | `POST /api/nexum/session/:sessionID/prompt`                                       | [Session 运行端点](#session-运行端点)                                    | 已覆盖   |
+| Session     | `GET /api/experimental/nexum/session/:sessionID/messages`                         | [Session 对话历史](#session-对话历史)                                    | 已覆盖   |
+| Session     | `POST /api/experimental/nexum/session/:sessionID/continue`                        | [实验性：继续运行](#实验性继续运行)                                      | 已覆盖   |
+| Session     | `POST /api/nexum/session/:sessionID/cancel`                                       | [Session 运行端点](#session-运行端点)                                    | 已覆盖   |
+| Session     | `GET /api/nexum/session/:sessionID/events`                                        | [事件语义](#事件语义)                                                    | 已覆盖   |
+| Permission  | `/api/nexum/permission/policy`、`/api/nexum/permission/policy/:ruleID`            | [Permission 与策略](#permission-与策略)                                  | 已覆盖   |
+| Permission  | `/api/nexum/session/:sessionID/permission`、`/permission/:requestID/reply`        | [Permission 与策略](#permission-与策略)                                  | 已覆盖   |
+| Question    | `/api/nexum/session/:sessionID/question`、`/question/:requestID/reply`、`/cancel` | [Question 反问](#question-反问)                                          | 已覆盖   |
+| Skill       | `/api/nexum/skills...`                                                            | [Skill 注册管理](#skill-注册管理)                                        | 已覆盖   |
 
 ## 协议约定
 
@@ -579,6 +580,161 @@ curl --request DELETE 'http://127.0.0.1:4097/api/nexum/session/session_001' \
 }
 ```
 
+## Permission 与策略
+
+Permission 有两个层次：运行时 pending 请求用于一次工具调用的审批，Policy 用于持久化全局或 Session 覆盖规则。所有 JSON 请求可带 `X-Trace-Id`，有 body 时使用 `Content-Type: application/json`；Cookie 不适用。服务不会返回原始凭据或未脱敏资源。
+
+### Pending Permission
+
+#### `GET /api/nexum/session/{sessionID}/permission`
+
+返回当前 Session 的待审批数组。成功 `200`：
+
+```json
+{
+  "data": [
+    {
+      "id": "permission_001",
+      "sessionID": "session_001",
+      "action": "write",
+      "resource": "notes.txt",
+      "reason": "工具 write 需要权限审批"
+    }
+  ],
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_permission_001" }
+}
+```
+
+Permission 不存在的 Session 返回 `404 NEXUM_SESSION_NOT_FOUND`；Broker 未配置返回 `503 NEXUM_PERMISSION_NOT_CONFIGURED`。列表是当前 pending 快照，空数组表示没有待审批请求。
+
+#### `POST /api/nexum/session/{sessionID}/permission/{requestID}/reply`
+
+请求体只有一个 `decision` 字段，允许值为 `allow_once`、`allow_always`、`deny`。成功返回：
+
+```json
+{
+  "data": { "status": "approved" },
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_permission_002" }
+}
+```
+
+`deny` 的成功响应为 `{ "status": "denied" }`。`allow_always` 会尝试写入 action-agnostic 的全局精确 resource 规则，当前请求即使规则持久化失败也仍按本次批准继续。
+
+| HTTP 状态码 | `errorCode`                                              | 触发条件                                   |
+| ----------- | -------------------------------------------------------- | ------------------------------------------ |
+| `400`       | `NEXUM_INVALID_REQUEST`                                  | body 不是对象、decision 缺失或不在允许集合 |
+| `404`       | `NEXUM_SESSION_NOT_FOUND` / `NEXUM_PERMISSION_NOT_FOUND` | Session 或 requestID 不存在                |
+| `409`       | `NEXUM_PERMISSION_SESSION_MISMATCH`                      | requestID 属于其他 Session                 |
+| `500`       | `NEXUM_PERMISSION_REPLY_FAILED`                          | Broker 回复失败                            |
+| `503`       | `NEXUM_PERMISSION_NOT_CONFIGURED`                        | Permission Broker 未配置                   |
+
+对同一个仍 pending 的 request 重复提交，Broker 返回第一次已经结算的决策；因此调用方可以安全处理网络重试。服务重启后没有原进程等待者的持久化交互会被视为 orphaned，旧 requestID 不应继续回复。
+
+### Permission Policy
+
+#### `GET /api/nexum/permission/policy`
+
+可选 query `sessionID`：省略时返回全局规则，提供时返回该 Session 的规则。成功 `200`：
+
+```json
+{
+  "data": {
+    "rules": [
+      {
+        "id": "rule_001",
+        "action": "read",
+        "resource": "src/**",
+        "effect": "allow",
+        "scope": "global",
+        "createdAt": "...",
+        "updatedAt": "..."
+      }
+    ],
+    "defaultEffect": "ask",
+    "sessionID": "session_001"
+  },
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_policy_001" }
+}
+```
+
+#### `POST /api/nexum/permission/policy`
+
+新建规则请求体：
+
+```json
+{
+  "action": "read",
+  "resource": "src/**",
+  "effect": "allow",
+  "scope": "global",
+  "sessionID": "session_001"
+}
+```
+
+`action` 只支持 `*`、`shell`、`read`、`write`、`edit`；`effect` 只支持 `allow`、`ask`、`deny`；`scope` 默认 `global`，设为 `session` 时必须提供存在的 `sessionID`。成功 `200` 返回完整规则。重复规则返回 `409 NEXUM_PERMISSION_POLICY_CONFLICT`。
+
+#### `PUT /api/nexum/permission/policy/{ruleID}`
+
+部分更新 `action`、`resource`、`effect` 中至少一个字段；不允许修改 scope 或 sessionID。空 body 返回 `400 NEXUM_INVALID_REQUEST`，不存在返回 `404 NEXUM_PERMISSION_POLICY_NOT_FOUND`。
+
+#### `DELETE /api/nexum/permission/policy/{ruleID}`
+
+成功 `200` 返回 `{ "data": { "id": "rule_001", "deleted": true } }`。删除后请求回落到下一层策略判定。不存在返回 `404 NEXUM_PERMISSION_POLICY_NOT_FOUND`。
+
+Policy 共用以下错误：`503 NEXUM_PERMISSION_NOT_CONFIGURED`（Broker 未配置）、`500 NEXUM_PERMISSION_POLICY_UNAVAILABLE`（策略文件不可用）、`500 NEXUM_PERMISSION_POLICY_FAILED`（未分类 Store 失败）。所有错误均带 `traceId`。
+
+策略评估先筛选适用的 global/session 规则，再按 resource/action 匹配；Session 规则优先于 global 规则，deny 优先于 allow，未命中默认为 ask。危险 shell 或越界路径的 allow 必须精确匹配 resource；通配 allow 不会自动放行危险操作。
+
+```bash
+curl --request GET 'http://127.0.0.1:4097/api/nexum/session/session_001/permission' \
+  --header 'X-Trace-Id: trace_permission_001'
+
+curl --request POST 'http://127.0.0.1:4097/api/nexum/session/session_001/permission/permission_001/reply' \
+  --header 'Content-Type: application/json' \
+  --data '{"decision":"allow_once"}'
+
+curl --request POST 'http://127.0.0.1:4097/api/nexum/permission/policy' \
+  --header 'Content-Type: application/json' \
+  --data '{"action":"read","resource":"src/**","effect":"allow"}'
+```
+
+## Question 反问
+
+Question 是由模型以结构化选项暂停运行的交互，不是普通文本消息。请求字段为 `id`、`sessionID`、`toolCallID` 和 `questions[]`；每个问题包含 `header`、`question`、`options[]`，选项包含 `label`、`description`，可选 `multiple`。
+
+### `GET /api/nexum/session/{sessionID}/question`
+
+成功 `200` 返回当前 Session 的 pending Question 数组；Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；Question Port 未配置返回 `503 NEXUM_QUESTION_NOT_CONFIGURED`。空数组表示没有待回答反问。
+
+### `POST /api/nexum/session/{sessionID}/question/{requestID}/reply`
+
+请求体为二维字符串数组，外层索引对应 `questions[]`，内层是该问题选择的 option label：
+
+```json
+{
+  "answers": [["继续"], ["TypeScript", "Bun"]]
+}
+```
+
+合法回答成功返回 `{ "data": { "status": "answered" } }`。结构不是二维字符串数组返回 `400 NEXUM_INVALID_REQUEST`；requestID 不存在返回 `404 NEXUM_QUESTION_NOT_FOUND`；请求属于其他 Session 返回 `409 NEXUM_QUESTION_SESSION_MISMATCH`；待回答已取消返回 `409 NEXUM_QUESTION_CANCELLED`；Question 端口失败返回 `500 NEXUM_QUESTION_FAILED`。
+
+### `POST /api/nexum/session/{sessionID}/question/{requestID}/cancel`
+
+请求体为空。成功返回 `{ "data": { "status": "cancelled" } }`，不会伪造答案；未知 requestID、Session mismatch 和服务失败分别映射为 `NEXUM_QUESTION_NOT_FOUND`、`NEXUM_QUESTION_SESSION_MISMATCH`、`NEXUM_QUESTION_FAILED`。Question Port 未配置返回 `503 NEXUM_QUESTION_NOT_CONFIGURED`。
+
+Question reply/cancel 都应按 requestID 做一次性提交；失败时保留 UI 的选择和错误提示，等待 SSE 的 `question.result` 或 `question.cancelled` 事件确认运行后续状态。
+
+```bash
+curl --request GET 'http://127.0.0.1:4097/api/nexum/session/session_001/question' \
+  --header 'X-Trace-Id: trace_question_001'
+
+curl --request POST 'http://127.0.0.1:4097/api/nexum/session/session_001/question/question_001/reply' \
+  --header 'Content-Type: application/json' \
+  --data '{"answers":[["继续"]]}'
+
+curl --request POST 'http://127.0.0.1:4097/api/nexum/session/session_001/question/question_001/cancel'
+```
+
 ## Skill 注册管理
 
 Nexum 以注册表中的地址为 Skill 来源。默认本地 Runtime 将注册源和安全状态持久化到 `<dataDirectory>/skills.json`；显式配置可通过 `NEXUM_SKILL_REGISTRY_FILE` 覆盖。取消注册只删除 Nexum 注册记录，不删除、移动或修改源目录。
@@ -608,6 +764,10 @@ Session Agent 使用内置 `skill_registry` 工具管理 Nexum 注册表，操�
 | `POST`   | `/api/nexum/skills/validate`     | `{id?}`            | `200`，`data.valid` 和摘要数组           | `400 NEXUM_INVALID_REQUEST`                                  |
 | `DELETE` | `/api/nexum/skills/:id`          | 不适用             | `200`，`data.deleted=true`               | `404 NEXUM_SKILL_NOT_FOUND`                                  |
 | `POST`   | `/api/nexum/skills/:id/activate` | `{sessionID,text}` | `200`，`data` 为 Skill prompt attachment | `404`/`409` Skill 或 Session 错误                            |
+
+以上端点在 Registry 或 Invocation Port 未配置时统一返回 `503 NEXUM_SKILL_REGISTRY_NOT_CONFIGURED`。`refresh` 和 `validate` 的 body 可省略，或使用 `{ "id": "skill-id" }`；`validate` 返回 `{ "valid": boolean, "data": SkillSummary[] }`，没有匹配 Skill 时 `valid=false`，不是 HTTP 404。
+
+`POST /api/nexum/skills/:id/activate` 的 body 必须同时包含字符串 `sessionID` 和 `text`。服务会确保文本包含目标 `@id` mention，再经过 `skill.use` Permission。Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；Skill 不存在返回 `404 NEXUM_SKILL_NOT_FOUND`；Skill 状态不是 `ready` 返回 `409 NEXUM_SKILL_NOT_READY`；Permission 拒绝返回 `409 NEXUM_SKILL_PERMISSION_DENIED`；其他激活失败返回 `500 NEXUM_SKILL_ACTIVATION_FAILED`。
 
 成功响应统一使用：
 
