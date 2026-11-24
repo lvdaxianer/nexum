@@ -109,6 +109,31 @@
   background: var(--nexum-chat-bg);
 }
 
+.nexum-chat-runtime-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 20px 0;
+  color: var(--nexum-chat-muted);
+  font-size: 12px;
+}
+
+.nexum-chat-runtime-summary h3 {
+  margin: 0 auto 0 0;
+  color: var(--nexum-chat-text);
+  font-size: 13px;
+}
+
+.nexum-chat-runtime-summary div {
+  display: flex;
+  gap: 5px;
+}
+
+.nexum-chat-runtime-summary strong {
+  color: var(--nexum-chat-text);
+  font-weight: 500;
+}
+
 .nexum-chat-tabs button,
 .nexum-chat-button,
 .nexum-chat-primary,
@@ -509,6 +534,7 @@
 @media (max-width: 620px) {
   .nexum-chat-header,
   .nexum-chat-body,
+  .nexum-chat-runtime-summary,
   .nexum-chat-composer,
   .nexum-chat-requests,
   .nexum-chat-footer {

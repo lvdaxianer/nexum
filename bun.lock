@@ -111,6 +111,7 @@
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@nexum/application": "workspace:*",
+        "@nexum/chat-surface": "workspace:*",
         "@nexum/client": "workspace:*",
         "@nexum/integrations": "workspace:*",
         "@nexum/persistence": "workspace:*",

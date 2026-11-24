@@ -12,7 +12,7 @@
 
 ## 3. 现有页面宿主迁移
 
-- [ ] 3.1 将 `packages/nexum-surfaces/src/main.tsx` 的聊天区域替换为 ChatSurface，保留 Session、模型、Role Prompt、Skill 注册和策略管理；验证现有 Surface 的 Session 切换和聊天流程仍由新组件承载。
+- [x] 3.1 将 `packages/nexum-surfaces/src/main.tsx` 的聊天区域替换为 ChatSurface，保留 Session、模型、Role Prompt、Skill 注册和策略管理；验证现有 Surface 的 Session 切换和聊天流程仍由新组件承载。
 - [ ] 3.2 增加独立嵌入示例和组件使用文档，运行 Surface 定向 smoke、`typecheck:tsc`、构建和根目录 `bun run check`，并验证 `openspec validate chat-surface --strict` 通过。
 
 ## Workflow follow-up
