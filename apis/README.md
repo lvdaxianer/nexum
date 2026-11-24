@@ -4,6 +4,8 @@
 
 项目级总入口是根目录的 [`README.md`](../README.md)。当前 Runtime API 的完整业务模块文档是 [`nexum.md`](nexum.md)。
 
+联调时同时参考：[UI 交互协议](../docs/ui/interaction-protocol.md)、[UI 状态](../docs/ui/states.md)、[Session 能力](../docs/capabilities/session.md)、[事件能力](../docs/capabilities/events.md) 和 [`@nexum/server` 模块文档](../docs/modules/nexum-server.md)。
+
 ## 目录职责
 
 - `nexum.md`：Nexum Runtime API 的人工可读说明，适合 UI、集成方和联调人员查阅。

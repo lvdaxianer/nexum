@@ -171,18 +171,52 @@ bun run --cwd packages/nexum-test dev
 
 ## 文档导航
 
-根 README 是 Nexum 文档的总入口。先按协作问题选择能力文档，再通过模块文档了解具体实现；API 文档用于接口联调，源码和测试是协议事实来源。
+根 README 是 Nexum 文档总入口。先按协作问题选择 UI/能力文档，再通过模块文档了解实现边界；API 文档用于接口联调，源码和测试是协议事实来源。模块文档状态为“现状基线”，最后核对日期为 2026-11-24。
 
-### 当前入口
+### 规则与架构
 
 - [文档维护规则](docs/README.md)
 - [API 文档规则](apis/README.md)
-- [完整 Nexum Runtime API](apis/nexum.md)
 - [包模块地图与包级验证](packages/README.md)
+- [模块文档索引与一对一清单](docs/modules/README.md)
 - [模块边界](docs/architecture/module-boundaries.md)
 - [Runtime 运行流程](docs/architecture/runtime-flow.md)
 
-UI 交互、Session、事件、Skill 和每个 package 的专题文档会在对应文档完成后从这里继续补充链接。新增文档必须同时更新本节，并保持从根 README 可达。
+### UI 交互协议
+
+- [UI 交互协议总览](docs/ui/interaction-protocol.md)
+- [UI 状态机](docs/ui/states.md)
+- [Question/反问协议](docs/ui/question.md)
+- [Permission/权限协议](docs/ui/permission.md)
+
+### 能力文档
+
+- [Session 生命周期与历史](docs/capabilities/session.md)
+- [事件流、序列与恢复](docs/capabilities/events.md)
+- [Skill 能力](docs/capabilities/skills.md)
+- [Integrations 能力](docs/capabilities/integrations.md)
+- [Model/Runtime 能力](docs/capabilities/model-runtime.md)
+- [Context 与 History](docs/capabilities/context-and-history.md)
+
+### API 文档
+
+- [完整 Nexum Runtime API](apis/nexum.md)
+
+### 模块文档
+
+- [模块索引](docs/modules/README.md)
+- [`@nexum/protocol`](docs/modules/nexum-protocol.md)
+- [`@nexum/client`](docs/modules/nexum-client.md)
+- [`@nexum/server`](docs/modules/nexum-server.md)
+- [`@nexum/core`](docs/modules/nexum-core.md)
+- [`@nexum/application`](docs/modules/nexum-application.md)
+- [`@nexum/persistence`](docs/modules/nexum-persistence.md)
+- [`@nexum/integrations`](docs/modules/nexum-integrations.md)
+- [`@nexum/chat-surface`](docs/modules/nexum-chat-surface.md)
+- [`@nexum/surfaces`](docs/modules/nexum-surfaces.md)
+- [`@nexum/test`](docs/modules/nexum-test.md)
+
+新增或修改文档时，必须同步更新本节、对应索引和模块文档中的“修改同步清单”，保持从根 README 可达。
 
 ## Nexum 的优势
 
