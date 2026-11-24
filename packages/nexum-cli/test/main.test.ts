@@ -12,3 +12,16 @@ test("USAGE documents all command groups", () => {
     expect(USAGE).toContain(group)
   }
 })
+
+test("theme command works without a reachable server", async () => {
+  const { run } = await import("../src/main.ts")
+  const previous = process.env.NEXUM_API_URL
+  process.env.NEXUM_API_URL = "http://127.0.0.1:59998"
+  try {
+    // theme 是本地命令:server 不可达也应成功(只测读取路径,不写真实 ~/.nexum/cli.json)
+    expect(await run(["theme"])).toBe(0)
+  } finally {
+    if (previous === undefined) delete process.env.NEXUM_API_URL
+    else process.env.NEXUM_API_URL = previous
+  }
+})

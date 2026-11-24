@@ -99,6 +99,12 @@ export async function run(argv: string[]): Promise<number> {
   }
   const config = await loadCliConfig()
   const io = createIO({ caps: detectCaps({ noAnim: values["no-anim"], theme: resolveTheme(values.theme, config, process.env) }) })
+  const [command, ...rest] = positionals
+  // theme 是纯本地命令:不依赖 server,在 capabilities 探测前短路
+  if (command === "theme") {
+    await cmdTheme(io, rest)
+    return 0
+  }
   const baseUrl = resolveBaseUrl(values.server, process.env)
   const client = Nexum.make({ baseUrl })
   try {
@@ -109,7 +115,6 @@ export async function run(argv: string[]): Promise<number> {
     return 1
   }
   const adapter = createChatProtocolAdapter({ baseUrl })
-  const [command, ...rest] = positionals
   try {
     if (command === undefined || command === "resume") {
       const skills = await adapter.listSkills()
@@ -132,7 +137,6 @@ export async function run(argv: string[]): Promise<number> {
     try {
       if (command === "status") return await cmdStatus(client, io, { baseUrl }).then(() => 0)
       if (command === "doctor") return await cmdDoctor(client, io)
-      if (command === "theme") return await cmdTheme(io, rest).then(() => 0)
       if (command === "session") {
         if (rest[0] === "list") return await cmdSessionList(client, io).then(() => 0)
         if (rest[0] === "create") return await cmdSessionCreate(client, io, { directory: values.dir ?? process.cwd(), ...(values.name ? { name: values.name } : {}) }).then(() => 0)
