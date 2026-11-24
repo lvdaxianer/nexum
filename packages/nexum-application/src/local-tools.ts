@@ -9,6 +9,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { isAbsolute, relative, resolve, sep } from "node:path"
 import type {
   HostPort,
+  McpPort,
   ModelToolDefinition,
   NexumSessionService,
   NexumSkillRegistry,
@@ -25,13 +26,16 @@ export interface NexumToolRegistryOptions {
   readonly sessions: NexumSessionService
   readonly host?: HostPort
   readonly skillRegistry?: NexumSkillRegistry
+  readonly mcp?: McpPort
 }
 
 /** 内置工具注册表和统一执行端口。 */
 export interface NexumToolRegistry {
-  readonly names: readonly NexumBuiltinToolName[]
+  readonly names: readonly string[]
   readonly definitions: readonly ModelToolDefinition[]
   readonly port: ToolPort
+  readonly ready: Promise<void>
+  readonly refresh: () => Promise<void>
 }
 
 /**
@@ -71,14 +75,14 @@ export function normalizeNexumToolRequest(
  * @date 2026-11-19
  */
 export function createNexumToolRegistry(options: NexumToolRegistryOptions): NexumToolRegistry {
-  const names: readonly NexumBuiltinToolName[] = [
+  const names: string[] = [
     "read",
     "write",
     "edit",
     "shell",
     ...(options.skillRegistry ? ["skill_registry" as const] : []),
   ]
-  const definitions: readonly ModelToolDefinition[] = [
+  const builtinDefinitions: readonly ModelToolDefinition[] = [
     {
       name: "read",
       description: "读取 Session 工作目录内的文本文件",
@@ -127,6 +131,18 @@ export function createNexumToolRegistry(options: NexumToolRegistryOptions): Nexu
     },
     ...(options.skillRegistry ? [skillRegistryDefinition] : []),
   ]
+  const definitions: ModelToolDefinition[] = [...builtinDefinitions]
+  const mcpBindings = new Map<string, { serverID: string; toolName: string }>()
+  let refreshPromise: Promise<void> | undefined
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined
+  const ready = options.mcp ? refreshMcpTools() : Promise.resolve()
+  options.mcp?.subscribeToolsChanged?.(() => {
+    if (refreshTimer) clearTimeout(refreshTimer)
+    refreshTimer = setTimeout(() => {
+      refreshTimer = undefined
+      void refreshMcpTools().catch(() => {})
+    }, 50)
+  })
 
   return {
     names,
@@ -155,10 +171,70 @@ export function createNexumToolRegistry(options: NexumToolRegistryOptions): Nexu
             ? executeSkillRegistryTool(options.skillRegistry, request)
             : { ok: false, output: "Skill 注册表未配置" }
         }
+        const binding = mcpBindings.get(request.toolName)
+        if (binding && options.mcp) {
+          return options.mcp.callTool({
+            serverID: binding.serverID,
+            toolName: binding.toolName,
+            input: request.input,
+            sessionID: request.sessionID,
+            ...(request.signal ? { signal: request.signal } : {}),
+          })
+        }
         return { ok: false, output: "工具未注册" }
       },
     },
+    ready,
+    refresh: refreshMcpTools,
   }
+
+  async function refreshMcpTools(): Promise<void> {
+    if (!options.mcp) return
+    if (refreshPromise) return refreshPromise
+    refreshPromise = loadMcpTools(options.mcp)
+      .then((loaded) => {
+        definitions.splice(builtinDefinitions.length, definitions.length - builtinDefinitions.length, ...loaded.definitions)
+        names.splice(builtinDefinitions.length, names.length - builtinDefinitions.length, ...loaded.names)
+        mcpBindings.clear()
+        loaded.bindings.forEach((binding, name) => mcpBindings.set(name, binding))
+      })
+      .finally(() => {
+        refreshPromise = undefined
+      })
+    return refreshPromise
+  }
+}
+
+async function loadMcpTools(mcp: McpPort): Promise<{
+  readonly definitions: readonly ModelToolDefinition[]
+  readonly names: readonly string[]
+  readonly bindings: ReadonlyMap<string, { serverID: string; toolName: string }>
+}> {
+  const servers = (await mcp.listServers()).filter((server) => server.status === "connected" || server.status === "available")
+  const groups = await Promise.all(servers.map(async (server) => ({ server, tools: await mcp.listTools(server.id) })))
+  const bindings = new Map<string, { serverID: string; toolName: string }>()
+  const definitions = groups.flatMap(({ server, tools }) =>
+    tools.map((tool) => {
+      const name = `mcp__${mcpNamespace(server.id, server.name)}__${mcpToolName(tool.name)}`
+      bindings.set(name, { serverID: server.id, toolName: tool.name })
+      return {
+        name,
+        description: tool.description ?? `调用 ${server.name} 的 MCP 工具 ${tool.name}`,
+        parameters: tool.inputSchema ?? { type: "object" },
+      }
+    }),
+  )
+  return { definitions, names: definitions.map((definition) => definition.name), bindings }
+}
+
+function mcpNamespace(serverID: string, serverName: string): string {
+  const value = (serverName.trim() || serverID).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")
+  return value || serverID
+}
+
+function mcpToolName(toolName: string): string {
+  const value = toolName.trim().replace(/[^a-zA-Z0-9_-]+/g, "_")
+  return value || "tool"
 }
 
 const skillRegistryDefinition: ModelToolDefinition = {

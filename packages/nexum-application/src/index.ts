@@ -138,7 +138,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   })
   const skillInvocation = options.skillInvocation ?? createNexumSkillInvocationPort({ registry: skills, permission })
   const host = options.host ?? createLocalHostAdapter()
-  const tools = createNexumToolRegistry({ sessions, host, skillRegistry: skills })
+  const tools = createNexumToolRegistry({ sessions, host, skillRegistry: skills, ...(options.mcp ? { mcp: options.mcp } : {}) })
   const memory = options.memory ?? createInMemoryMemory()
   const loopOptions = {
     tool: tools.port,
@@ -157,9 +157,10 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     (options.model
       ? createNexumCodingLoop({ ...loopOptions, model: options.model })
       : createNexumConfiguredCodingLoop({ ...loopOptions, modelConfig }))
+  const runtimeLoop = options.mcp ? withMcpReady(loop, tools.ready) : loop
   const runtime = createNexumRuntime({
     sessions,
-    loop,
+    loop: runtimeLoop,
     events: eventHub,
     host,
     memory,
@@ -178,8 +179,18 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     permissionBroker: permission,
     questionPort: question,
     modelProbe,
-    codingLoop: loop,
+    codingLoop: runtimeLoop,
   })
+}
+
+function withMcpReady(loop: NexumCodingLoop, ready: Promise<void>): NexumCodingLoop {
+  return {
+    ...loop,
+    run: async (input) => {
+      await ready
+      return loop.run(input)
+    },
+  }
 }
 
 export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefaultRuntime {

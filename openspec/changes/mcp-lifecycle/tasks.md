@@ -18,8 +18,8 @@
 
 ## 4. Application 工具桥接
 
-- [ ] 4.1 将连接目录桥接到统一 Tool Registry，生成稳定 Server 命名空间、保留 input schema，并验证 catalog 变化的增删刷新
-- [ ] 4.2 在 MCP 工具调用前接入 Permission，传递 session id 和取消信号，映射 `isError`、文本、结构化及二进制内容；测试权限拒绝和敏感信息不泄漏
+- [x] 4.1 将连接目录桥接到统一 Tool Registry，生成稳定 Server 命名空间、保留 input schema，并验证 catalog 变化的增删刷新
+- [x] 4.2 在 MCP 工具调用前接入 Permission，传递 session id 和取消信号，映射 `isError`、文本、结构化及二进制内容；测试权限拒绝和敏感信息不泄漏
 
 ## 5. Protocol、Server 与 Client 控制面
 
