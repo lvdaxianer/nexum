@@ -16,7 +16,7 @@
 ## 3. Runtime API 文档
 
 - [ ] 3.1 建立 `apis/nexum.md` 的完整路由覆盖表，核对 `packages/nexum-server/src/index.ts` 的 health、capabilities、model/config、role-prompt 和 session 路由；验证每个已暴露路由都有唯一文档章节锚点。
-- [ ] 3.2 补齐 Session、messages、prompt、continue、cancel 和 events 端点章节，记录请求参数、Header、Cookie、成功/错误响应、SSE 语义、重试/取消/恢复和 curl 示例；验证示例路径与 Server 路由一致。
+- [x] 3.2 补齐 Session、messages、prompt、continue、cancel 和 events 端点章节，记录请求参数、Header、Cookie、成功/错误响应、SSE 语义、重试/取消/恢复和 curl 示例；验证示例路径与 Server 路由一致。
 - [ ] 3.3 补齐 permission、question、policy 和 skills 端点章节，记录交互状态、冲突、幂等、错误码和调用方处理；验证字段与 Protocol/Application/Server 测试一致。
 - [ ] 3.4 对 `apis/nexum.md` 执行 API 文档完整性审计：Controller/route 覆盖、请求/响应字段、状态码、Header/Cookie、示例和未知信息标记；验证 `git diff --check`、Prettier 和路由覆盖脚本/命令均通过。
 
