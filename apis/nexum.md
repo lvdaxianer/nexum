@@ -152,13 +152,55 @@ curl --request POST 'http://127.0.0.1:4097/api/nexum/model/probe' \
 
 ### Collection：`GET` / `POST /api/nexum/session`
 
-`GET` 返回用于页面恢复的 Session 摘要数组，每项包含 `id`、`name`、`directory`、`status`、`createdAt` 和 `updatedAt`。`POST` 请求体为 `{ "directory": "/absolute/project", "name": "可选名称" }`；`directory` 必须是非空字符串并通过目录校验，`name` 可选但若提供必须是字符串。
+#### `GET` 列出 Session
 
-创建成功 `200` 返回 Session 摘要；参数错误返回 `400 NEXUM_INVALID_REQUEST`，目录无效返回 `400 NEXUM_INVALID_DIRECTORY`，创建失败返回 `500 NEXUM_SESSION_CREATE_FAILED`。GET Store 失败返回统一 `500 NEXUM_INTERNAL_ERROR`。
+无 query 参数、request body 或 Cookie。成功 `200` 返回：
+
+```json
+{
+  "data": [
+    {
+      "id": "session_001",
+      "name": "project",
+      "directory": "/absolute/project",
+      "status": "idle",
+      "createdAt": "2026-11-24T00:00:00.000Z",
+      "updatedAt": "2026-11-24T00:00:00.000Z"
+    }
+  ],
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_sessions_001" }
+}
+```
+
+列表用于页面选择和恢复，不返回消息历史；排序由 Session Store 按 `updatedAt` 倒序处理。
+
+#### `POST` 创建 Session
+
+请求体字段：
+
+| 字段        | 类型   | 必填 | 说明                                                          |
+| ----------- | ------ | ---- | ------------------------------------------------------------- |
+| `directory` | string | 是   | 非空绝对工作目录；由当前 Runtime 的目录校验器确认存在且可读写 |
+| `name`      | string | 否   | 展示名称；省略时使用目录名                                    |
+
+成功 `200` 返回新 Session，初始 `status` 为 `idle`。参数结构错误返回 `400 NEXUM_INVALID_REQUEST`；目录校验失败返回 `400 NEXUM_INVALID_DIRECTORY`；Store 失败返回 `500 NEXUM_SESSION_CREATE_FAILED`。
+
+```bash
+curl --request POST 'http://127.0.0.1:4097/api/nexum/session' \
+  --header 'Content-Type: application/json' \
+  --header 'X-Trace-Id: trace_create_001' \
+  --data '{"directory":"/absolute/project","name":"project"}'
+```
 
 ### Resource：`PUT` / `DELETE /api/nexum/session/{sessionID}`
 
-`PUT` 只接受 `{ "name": "新名称" }`，成功返回更新后的 Session；名称非法返回 `400 NEXUM_INVALID_REQUEST`，Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`，保存失败返回 `500 NEXUM_SESSION_UPDATE_FAILED`。DELETE 的完整契约见 [Session 删除](#session-删除)。
+#### `PUT` 更新展示名称
+
+请求体只接受 `{ "name": "新名称" }`。成功 `200` 返回更新后的 Session；name 缺失或不是字符串、或为空字符串返回 `400 NEXUM_INVALID_REQUEST`；Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；保存失败返回 `500 NEXUM_SESSION_UPDATE_FAILED`。
+
+#### `DELETE` 删除 Session
+
+DELETE 请求体为空，完整契约见 [Session 删除](#session-删除)。删除不会移除工作目录或模型配置。
 
 ### State：`GET /api/nexum/session/{sessionID}/state`
 
@@ -184,21 +226,61 @@ curl --request POST 'http://127.0.0.1:4097/api/nexum/model/probe' \
 }
 ```
 
-所有 Session 请求均使用统一 JSON Envelope；请求 Header 可带 `X-Trace-Id`，请求 Cookie 不适用。
+所有 JSON Session 请求使用统一 Envelope；`X-Trace-Id` 可选，非法或缺失时由服务生成；请求 Cookie 不适用。
 
 ## Session 运行端点
 
-本节只建立 Prompt、Cancel 的路由锚点和公共契约；历史、Continue、SSE 的完整恢复语义见对应章节。
+本节记录 Prompt 和 Cancel 的请求、受理和错误语义；历史、Continue、SSE 的完整恢复语义见对应章节。
 
 ### `POST /api/nexum/session/{sessionID}/prompt`
 
-请求体为 `{ "text": "非空 Prompt" }`。受理成功返回 `200 {"data":{"status":"accepted"}}`，运行在后台继续，调用方应随后订阅 SSE。Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；Session 已运行返回 `409 NEXUM_SESSION_RUN_CONFLICT`；运行时未配置返回 `503 NEXUM_RUNTIME_NOT_CONFIGURED`；`text` 缺失或为空返回 `400 NEXUM_INVALID_REQUEST`。
+请求 Header 可带 `Content-Type: application/json` 和 `X-Trace-Id`；Cookie 不适用。请求体为 `{ "text": "非空 Prompt" }`，服务在受理边界拒绝空白文本。
+
+成功 `200` 只表示 admission 已接受，运行在后台继续：
+
+```json
+{
+  "data": { "status": "accepted" },
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_prompt_001" }
+}
+```
+
+错误：
+
+| HTTP 状态码 | `errorCode`                    | 触发条件                              |
+| ----------- | ------------------------------ | ------------------------------------- |
+| `400`       | `NEXUM_INVALID_REQUEST`        | body 不是对象或 `text` 不是非空字符串 |
+| `404`       | `NEXUM_SESSION_NOT_FOUND`      | Session 不存在                        |
+| `409`       | `NEXUM_SESSION_RUN_CONFLICT`   | Session 已运行或 admission 竞争失败   |
+| `500`       | `NEXUM_INTERNAL_ERROR`         | admission 发生未分类内部失败          |
+| `503`       | `NEXUM_RUNTIME_NOT_CONFIGURED` | Coding Loop 未配置                    |
+
+调用方收到 `accepted` 后应先打开/保持 SSE，再使用 `run.settled` 和 Session state 判断最终状态，不要等待 HTTP 请求本身变成长轮询。
+
+```bash
+curl --request POST 'http://127.0.0.1:4097/api/nexum/session/session_001/prompt' \
+  --header 'Content-Type: application/json' \
+  --header 'X-Trace-Id: trace_prompt_001' \
+  --data '{"text":"请检查项目状态"}'
+```
 
 ### `POST /api/nexum/session/{sessionID}/cancel`
 
-请求体为空。成功返回 `200 {"data":{"status":"cancelled"}}`；Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；状态不允许取消返回 `409 NEXUM_SESSION_CANCEL_CONFLICT`。Cancel 只影响运行和交互，不删除消息历史或 Session。
+请求体为空，`Content-Type` 不适用；可带 `X-Trace-Id`，Cookie 不适用。成功返回：
 
-## 默认角色提示词
+```json
+{
+  "data": { "status": "cancelled" },
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_cancel_001" }
+}
+```
+
+Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；取消过程中状态不允许转换返回 `409 NEXUM_SESSION_CANCEL_CONFLICT`。Cancel 会中止活动 Coding Loop 和待处理权限，但不删除消息历史、事件或 Session。
+
+```bash
+curl --request POST 'http://127.0.0.1:4097/api/nexum/session/session_001/cancel' \
+  --header 'X-Trace-Id: trace_cancel_001'
+```
 
 ## 默认角色提示词
 
@@ -253,10 +335,10 @@ GET http://127.0.0.1:4097/api/experimental/nexum/session/{sessionID}/messages?li
 #### Query parameters
 
 | 参数名     | 类型    | 必填       | 默认值   | 范围                    | 说明                                                    |
-| ---------- | ------- | ---------- | -------- | ----------------------- | ------------------------------------------------------- | ----------------------------------- |
+| ---------- | ------- | ---------- | -------- | ----------------------- | ------------------------------------------------------- |
 | `limit`    | integer | 否         | `50`     | `1-100`                 | 本页最多返回的消息数                                    |
 | `before`   | integer | 否         | 历史长度 | `>=0` 且不超过历史长度  | 返回索引小于该值的最近一页；使用上次响应的 `nextBefore` |
-| `snapshot` | string  | 翻页时必填 | 无       | 上页响应的 `snapshotID` | `8d3f…`                                                 | 校验分页期间 canonical 历史未被重写 |
+| `snapshot` | string  | 翻页时必填 | 无       | 上页响应的 `snapshotID` | 校验分页期间 canonical 历史未被重写                     |
 
 #### Request headers and cookies
 
@@ -614,6 +696,36 @@ Accept: text/event-stream
 ```
 
 `afterSequence` 是非负整数；格式非法时返回 `400 NEXUM_INVALID_REQUEST`。如果同时提供 `Last-Event-ID`（或兼容的 `after` query），服务会将事件 ID 对应的序号与 `afterSequence` 取较大值作为下界，仍只返回严格更大的事件。断线重连应继续使用 `Last-Event-ID`，首次加载可使用 Session state 的 `lastSequence`。历史消息和事件流来自两个持久化读模型，页面应以消息历史恢复对话正文、以事件流恢复实时状态；在运行并发写入期间，实时事件仍是最终状态来源。
+
+### SSE 请求与响应
+
+请求只支持 `GET`，`Accept: text/event-stream` 和 `X-Trace-Id` 可选，Cookie 不适用。Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；`afterSequence` 不是非负整数返回 `400 NEXUM_INVALID_REQUEST`；其他方法返回 `405 NEXUM_METHOD_NOT_ALLOWED`。
+
+成功响应使用 `200 OK`、`Content-Type: text/event-stream; charset=utf-8`、`Cache-Control: no-store` 和 `Connection: keep-alive`。连接建立后先发送注释帧：
+
+```text
+: nexum-events-connected
+
+```
+
+每个事件包含 SSE `event`、`id` 和单行 JSON `data`：
+
+```text
+event: assistant.text
+id: event_001
+data: {"eventID":"event_001","runID":"run_001","type":"assistant.text","sessionID":"session_001","sequence":12,"occurredAt":"2026-11-24T00:00:00.000Z","data":{"content":"增量文本"}}
+
+```
+
+`id` 使用事件的 `eventID`；兼容事件没有 event ID 时，Server 使用 `sessionID:sequence` 生成。客户端必须按 Session 保存最后 event ID/sequence，并在重连时去重。
+
+```bash
+curl --no-buffer --request GET \
+  'http://127.0.0.1:4097/api/nexum/session/session_001/events?afterSequence=42' \
+  --header 'Accept: text/event-stream' \
+  --header 'Last-Event-ID: event_041' \
+  --header 'X-Trace-Id: trace_events_001'
+```
 
 ## 实验性：继续运行
 
