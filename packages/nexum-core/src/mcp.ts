@@ -7,7 +7,10 @@
 
 import type { ToolResult } from "./index.js"
 
-export type McpServerStatus = "disabled" | "pending" | "connected" | "failed" | "needs_auth"
+const MCP_RETRY_DELAYS_MS = [250, 1000, 3000] as const
+const MCP_MAX_RETRY_ATTEMPTS = MCP_RETRY_DELAYS_MS.length
+
+export type McpServerStatus = "disabled" | "pending" | "retrying" | "connected" | "failed" | "needs_auth"
 export type McpLegacyServerStatus = "available" | "unavailable"
 export type McpConnectionErrorCode =
   | "invalid_config"
@@ -91,6 +94,8 @@ export interface McpServer {
   readonly name: string
   readonly status: McpServerStatus | McpLegacyServerStatus
   readonly url?: string
+  readonly retryAttempt?: number
+  readonly nextRetryAt?: number
   readonly error?: McpErrorSummary
 }
 
@@ -209,50 +214,7 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
     },
 
     async connect(serverID: string): Promise<McpServer> {
-      assertOpen()
-      const entry = requireEntry(serverID)
-      if (entry.config.disabled) {
-        entry.server = snapshot(entry.config, "disabled")
-        publish(entry.server)
-        return entry.server
-      }
-      if (entry.server.status === "connected" && entry.connection) return entry.server
-      if (entry.operation) return entry.operation.promise
-
-      const generation = entry.generation + 1
-      const controller = new AbortController()
-      entry.generation = generation
-      entry.server = snapshot(entry.config, "pending")
-      publish(entry.server)
-      const promise = options.connector
-        .connect(entry.config, controller.signal)
-        .then(async (connection) => {
-          if (closed || entry.generation !== generation || controller.signal.aborted) {
-            await closeQuietly(connection)
-            return entry.server
-          }
-          entry.connection = connection
-          entry.reconnectAttempts = 0
-          entry.cleanup = watchConnection(entry, connection, generation)
-          entry.server = snapshot(entry.config, "connected")
-          publish(entry.server)
-          return entry.server
-        })
-        .catch((error: unknown) => {
-          if (closed || entry.generation !== generation || controller.signal.aborted) return entry.server
-          entry.connection = undefined
-          entry.server = {
-            ...snapshot(entry.config, error instanceof McpError && error.code === "needs_auth" ? "needs_auth" : "failed"),
-            error: summarizeMcpError(error),
-          }
-          publish(entry.server)
-          return entry.server
-        })
-        .finally(() => {
-          if (entry.operation?.generation === generation) entry.operation = undefined
-        })
-      entry.operation = { generation, controller, promise }
-      return promise
+      return connectServer(serverID, false)
     },
 
     async disconnect(serverID: string): Promise<McpServer | undefined> {
@@ -326,6 +288,60 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
     return entry.connection
   }
 
+  async function connectServer(serverID: string, fromRetry: boolean): Promise<McpServer> {
+    assertOpen()
+    const entry = requireEntry(serverID)
+    if (entry.config.disabled) {
+      entry.server = snapshot(entry.config, "disabled")
+      publish(entry.server)
+      return entry.server
+    }
+    if (entry.server.status === "connected" && entry.connection) return entry.server
+    if (entry.operation) return entry.operation.promise
+    if (!fromRetry) {
+      if (entry.retryTimer) clearTimeout(entry.retryTimer)
+      entry.retryTimer = undefined
+      entry.reconnectAttempts = 0
+    }
+
+    const generation = entry.generation + 1
+    const controller = new AbortController()
+    entry.generation = generation
+    entry.server = snapshot(entry.config, "pending")
+    publish(entry.server)
+    const promise = options.connector
+      .connect(entry.config, controller.signal)
+      .then(async (connection) => {
+        if (closed || entry.generation !== generation || controller.signal.aborted) {
+          await closeQuietly(connection)
+          return entry.server
+        }
+        entry.connection = connection
+        entry.reconnectAttempts = 0
+        entry.cleanup = watchConnection(entry, connection, generation)
+        entry.server = snapshot(entry.config, "connected")
+        publish(entry.server)
+        return entry.server
+      })
+      .catch((error: unknown) => {
+        if (closed || entry.generation !== generation || controller.signal.aborted) return entry.server
+        entry.connection = undefined
+        const status = error instanceof McpError && error.code === "needs_auth" ? "needs_auth" : "failed"
+        entry.server = {
+          ...snapshot(entry.config, status),
+          error: summarizeMcpError(error),
+        }
+        publish(entry.server)
+        if (isRetryableConnectionError(error)) scheduleReconnect(entry, generation)
+        return entry.server
+      })
+      .finally(() => {
+        if (entry.operation?.generation === generation) entry.operation = undefined
+      })
+    entry.operation = { generation, controller, promise }
+    return promise
+  }
+
   function publish(server: McpServer): void {
     listeners.forEach((listener) => listener(server))
   }
@@ -349,23 +365,29 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
           error: { code: "connection_failed", message: "MCP 连接已关闭，等待恢复" },
         }
         publish(entry.server)
-        scheduleReconnect(entry)
+        scheduleReconnect(entry, generation)
       }),
     ].filter((cleanup): cleanup is () => void => cleanup !== undefined)
     return () => cleanups.forEach((cleanup) => cleanup())
   }
 
-  function scheduleReconnect(entry: McpEntry): void {
-    if (closed || entry.config.disabled || entry.retryTimer || entry.reconnectAttempts >= 3) return
-    const generation = entry.generation
-    entry.reconnectAttempts += 1
+  function scheduleReconnect(entry: McpEntry, generation: number): void {
+    if (closed || entry.config.disabled || entry.retryTimer || entry.reconnectAttempts >= MCP_MAX_RETRY_ATTEMPTS) return
+    const retryAttempt = entry.reconnectAttempts + 1
+    const delay = MCP_RETRY_DELAYS_MS[retryAttempt - 1]!
+    entry.reconnectAttempts = retryAttempt
+    entry.server = {
+      ...entry.server,
+      status: "retrying",
+      retryAttempt,
+      nextRetryAt: Date.now() + delay,
+    }
+    publish(entry.server)
     entry.retryTimer = setTimeout(() => {
       entry.retryTimer = undefined
       if (closed || entry.generation !== generation || entry.connection || entry.operation) return
-      void registry.connect(entry.config.id).then((server) => {
-        if (server.status === "failed") scheduleReconnect(entry)
-      })
-    }, 250)
+      void connectServer(entry.config.id, true)
+    }, delay)
   }
 
   async function stopEntry(entry: McpEntry): Promise<void> {
@@ -376,6 +398,7 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
     entry.cleanup = undefined
     entry.operation?.controller.abort()
     entry.operation = undefined
+    entry.reconnectAttempts = 0
     const connection = entry.connection
     entry.connection = undefined
     entry.server = snapshot(entry.config, "disabled")
@@ -445,4 +468,9 @@ function closeQuietly(connection: McpConnection): Promise<void> {
 function isRecoverableConnectionError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : ""
   return /401|unauthorized|session\s+(expired|invalid|closed)/i.test(message)
+}
+
+function isRetryableConnectionError(error: unknown): boolean {
+  if (error instanceof McpError) return error.code === "connection_failed"
+  return true
 }
