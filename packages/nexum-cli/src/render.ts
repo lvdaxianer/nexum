@@ -89,7 +89,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
   }
 
   function ensureThinkingLive() {
-    if (mode !== "summary" || liveKind === "thinking") return
+    if (mode !== "summary" || liveKind !== undefined) return
     liveKind = "thinking"
     live = createLiveLine(io, (tick) => {
       const elapsed = ((Date.now() - reasoningStartedAt) / 1000).toFixed(1)
@@ -274,7 +274,7 @@ function formatElapsed(ms: number): string {
 }
 
 function compact(value: string): string {
-  return value.replace(/\s+/g, " ").trim().slice(0, 60)
+  return [...value.replace(/\s+/g, " ").trim()].slice(0, 60).join("")
 }
 
 /** 历史消息 → 紧凑 transcript 行。 */
