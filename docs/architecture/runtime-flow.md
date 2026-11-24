@@ -1,7 +1,9 @@
 # Nexum Runtime 运行流程
 
-状态：现状基线  
-权威来源：`packages/nexum-application`、`packages/nexum-core`、`packages/nexum-server`、`packages/nexum-client` 和 `packages/nexum-protocol`  
+状态：现状基线
+
+权威来源：`packages/nexum-application`、`packages/nexum-core`、`packages/nexum-server`、`packages/nexum-client` 和 `packages/nexum-protocol`
+
 最后核对：2026-11-24
 
 ## 总体链路

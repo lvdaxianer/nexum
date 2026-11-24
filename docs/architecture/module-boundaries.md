@@ -1,7 +1,9 @@
 # Nexum 模块边界
 
-状态：现状基线  
-权威来源：根 `README.md`、`packages/*/package.json`、各 package README 和源码入口  
+状态：现状基线
+
+权威来源：根 `README.md`、`packages/*/package.json`、各 package README 和源码入口
+
 最后核对：2026-11-24
 
 ## 目标
