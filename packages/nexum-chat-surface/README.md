@@ -57,8 +57,22 @@ element.setAttribute("session-id", sessionID)
 - `session-id`：要显示的 Session ID。
 - `api-base-url`：默认协议适配器的 API 根地址；不设置时使用客户端默认地址。
 - `title`：组件标题。
+- `theme`：主题，`dark` 启用内置深色主题；不设置时为默认亮色。
 
 组件注册后会派发 `nexum-chat-ready` 事件，事件 `detail.sessionID` 包含当前 Session ID。
+
+## 主题与外观
+
+组件样式完全由 `--nexum-chat-*` CSS 自定义属性驱动（颜色、圆角、字阶、触控目标），宿主可以逐项覆盖实现换肤。`ChatSurface` 的 `theme` prop 或 Web Component 的 `theme` 属性设置为 `dark` 时启用内置深色主题。内部断点基于组件自身容器宽度（container query），并针对触屏放大交互目标；嵌入窄抽屉、弹框或手机布局时无需额外处理。
+
+## 权限设置入口
+
+组件不管理权限策略，但提供两个可选的扩展点，把宿主自己的权限设置 UI 接到聊天现场：
+
+- `composerExtras`（Solid 渲染插槽）：渲染在输入栏发送键左侧，适合放权限模式 chip；Web Component 中用 `[slot="composer-extras"]` 子节点注入。
+- `onOpenPermissionSettings`（Solid 回调）：权限请求条上的「权限设置」触发时调用；Web Component 中组件根节点派发 `permission-settings` CustomEvent。
+
+两者都不提供时，入口不渲染，聊天行为不变。
 
 ## 适配器能力
 

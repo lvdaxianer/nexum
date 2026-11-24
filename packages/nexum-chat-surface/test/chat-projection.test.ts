@@ -46,14 +46,26 @@ test("ChatSurface merges streaming assistant text and renders permission/questio
   expect(withQuestion.find((item) => item.id === "question:question_001")?.status).toBe("waiting")
 })
 
-function event(type: NexumEvent["type"], data: Record<string, unknown>, sequence: number): NexumEvent {
+test("ChatSurface records reasoning timing across the streaming lifecycle", () => {
+  const started = projectChatEvent([], event("assistant.reasoning", { content: "先想" }, 1, "2026-11-24T00:00:00.000Z"))
+  const appended = projectChatEvent(started, event("assistant.reasoning", { content: "，再做" }, 2, "2026-11-24T00:00:05.000Z"))
+  const closed = projectChatEvent(appended, event("assistant.text", { content: "结果" }, 3, "2026-11-24T00:00:12.000Z"))
+
+  const reasoning = closed.find((item) => item.kind === "reasoning")
+  expect(reasoning?.content).toBe("先想，再做")
+  expect(reasoning?.status).toBe("completed")
+  expect(reasoning?.startedAt).toBe("2026-11-24T00:00:00.000Z")
+  expect(reasoning?.elapsedMs).toBe(12_000)
+})
+
+function event(type: NexumEvent["type"], data: Record<string, unknown>, sequence: number, occurredAt = "2026-11-24T00:00:00.000Z"): NexumEvent {
   return {
     eventID: `event_${sequence}`,
     runID: "run_001",
     type,
     sessionID: "session_001",
     sequence,
-    occurredAt: "2026-11-24T00:00:00.000Z",
+    occurredAt,
     data,
   }
 }

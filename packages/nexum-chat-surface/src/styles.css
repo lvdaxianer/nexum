@@ -1,12 +1,35 @@
 .nexum-chat-surface {
+  /* 表面与文字 */
   --nexum-chat-bg: #ffffff;
   --nexum-chat-panel: #f7f9fc;
   --nexum-chat-border: #dce4ec;
   --nexum-chat-text: #1b2a3d;
   --nexum-chat-muted: #708096;
+  /* 品牌与状态 */
   --nexum-chat-accent: #138b8b;
   --nexum-chat-accent-soft: #e2f2f2;
+  --nexum-chat-success: #18775f;
+  --nexum-chat-success-soft: #e3f5ef;
+  --nexum-chat-warning: #a8722a;
+  --nexum-chat-warning-soft: #fdf3e2;
   --nexum-chat-danger: #c54b4b;
+  --nexum-chat-danger-soft: #f9e9e9;
+  /* 特定区域 */
+  --nexum-chat-bubble-bg: #f1fbfb;
+  --nexum-chat-bubble-border: #d8e8e8;
+  --nexum-chat-code-bg: #1f2d3d;
+  --nexum-chat-code-text: #e6edf4;
+  --nexum-chat-request-bg: #fffaf3;
+  --nexum-chat-shadow: rgba(20, 42, 68, 0.14);
+  /* 形状、字阶与触控 */
+  --nexum-chat-radius-sm: 8px;
+  --nexum-chat-radius-md: 10px;
+  --nexum-chat-radius-lg: 14px;
+  --nexum-chat-fs-copy: 14px;
+  --nexum-chat-fs-meta: 12px;
+  --nexum-chat-tap-min: 32px;
+
+  container-type: inline-size;
   display: flex;
   min-width: 0;
   min-height: 320px;
@@ -14,10 +37,38 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--nexum-chat-border);
-  border-radius: 14px;
+  border-radius: var(--nexum-chat-radius-lg);
   background: var(--nexum-chat-bg);
   color: var(--nexum-chat-text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.nexum-chat-surface[data-theme="dark"] {
+  --nexum-chat-bg: #151c26;
+  --nexum-chat-panel: #0f151e;
+  --nexum-chat-border: #2b3648;
+  --nexum-chat-text: #e3eaf3;
+  --nexum-chat-muted: #8e9bb0;
+  --nexum-chat-accent: #35b8b2;
+  --nexum-chat-accent-soft: rgba(53, 184, 178, 0.15);
+  --nexum-chat-success: #4cc38a;
+  --nexum-chat-success-soft: rgba(76, 195, 138, 0.14);
+  --nexum-chat-warning: #dfa14e;
+  --nexum-chat-warning-soft: rgba(223, 161, 78, 0.14);
+  --nexum-chat-danger: #e36969;
+  --nexum-chat-danger-soft: rgba(227, 105, 105, 0.14);
+  --nexum-chat-bubble-bg: rgba(53, 184, 178, 0.10);
+  --nexum-chat-bubble-border: rgba(53, 184, 178, 0.28);
+  --nexum-chat-code-bg: #0a0f16;
+  --nexum-chat-code-text: #d8e4f0;
+  --nexum-chat-request-bg: rgba(223, 161, 78, 0.07);
+  --nexum-chat-shadow: rgba(0, 0, 0, 0.5);
+}
+
+@media (pointer: coarse) {
+  .nexum-chat-surface {
+    --nexum-chat-tap-min: 44px;
+  }
 }
 
 .nexum-chat-surface *,
@@ -40,6 +91,8 @@
   opacity: 0.54;
 }
 
+/* ===== 顶栏 ===== */
+
 .nexum-chat-header,
 .nexum-chat-footer,
 .nexum-chat-composer-bar,
@@ -53,18 +106,17 @@
 
 .nexum-chat-header {
   flex: 0 0 auto;
-  padding: 18px 20px 14px;
+  padding: 14px 20px 12px;
   border-bottom: 1px solid var(--nexum-chat-border);
 }
 
 .nexum-chat-header h2 {
-  margin: 4px 0 0;
-  font-size: 18px;
+  margin: 3px 0 0;
+  font-size: 17px;
 }
 
 .nexum-chat-kicker,
 .nexum-chat-hint,
-.nexum-chat-runtime-status,
 .nexum-chat-footer,
 .nexum-chat-turn-label span,
 .nexum-chat-execution em,
@@ -72,7 +124,7 @@
 .nexum-chat-question small,
 .nexum-chat-suggestions small {
   color: var(--nexum-chat-muted);
-  font-size: 12px;
+  font-size: var(--nexum-chat-fs-meta);
 }
 
 .nexum-chat-kicker {
@@ -97,41 +149,86 @@
 }
 
 .nexum-chat-status.is-online {
-  background: #e3f5ef;
-  color: #18775f;
+  background: var(--nexum-chat-success-soft);
+  color: var(--nexum-chat-success);
 }
 
-.nexum-chat-tabs {
+/* ===== 工具行：Tabs + 唯一状态簇 ===== */
+
+.nexum-chat-toolbar {
   display: flex;
   flex: 0 0 auto;
-  gap: 4px;
-  padding: 10px 20px 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--nexum-chat-border);
   background: var(--nexum-chat-bg);
 }
 
-.nexum-chat-runtime-summary {
+.nexum-chat-tabs {
+  display: inline-flex;
+  background: var(--nexum-chat-panel);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.nexum-chat-status-cluster {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 9px 20px 0;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nexum-chat-context-label {
   color: var(--nexum-chat-muted);
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
-.nexum-chat-runtime-summary h3 {
-  margin: 0 auto 0 0;
-  color: var(--nexum-chat-text);
-  font-size: 13px;
+.nexum-chat-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--nexum-chat-panel);
+  color: var(--nexum-chat-muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
-.nexum-chat-runtime-summary div {
-  display: flex;
-  gap: 5px;
+.nexum-chat-status-pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
-.nexum-chat-runtime-summary strong {
-  color: var(--nexum-chat-text);
-  font-weight: 500;
+.nexum-chat-status-pill.pill-running,
+.nexum-chat-status-pill.pill-streaming,
+.nexum-chat-status-pill.pill-retrying {
+  background: var(--nexum-chat-accent-soft);
+  color: var(--nexum-chat-accent);
+}
+
+.nexum-chat-status-pill.pill-awaiting-permission,
+.nexum-chat-status-pill.pill-awaiting-question,
+.nexum-chat-status-pill.pill-waiting {
+  background: var(--nexum-chat-warning-soft);
+  color: var(--nexum-chat-warning);
+}
+
+.nexum-chat-status-pill.pill-failed {
+  background: var(--nexum-chat-danger-soft);
+  color: var(--nexum-chat-danger);
+}
+
+.nexum-chat-status-pill.pill-completed {
+  background: var(--nexum-chat-success-soft);
+  color: var(--nexum-chat-success);
 }
 
 .nexum-chat-tabs button,
@@ -140,33 +237,44 @@
 .nexum-chat-request-actions button,
 .nexum-chat-question-head button {
   border: 1px solid var(--nexum-chat-border);
-  border-radius: 8px;
+  border-radius: var(--nexum-chat-radius-sm);
   background: var(--nexum-chat-bg);
   color: var(--nexum-chat-text);
 }
 
 .nexum-chat-tabs button {
-  padding: 7px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--nexum-chat-tap-min);
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
   color: var(--nexum-chat-muted);
-  font-size: 12px;
+  font-size: var(--nexum-chat-fs-meta);
+  white-space: nowrap;
 }
 
 .nexum-chat-tabs button.is-active {
-  border-color: var(--nexum-chat-accent-soft);
-  background: var(--nexum-chat-accent-soft);
+  background: var(--nexum-chat-bg);
   color: var(--nexum-chat-accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px var(--nexum-chat-shadow);
 }
 
 .nexum-chat-tabs button span {
-  margin-left: 4px;
-  opacity: 0.72;
+  opacity: 0.66;
+  font-weight: 400;
 }
+
+/* ===== 消息体 ===== */
 
 .nexum-chat-body {
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
-  padding: 20px;
+  padding: 22px 20px;
   background: linear-gradient(180deg, var(--nexum-chat-panel), var(--nexum-chat-bg) 180px);
 }
 
@@ -180,31 +288,43 @@
   display: none;
 }
 
+/* ===== 回合 ===== */
+
 .nexum-chat-item {
   margin: 0 auto 18px;
 }
 
-.nexum-chat-item.user {
-  max-width: 760px;
-  margin-right: 0;
-  padding: 14px 16px;
-  border: 1px solid #d8e8e8;
-  border-radius: 14px 14px 4px 14px;
-  background: #f1fbfb;
+.nexum-chat-turn {
+  display: flex;
+  gap: 12px;
 }
 
-.nexum-chat-item.assistant,
-.nexum-chat-item.reasoning,
-.nexum-chat-item.execution,
-.nexum-chat-item.status {
-  max-width: 860px;
+.nexum-chat-avatar {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: var(--nexum-chat-accent-soft);
+  color: var(--nexum-chat-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.nexum-chat-turn-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .nexum-chat-turn-label {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 7px;
+  font-size: var(--nexum-chat-fs-meta);
 }
 
 .nexum-chat-turn-label strong {
@@ -212,8 +332,75 @@
   font-size: 13px;
 }
 
-.nexum-chat-copy {
+.nexum-chat-turn-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid var(--nexum-chat-border);
+  border-radius: 999px;
+  color: var(--nexum-chat-muted);
+  font-size: 11px;
+}
+
+.nexum-chat-turn-state.is-live {
+  border-color: transparent;
+  background: var(--nexum-chat-accent-soft);
+  color: var(--nexum-chat-accent);
+}
+
+.nexum-chat-turn-state.is-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: nexum-chat-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes nexum-chat-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* 用户气泡 */
+
+.nexum-chat-item.user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 760px;
+}
+
+.nexum-chat-user-bubble {
+  max-width: 640px;
+  padding: 12px 15px;
+  border: 1px solid var(--nexum-chat-bubble-border);
+  border-radius: var(--nexum-chat-radius-lg) var(--nexum-chat-radius-lg) 4px var(--nexum-chat-radius-lg);
+  background: var(--nexum-chat-bubble-bg);
+  font-size: var(--nexum-chat-fs-copy);
   line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.nexum-chat-user-meta {
+  padding-right: 4px;
+  color: var(--nexum-chat-muted);
+  font-size: var(--nexum-chat-fs-meta);
+}
+
+/* Agent Markdown 排版 */
+
+.nexum-chat-copy {
+  line-height: 1.75;
+  font-size: var(--nexum-chat-fs-copy);
+  overflow-wrap: anywhere;
 }
 
 .nexum-chat-copy p,
@@ -223,54 +410,202 @@
   margin: 0 0 10px;
 }
 
+.nexum-chat-copy ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.nexum-chat-copy ul li {
+  position: relative;
+  padding-left: 18px;
+}
+
+.nexum-chat-copy ul li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.72em;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--nexum-chat-accent);
+  opacity: 0.55;
+}
+
+.nexum-chat-copy h2 {
+  margin: 18px 0 10px;
+  padding-left: 10px;
+  border-left: 3px solid var(--nexum-chat-accent);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
 .nexum-chat-copy pre,
 .nexum-chat-execution pre,
 .nexum-chat-event pre {
   overflow: auto;
   padding: 10px;
-  border-radius: 8px;
-  background: #1f2d3d;
-  color: #e6edf4;
+  border-radius: var(--nexum-chat-radius-sm);
+  background: var(--nexum-chat-code-bg);
+  color: var(--nexum-chat-code-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: var(--nexum-chat-fs-meta);
 }
 
 .nexum-chat-copy a {
   color: var(--nexum-chat-accent);
 }
 
+/* ===== 思考过程 ===== */
+
 .nexum-chat-reasoning {
-  padding: 10px 12px;
+  max-width: 720px;
   border: 1px solid var(--nexum-chat-border);
-  border-radius: 10px;
-  color: var(--nexum-chat-muted);
+  border-radius: var(--nexum-chat-radius-md);
+  background: color-mix(in srgb, var(--nexum-chat-panel) 72%, transparent);
 }
 
 .nexum-chat-reasoning summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--nexum-chat-tap-min);
+  padding: 9px 12px;
   cursor: pointer;
-  font-size: 12px;
+  color: var(--nexum-chat-muted);
+  font-size: var(--nexum-chat-fs-meta);
+  list-style: none;
 }
 
-.nexum-chat-reasoning > div {
-  padding-top: 8px;
-  white-space: pre-wrap;
-  line-height: 1.55;
+.nexum-chat-reasoning summary::-webkit-details-marker {
+  display: none;
 }
+
+.nexum-chat-reasoning summary::after {
+  content: "▸";
+  margin-left: auto;
+}
+
+.nexum-chat-reasoning[open] summary::after {
+  content: "▾";
+}
+
+.nexum-chat-reasoning .reasoning-copy {
+  padding: 0 12px 12px;
+  white-space: pre-wrap;
+  color: var(--nexum-chat-muted);
+  font-size: 12.5px;
+  line-height: 1.7;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.nexum-chat-reasoning.is-live summary {
+  color: var(--nexum-chat-accent);
+}
+
+.nexum-chat-reasoning.is-live summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: nexum-chat-pulse 1.2s ease-in-out infinite;
+}
+
+.nexum-chat-reasoning.is-empty summary::after {
+  content: none;
+}
+
+/* 思考占位条（transient thinking 状态项） */
+
+.nexum-chat-status-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 20px auto;
+  padding: 0 12px;
+  color: var(--nexum-chat-muted);
+  font-size: var(--nexum-chat-fs-meta);
+  text-align: center;
+}
+
+.nexum-chat-status-item::before,
+.nexum-chat-status-item::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--nexum-chat-border);
+}
+
+.nexum-chat-status-item.thinking-status {
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 9px 12px;
+  max-width: 720px;
+  border: 1px solid var(--nexum-chat-border);
+  border-radius: var(--nexum-chat-radius-md);
+  background: color-mix(in srgb, var(--nexum-chat-panel) 72%, transparent);
+}
+
+.nexum-chat-status-item.thinking-status::before,
+.nexum-chat-status-item.thinking-status::after {
+  content: none;
+}
+
+.thinking-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--nexum-chat-accent);
+  animation: nexum-chat-pulse 1.2s ease-in-out infinite;
+}
+
+/* ===== 执行行卡片 ===== */
 
 .nexum-chat-execution {
   display: grid;
-  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr) auto;
-  align-items: baseline;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  border-left: 3px solid #b6c3d1;
-  background: rgba(247, 249, 252, 0.72);
+  max-width: 720px;
+  padding: 9px 12px;
+  border: 1px solid var(--nexum-chat-border);
+  border-radius: var(--nexum-chat-radius-md);
+  background: color-mix(in srgb, var(--nexum-chat-panel) 85%, transparent);
+  font-size: 12.5px;
 }
 
-.nexum-chat-execution span {
+.nexum-chat-exec-icon {
+  color: var(--nexum-chat-muted);
+  font-size: 11px;
+}
+
+.nexum-chat-item.execution.status-completed .nexum-chat-exec-icon {
+  color: var(--nexum-chat-success);
+}
+
+.nexum-chat-item.execution.status-failed .nexum-chat-exec-icon {
+  color: var(--nexum-chat-danger);
+}
+
+.nexum-chat-item.execution.status-running .nexum-chat-exec-icon,
+.nexum-chat-item.execution.status-streaming .nexum-chat-exec-icon {
+  color: var(--nexum-chat-accent);
+  animation: nexum-chat-pulse 1.2s ease-in-out infinite;
+}
+
+.nexum-chat-execution > span {
   overflow: hidden;
   color: var(--nexum-chat-muted);
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexum-chat-execution strong {
   white-space: nowrap;
 }
 
@@ -282,12 +617,7 @@
   grid-column: 2 / -1;
 }
 
-.nexum-chat-status-item {
-  padding: 10px 0;
-  color: var(--nexum-chat-muted);
-  text-align: center;
-  font-size: 12px;
-}
+/* ===== Skill chips ===== */
 
 .nexum-chat-chips,
 .nexum-chat-active-skills {
@@ -307,10 +637,12 @@
   font-size: 11px;
 }
 
+/* ===== 事件视图 ===== */
+
 .nexum-chat-events-head {
   margin-bottom: 12px;
   color: var(--nexum-chat-muted);
-  font-size: 12px;
+  font-size: var(--nexum-chat-fs-meta);
 }
 
 .nexum-chat-event {
@@ -335,6 +667,8 @@
 .nexum-chat-event pre {
   margin-bottom: 0;
 }
+
+/* ===== 空态与加载 ===== */
 
 .nexum-chat-empty,
 .nexum-chat-empty-copy,
@@ -368,29 +702,49 @@
 .nexum-chat-request-actions button,
 .nexum-chat-question-head button {
   padding: 6px 9px;
-  font-size: 12px;
+  font-size: var(--nexum-chat-fs-meta);
 }
+
+/* ===== 请求条（权限/提问） ===== */
 
 .nexum-chat-requests {
   flex: 0 0 auto;
   padding: 12px 20px;
   border-top: 1px solid var(--nexum-chat-border);
-  background: #fffaf3;
+  background: var(--nexum-chat-request-bg);
 }
 
 .nexum-chat-request-title {
-  margin-bottom: 8px;
+  max-width: 860px;
+  margin: 0 auto 8px;
+}
+
+.nexum-chat-request-title strong {
+  color: var(--nexum-chat-text);
+  font-size: 13px;
 }
 
 .nexum-chat-request-title span {
   color: var(--nexum-chat-muted);
-  font-size: 12px;
+  font-size: var(--nexum-chat-fs-meta);
+  white-space: nowrap;
+}
+
+.nexum-chat-request-settings {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--nexum-chat-accent);
+  font-size: var(--nexum-chat-fs-meta);
+  text-decoration: none;
 }
 
 .nexum-chat-request,
 .nexum-chat-question {
+  max-width: 860px;
+  margin: 0 auto;
   padding: 12px 0;
-  border-top: 1px solid rgba(220, 228, 236, 0.75);
+  border-top: 1px solid color-mix(in srgb, var(--nexum-chat-border) 75%, transparent);
 }
 
 .nexum-chat-request > div:first-child {
@@ -399,12 +753,16 @@
 }
 
 .nexum-chat-request-actions {
-  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.nexum-chat-request-actions button {
+  min-height: var(--nexum-chat-tap-min);
 }
 
 .nexum-chat-request-actions .is-danger,
 .nexum-chat-button.is-danger {
-  border-color: #efcccc;
+  border-color: var(--nexum-chat-danger-soft);
   color: var(--nexum-chat-danger);
 }
 
@@ -425,9 +783,10 @@
 .nexum-chat-options button {
   display: grid;
   gap: 2px;
+  min-height: var(--nexum-chat-tap-min);
   padding: 8px 10px;
   border: 1px solid var(--nexum-chat-border);
-  border-radius: 8px;
+  border-radius: var(--nexum-chat-radius-sm);
   background: var(--nexum-chat-bg);
   text-align: left;
 }
@@ -439,8 +798,9 @@
 
 .nexum-chat-primary,
 .nexum-chat-button {
+  min-height: var(--nexum-chat-tap-min);
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--nexum-chat-fs-meta);
 }
 
 .nexum-chat-primary {
@@ -448,6 +808,8 @@
   background: var(--nexum-chat-accent);
   color: #ffffff;
 }
+
+/* ===== 输入区 ===== */
 
 .nexum-chat-composer {
   position: relative;
@@ -457,21 +819,47 @@
   background: var(--nexum-chat-bg);
 }
 
+.nexum-chat-composer-inner {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
 .nexum-chat-composer textarea {
   display: block;
   width: 100%;
   min-height: 74px;
   resize: vertical;
-  padding: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--nexum-chat-border);
-  border-radius: 10px;
+  border-radius: 16px;
   outline: none;
+  background: var(--nexum-chat-bg);
   color: var(--nexum-chat-text);
+  font-size: var(--nexum-chat-fs-copy);
+  line-height: 1.6;
 }
 
 .nexum-chat-composer textarea:focus {
   border-color: var(--nexum-chat-accent);
-  box-shadow: 0 0 0 3px rgba(19, 139, 139, 0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nexum-chat-accent) 12%, transparent);
+}
+
+.nexum-chat-composer-bar {
+  margin-top: 10px;
+}
+
+.nexum-chat-hint {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nexum-chat-composer-extras {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
 }
 
 .nexum-chat-suggestions {
@@ -484,9 +872,9 @@
   gap: 3px;
   padding: 6px;
   border: 1px solid var(--nexum-chat-border);
-  border-radius: 10px;
+  border-radius: var(--nexum-chat-radius-md);
   background: var(--nexum-chat-bg);
-  box-shadow: 0 12px 30px rgba(20, 42, 68, 0.14);
+  box-shadow: 0 12px 30px var(--nexum-chat-shadow);
 }
 
 .nexum-chat-suggestions button {
@@ -504,21 +892,20 @@
 }
 
 .nexum-chat-active-skills {
-  margin: 8px 0 0;
+  max-width: 860px;
+  margin: 8px auto 0;
 }
 
 .nexum-chat-active-skills > span:first-child {
   color: var(--nexum-chat-muted);
-  font-size: 12px;
+  font-size: var(--nexum-chat-fs-meta);
 }
 
-.nexum-chat-composer-bar {
-  margin-top: 10px;
+.nexum-chat-composer .nexum-chat-primary {
+  white-space: nowrap;
 }
 
-.nexum-chat-runtime-status {
-  margin-left: auto;
-}
+/* ===== 底栏 ===== */
 
 .nexum-chat-footer {
   flex: 0 0 auto;
@@ -531,10 +918,50 @@
   min-height: 18px;
 }
 
-@media (max-width: 620px) {
+.nexum-chat-context-source {
+  color: var(--nexum-chat-muted);
+}
+
+/* ===== 断点：平板 481–719px ===== */
+
+@container (min-width: 481px) and (max-width: 719px) {
   .nexum-chat-header,
+  .nexum-chat-toolbar,
   .nexum-chat-body,
-  .nexum-chat-runtime-summary,
+  .nexum-chat-composer,
+  .nexum-chat-requests,
+  .nexum-chat-footer {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .nexum-chat-stream,
+  .nexum-chat-events,
+  .nexum-chat-composer-inner,
+  .nexum-chat-request-title,
+  .nexum-chat-request,
+  .nexum-chat-question,
+  .nexum-chat-active-skills {
+    max-width: none;
+  }
+
+  .nexum-chat-avatar {
+    width: 26px;
+    height: 26px;
+    font-size: 12.5px;
+  }
+
+  .nexum-chat-execution {
+    min-height: 40px;
+  }
+}
+
+/* ===== 断点：紧凑 ≤480px（手机） ===== */
+
+@container (max-width: 480px) {
+  .nexum-chat-header,
+  .nexum-chat-toolbar,
+  .nexum-chat-body,
   .nexum-chat-composer,
   .nexum-chat-requests,
   .nexum-chat-footer {
@@ -542,23 +969,120 @@
     padding-left: 12px;
   }
 
-  .nexum-chat-execution {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+  .nexum-chat-toolbar {
+    gap: 8px;
   }
 
-  .nexum-chat-execution > span:nth-child(3) {
-    grid-column: 2 / -1;
+  .nexum-chat-context-label {
+    display: none;
+  }
+
+  .nexum-chat-tabs button {
+    padding: 6px 10px;
+  }
+
+  .nexum-chat-stream,
+  .nexum-chat-events,
+  .nexum-chat-composer-inner,
+  .nexum-chat-request-title,
+  .nexum-chat-request,
+  .nexum-chat-question,
+  .nexum-chat-active-skills {
+    max-width: none;
+  }
+
+  .nexum-chat-avatar {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+  }
+
+  .nexum-chat-turn {
+    gap: 8px;
+  }
+
+  .nexum-chat-user-bubble {
+    max-width: 100%;
+  }
+
+  .nexum-chat-execution {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    min-height: var(--nexum-chat-tap-min);
+  }
+
+  .nexum-chat-execution > .nexum-chat-exec-icon {
+    grid-row: 1;
+  }
+
+  .nexum-chat-execution > strong {
+    grid-column: 2;
+    grid-row: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .nexum-chat-execution > em {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .nexum-chat-execution > span:not(.nexum-chat-exec-icon) {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .nexum-chat-execution details {
     grid-column: 1 / -1;
   }
 
-  .nexum-chat-composer-bar {
-    align-items: flex-end;
+  .nexum-chat-request,
+  .nexum-chat-question {
+    display: grid;
+    gap: 10px;
+  }
+
+  .nexum-chat-request-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    width: 100%;
+  }
+
+  .nexum-chat-composer textarea {
+    font-size: 16px;
+  }
+
+  .nexum-chat-hint .hint-enter,
+  .nexum-chat-hint .hint-shift {
+    display: none;
+  }
+
+  .nexum-chat-suggestions {
+    right: 12px;
+    bottom: 88px;
+    left: 12px;
+  }
+}
+
+/* ===== 断点：极窄 ≤360px ===== */
+
+@container (max-width: 360px) {
+  .nexum-chat-avatar {
+    display: none;
+  }
+
+  .nexum-chat-turn-label {
+    margin-bottom: 5px;
+  }
+
+  .nexum-chat-kicker {
+    display: none;
   }
 
   .nexum-chat-hint {
-    max-width: 54%;
+    display: none;
+  }
+
+  .nexum-chat-composer-extras .extras-label {
+    display: none;
   }
 }

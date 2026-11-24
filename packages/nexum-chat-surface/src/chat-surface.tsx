@@ -1,4 +1,5 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import type { JSX } from "solid-js"
 import type {
   NexumEvent,
   NexumPermission,
@@ -33,6 +34,8 @@ export type ChatItem = {
   readonly detail?: string
   readonly thinking?: boolean
   readonly thinkingStatus?: string
+  readonly startedAt?: string
+  readonly elapsedMs?: number
   readonly skillIDs?: readonly string[]
   readonly status: ChatStatus
   readonly localTime: string
@@ -45,6 +48,12 @@ export type ChatSurfaceProps = {
   readonly client?: Parameters<typeof createChatProtocolAdapter>[0]
   readonly class?: string
   readonly title?: string
+  /** 组件根节点的 data-theme 值（如 "dark"），不设置则使用默认亮色。 */
+  readonly theme?: string
+  /** 宿主注入输入栏的扩展内容（如权限模式入口），渲染在发送键左侧。 */
+  readonly composerExtras?: JSX.Element
+  /** 用户从组件内请求打开权限设置时调用（请求条「权限设置」）。 */
+  readonly onOpenPermissionSettings?: () => void
 }
 
 const historyPageSize = 50
@@ -100,6 +109,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
   let lifecycle = 0
   let followTail = true
   let promptSequence = 0
+  let surfaceRoot: HTMLElement | undefined
   const seenEventIDs = new Map<string, Set<string>>()
   const eventSequences = new Map<string, number>()
 
@@ -460,6 +470,11 @@ export function ChatSurface(props: ChatSurfaceProps) {
     }
   }
 
+  function openPermissionSettings() {
+    props.onOpenPermissionSettings?.()
+    surfaceRoot?.dispatchEvent(new CustomEvent("permission-settings", { bubbles: true }))
+  }
+
   function selectSkill(skill: NexumSkill) {
     const value = prompt()
     const match = value.match(/(?:^|\s)@([a-z0-9-]*)$/i)
@@ -482,7 +497,12 @@ export function ChatSurface(props: ChatSurfaceProps) {
   })
 
   return (
-    <section class={`nexum-chat-surface ${props.class ?? ""}`} data-testid="chat-surface">
+    <section
+      class={`nexum-chat-surface ${props.class ?? ""}`}
+      data-testid="chat-surface"
+      data-theme={props.theme}
+      ref={(element) => (surfaceRoot = element)}
+    >
       <header class="nexum-chat-header">
         <div>
           <span class="nexum-chat-kicker">NEXUM / CHAT</span>
@@ -496,12 +516,16 @@ export function ChatSurface(props: ChatSurfaceProps) {
         </div>
       </header>
 
-      <div class="nexum-chat-tabs" role="tablist" aria-label="聊天视图">
-        <button type="button" role="tab" aria-selected={view() === "chat"} classList={{ "is-active": view() === "chat" }} onClick={() => setView("chat")}>对话</button>
-        <button type="button" role="tab" aria-selected={view() === "events"} classList={{ "is-active": view() === "events" }} onClick={() => setView("events")}>事件 <span>{events().length}</span></button>
+      <div class="nexum-chat-toolbar">
+        <div class="nexum-chat-tabs" role="tablist" aria-label="聊天视图">
+          <button type="button" role="tab" aria-selected={view() === "chat"} classList={{ "is-active": view() === "chat" }} onClick={() => setView("chat")}>对话</button>
+          <button type="button" role="tab" aria-selected={view() === "events"} classList={{ "is-active": view() === "events" }} onClick={() => setView("events")}>事件 <span>{events().length}</span></button>
+        </div>
+        <div class="nexum-chat-status-cluster">
+          <span class="nexum-chat-context-label"><span>上下文</span> <strong class="context-value">{compactionStatus()}</strong></span>
+          <span class={`nexum-chat-status-pill pill-${statusPillClass(status())}`}>{statusLabel(status())}</span>
+        </div>
       </div>
-
-      <div class="nexum-chat-runtime-summary"><h3>运行状态</h3><div><span>上下文</span><strong class="context-value">{compactionStatus()}</strong></div><div><span>Session</span><strong class={`nexum-chat-status-pill pill-${status()}`}>{statusLabel(status())}</strong></div></div>
 
       <div class="nexum-chat-body conversation-body" ref={(element) => (conversationBody = element)} onScroll={(event) => handleScroll(event.currentTarget)}>
         <div class="nexum-chat-stream" role="log" aria-live="polite" classList={{ "is-hidden": view() !== "chat" }}>
@@ -522,7 +546,18 @@ export function ChatSurface(props: ChatSurfaceProps) {
       </div>
 
       <Show when={permissions().length > 0}>
-        <section class="nexum-chat-requests" data-testid="prompt-permission" aria-live="assertive"><div class="nexum-chat-request-title"><strong>需要权限确认</strong><span>{permissions().length} 条</span></div><For each={permissions()}>{(request) => <div class="nexum-chat-request"><div><strong>{request.action} · {request.resource}</strong><small>{request.reason}</small></div><div class="nexum-chat-request-actions" data-testid="permission-actions"><button disabled={Boolean(pendingDecisionID())} onClick={() => void decide(request.id, "allow_once")}>{pendingDecisionID() === request.id ? "处理中…" : "允许一次"}</button><button disabled={Boolean(pendingDecisionID())} onClick={() => void decide(request.id, "allow_always")}>始终允许</button><button class="is-danger" disabled={Boolean(pendingDecisionID())} onClick={() => void decide(request.id, "deny")}>拒绝</button></div></div>}</For></section>
+        <section class="nexum-chat-requests" data-testid="prompt-permission" aria-live="assertive">
+          <div class="nexum-chat-request-title">
+            <strong>需要权限确认</strong>
+            <span>
+              {permissions().length} 条
+              <Show when={props.onOpenPermissionSettings}>
+                <> · <button type="button" class="nexum-chat-request-settings" onClick={() => openPermissionSettings()}>权限设置</button></>
+              </Show>
+            </span>
+          </div>
+          <For each={permissions()}>{(request) => <div class="nexum-chat-request"><div><strong>{request.action} · {request.resource}</strong><small>{request.reason}</small></div><div class="nexum-chat-request-actions" data-testid="permission-actions"><button disabled={Boolean(pendingDecisionID())} onClick={() => void decide(request.id, "allow_once")}>{pendingDecisionID() === request.id ? "处理中…" : "允许一次"}</button><button disabled={Boolean(pendingDecisionID())} onClick={() => void decide(request.id, "allow_always")}>始终允许</button><button class="is-danger" disabled={Boolean(pendingDecisionID())} onClick={() => void decide(request.id, "deny")}>拒绝</button></div></div>}</For>
+        </section>
       </Show>
 
       <Show when={questions().length > 0}>
@@ -530,10 +565,20 @@ export function ChatSurface(props: ChatSurfaceProps) {
       </Show>
 
       <div class="nexum-chat-composer">
-        <textarea aria-label="Coding Prompt" rows={3} value={prompt()} onInput={(event) => setPrompt(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); void sendPrompt() } }} placeholder={inputLocked() ? "Agent 正在回复，本轮完成后可继续输入…" : "描述下一步 Coding 任务…"} disabled={!props.sessionID || busy() || inputLocked()} />
-        <Show when={skillSuggestions().length > 0}><div class="nexum-chat-suggestions" role="listbox" aria-label="Skill 建议"><For each={skillSuggestions()}>{(skill) => <button type="button" role="option" onMouseDown={(event) => event.preventDefault()} onClick={() => selectSkill(skill)}><span>@{skill.id}</span><small>{skill.description}</small></button>}</For></div></Show>
-        <Show when={activeSkillIDs().length > 0}><div class="nexum-chat-active-skills"><span>已附加</span><For each={activeSkillIDs()}>{(id) => <span class="nexum-chat-chip skill-chip">@{id}</span>}</For></div></Show>
-        <div class="nexum-chat-composer-bar prompt-bar"><span class="nexum-chat-hint">{inputLocked() ? "Agent 正在回复" : "Enter 发送 · Shift+Enter 换行 · @ 引用 Skill"}</span><span class="nexum-chat-runtime-status">{statusLabel(status())}{compactionStatus() !== "idle" ? ` · 上下文 ${compactionStatus()}` : ""}</span><button type="button" class="nexum-chat-primary" aria-label="发送 Prompt" disabled={!props.sessionID || !prompt().trim() || busy() || inputLocked()} onClick={() => void sendPrompt()}>{busy() ? "发送中…" : "发送"}</button></div>
+        <div class="nexum-chat-composer-inner">
+          <textarea aria-label="Coding Prompt" rows={3} value={prompt()} onInput={(event) => setPrompt(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); void sendPrompt() } }} placeholder={inputLocked() ? "Agent 正在回复，本轮完成后可继续输入…" : "描述下一步 Coding 任务…"} disabled={!props.sessionID || busy() || inputLocked()} />
+          <Show when={skillSuggestions().length > 0}><div class="nexum-chat-suggestions" role="listbox" aria-label="Skill 建议"><For each={skillSuggestions()}>{(skill) => <button type="button" role="option" onMouseDown={(event) => event.preventDefault()} onClick={() => selectSkill(skill)}><span>@{skill.id}</span><small>{skill.description}</small></button>}</For></div></Show>
+          <Show when={activeSkillIDs().length > 0}><div class="nexum-chat-active-skills"><span>已附加</span><For each={activeSkillIDs()}>{(id) => <span class="nexum-chat-chip skill-chip">@{id}</span>}</For></div></Show>
+          <div class="nexum-chat-composer-bar prompt-bar">
+            <span class="nexum-chat-hint">
+              {inputLocked() ? "Agent 正在回复" : (<><span class="hint-enter">Enter 发送<span class="hint-sep"> · </span></span><span class="hint-shift">Shift+Enter 换行 · </span>@ 引用 Skill</>)}
+            </span>
+            <Show when={props.composerExtras}>
+              <span class="nexum-chat-composer-extras">{props.composerExtras}</span>
+            </Show>
+            <button type="button" class="nexum-chat-primary" aria-label="发送 Prompt" disabled={!props.sessionID || !prompt().trim() || busy() || inputLocked()} onClick={() => void sendPrompt()}>{busy() ? "发送中…" : "发送"}</button>
+          </div>
+        </div>
       </div>
 
       <div class="nexum-chat-footer"><span>{notice()}</span><Show when={contextSources().length > 0}><span>上下文来源 {contextSources().length}</span><For each={contextSources()}>{(source) => <span class="nexum-chat-context-source">{source.path}</span>}</For></Show><div><Show when={continueAvailable()}><button type="button" class="nexum-chat-button" disabled={continueBusy()} onClick={() => void continueRun()}>继续运行</button></Show><Show when={props.sessionID}><Show when={!cancelConfirmOpen()} fallback={<span class="nexum-chat-confirm"><span>确认取消运行？</span><button type="button" onClick={() => void cancelRun()} disabled={cancelBusy()}>确认</button><button type="button" onClick={() => setCancelConfirmOpen(false)}>返回</button></span>}><button type="button" class="nexum-chat-button is-danger" onClick={() => setCancelConfirmOpen(true)}>取消运行</button></Show></Show></div></div>
@@ -542,14 +587,90 @@ export function ChatSurface(props: ChatSurfaceProps) {
 }
 
 function ChatItemView(props: { readonly item: ChatItem }) {
-  return <article class={`nexum-chat-item chat-message ${props.item.kind} status-${props.item.status}`}>
-    <Switch>
-      <Match when={props.item.kind === "user" || props.item.kind === "assistant"}><div class="nexum-chat-turn-label"><strong>{props.item.title}</strong><span>{props.item.localTime} · {statusLabel(props.item.status)}</span></div><MarkdownView class="nexum-chat-copy" content={props.item.content ?? ""} /><Show when={props.item.skillIDs?.length}><div class="nexum-chat-chips"><For each={props.item.skillIDs}>{(id) => <span class="nexum-chat-chip">@{id}</span>}</For></div></Show></Match>
-      <Match when={props.item.kind === "reasoning"}><details class="nexum-chat-reasoning reasoning-fold" open={props.item.status === "streaming"}><summary>💭 {props.item.title} · {(props.item.content ?? "").length} 字 · {props.item.localTime}</summary><div class="reasoning-copy">{props.item.content}</div></details></Match>
-      <Match when={props.item.kind === "execution"}><div class="nexum-chat-execution act-row"><span>·</span><strong>{props.item.title}</strong><span>{props.item.content}</span><em>{statusLabel(props.item.status)}</em><Show when={props.item.detail}><details><summary>查看详情</summary><pre>{props.item.detail}</pre></details></Show></div></Match>
-      <Match when={props.item.kind === "status"}><div class={`nexum-chat-status-item ${props.item.thinking ? "thinking-status" : ""}`}>{props.item.content || props.item.thinkingStatus || props.item.title}</div></Match>
-    </Switch>
-  </article>
+  return <Switch>
+    <Match when={props.item.kind === "user"}>
+      <article class={`nexum-chat-item chat-message user status-${props.item.status}`}>
+        <div class="nexum-chat-user-bubble"><MarkdownView content={props.item.content ?? ""} /></div>
+        <div class="nexum-chat-user-meta">{props.item.localTime} · {statusLabel(props.item.status)}</div>
+        <Show when={props.item.skillIDs?.length}><div class="nexum-chat-chips"><For each={props.item.skillIDs}>{(id) => <span class="nexum-chat-chip">@{id}</span>}</For></div></Show>
+      </article>
+    </Match>
+    <Match when={props.item.kind === "assistant"}>
+      <article class={`nexum-chat-item chat-message assistant status-${props.item.status}`}>
+        <div class="nexum-chat-turn">
+          <div class="nexum-chat-avatar" aria-hidden="true">✦</div>
+          <div class="nexum-chat-turn-main">
+            <div class="nexum-chat-turn-label">
+              <strong>{props.item.title}</strong>
+              <span>{props.item.localTime}</span>
+              <Show when={props.item.status === "streaming"}>
+                <span class="nexum-chat-turn-state is-live">输出中</span>
+              </Show>
+            </div>
+            <MarkdownView class="nexum-chat-copy" content={props.item.content ?? ""} />
+            <Show when={props.item.skillIDs?.length}><div class="nexum-chat-chips"><For each={props.item.skillIDs}>{(id) => <span class="nexum-chat-chip">@{id}</span>}</For></div></Show>
+          </div>
+        </div>
+      </article>
+    </Match>
+    <Match when={props.item.kind === "reasoning"}>
+      <article class={`nexum-chat-item chat-message reasoning status-${props.item.status}`}>
+        <ReasoningView item={props.item} />
+      </article>
+    </Match>
+    <Match when={props.item.kind === "execution"}>
+      <article class={`nexum-chat-item chat-message execution status-${props.item.status}`}>
+        <div class="nexum-chat-execution act-row">
+          <span class="nexum-chat-exec-icon" aria-hidden="true">{execIcon(props.item.status)}</span>
+          <strong>{props.item.title}</strong>
+          <span>{props.item.content}</span>
+          <em>{statusLabel(props.item.status)}</em>
+          <Show when={props.item.detail}><details><summary>查看详情</summary><pre>{props.item.detail}</pre></details></Show>
+        </div>
+      </article>
+    </Match>
+    <Match when={props.item.kind === "status"}>
+      <Show
+        when={props.item.thinking}
+        fallback={<div class="nexum-chat-status-item">{props.item.content || props.item.title}</div>}
+      >
+        <div class="nexum-chat-status-item thinking-status">
+          <span class="thinking-dot" aria-hidden="true" />
+          <span>{props.item.content || props.item.thinkingStatus || props.item.title}</span>
+        </div>
+      </Show>
+    </Match>
+  </Switch>
+}
+
+/** 思考过程生命周期面板：占位（尚无文本）→ 流式 → 折叠/展开。 */
+function ReasoningView(props: { readonly item: ChatItem }) {
+  const live = () => props.item.status === "streaming"
+  const [touched, setTouched] = createSignal(false)
+  const [userOpen, setUserOpen] = createSignal(false)
+  const open = () => (touched() ? userOpen() : live())
+  const chars = () => (props.item.content ?? "").length
+  const elapsedLabel = () => {
+    const ms = props.item.elapsedMs
+    if (ms === undefined) return ""
+    return ` · 用时 ${Math.max(1, Math.round(ms / 1000))}s`
+  }
+  return (
+    <details
+      class={`nexum-chat-reasoning reasoning-fold ${live() ? "is-live" : ""} ${chars() === 0 ? "is-empty" : ""}`}
+      open={open()}
+    >
+      <summary onClick={(event) => { event.preventDefault(); setTouched(true); setUserOpen(!open()) }}>
+        <Show
+          when={live()}
+          fallback={<span>模型思考 · {chars()} 字{elapsedLabel()} · {props.item.localTime}</span>}
+        >
+          <span>正在思考 · 已 {chars()} 字</span>
+        </Show>
+      </summary>
+      <div class="reasoning-copy">{props.item.content}</div>
+    </details>
+  )
 }
 
 export function historyItemsFromMessages(messages: NexumSessionMessages["messages"]): ChatItem[] {
@@ -578,15 +699,15 @@ export function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem
     const active = items.filter((item) => !item.thinking)
     const last = active.at(-1)
     if (last?.kind === "reasoning" && last.id.startsWith(`reasoning:${event.runID}:`)) return updateChatItem(active, last.id, { content: `${last.content ?? ""}${value("content")}`, status: "streaming", localTime: timestamp, eventType: event.type })
-    return [...active, { id: `reasoning:${event.runID}:${event.sequence}`, kind: "reasoning", title: "模型思考", content: value("content"), status: "streaming", localTime: timestamp, eventType: event.type }]
+    return [...active, { id: `reasoning:${event.runID}:${event.sequence}`, kind: "reasoning", title: "模型思考", content: value("content"), status: "streaming", startedAt: event.occurredAt, localTime: timestamp, eventType: event.type }]
   }
   if (event.type === "assistant.text") {
-    const active = closeReasoning(items.filter((item) => !item.thinking), event.runID)
+    const active = closeReasoning(items.filter((item) => !item.thinking), event.runID, event.occurredAt)
     const last = active.at(-1)
     if (last?.kind === "assistant" && last.id.startsWith(`assistant:${event.runID}:`)) return updateChatItem(active, last.id, { content: `${last.content ?? ""}${value("content")}`, status: "streaming", localTime: timestamp, eventType: event.type })
     return [...active, { id: `assistant:${event.runID}:${event.sequence}`, kind: "assistant", title: "Agent", content: value("content"), status: "streaming", localTime: timestamp, eventType: event.type }]
   }
-  if (event.type === "tool.request" || event.type === "tool.result") return upsertChatItem(closeReasoning(items.filter((item) => !item.thinking), event.runID), { id: `tool:${value("toolCallID")}`, kind: "execution", title: `${event.type === "tool.request" ? "工具调用" : "工具结果"} · ${value("toolName") || value("toolCallID") || "工具"}`, content: event.type === "tool.request" ? "Core 正在执行工具" : data.ok === false ? "工具执行失败" : compactSummary(value("output")) || "工具执行完成", detail, status: event.type === "tool.request" ? "running" : data.ok === false ? "failed" : "completed", localTime: timestamp, eventType: event.type })
+  if (event.type === "tool.request" || event.type === "tool.result") return upsertChatItem(closeReasoning(items.filter((item) => !item.thinking), event.runID, event.occurredAt), { id: `tool:${value("toolCallID")}`, kind: "execution", title: `${event.type === "tool.request" ? "工具调用" : "工具结果"} · ${value("toolName") || value("toolCallID") || "工具"}`, content: event.type === "tool.request" ? "Core 正在执行工具" : data.ok === false ? "工具执行失败" : compactSummary(value("output")) || "工具执行完成", detail, status: event.type === "tool.request" ? "running" : data.ok === false ? "failed" : "completed", localTime: timestamp, eventType: event.type })
   if (event.type === "permission.requested") return upsertChatItem(items, { id: `permission:${value("requestID")}`, kind: "execution", title: `权限请求 · ${value("action") || "操作"}`, content: value("reason") || "等待权限处理", detail, status: "waiting", localTime: timestamp, eventType: event.type })
   if (event.type === "question.request") return upsertChatItem(items, { id: `question:${value("requestID")}`, kind: "execution", title: "补充信息 · 等待回答", content: "Core 正在等待你的补充信息", detail, status: "waiting", localTime: timestamp, eventType: event.type })
   if (event.type === "question.result" || event.type === "question.cancelled") return updateChatItem(items, `question:${value("requestID")}`, { status: event.type === "question.result" ? "completed" : "cancelled", content: event.type === "question.result" ? "补充信息已提交" : "补充信息已取消", localTime: timestamp })
@@ -601,7 +722,7 @@ export function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem
   }
   if (event.type === "session.completed" || event.type === "session.failed" || event.type === "session.cancelled") {
     const result = event.type === "session.failed" ? "failed" : event.type === "session.cancelled" ? "cancelled" : "completed"
-    return [...closeReasoning(items.filter((item) => !item.thinking), event.runID), { id: `session:${event.runID}:${result}`, kind: "status", title: result === "failed" ? "运行失败" : result === "cancelled" ? "运行已取消" : "运行完成", content: result === "failed" ? value("message") || "Core 返回运行失败" : result === "cancelled" ? "本轮运行已停止，可以继续输入新的 Prompt" : "本轮 Coding 任务已完成", status: result, localTime: timestamp, eventType: event.type }]
+    return [...closeReasoning(items.filter((item) => !item.thinking), event.runID, event.occurredAt), { id: `session:${event.runID}:${result}`, kind: "status", title: result === "failed" ? "运行失败" : result === "cancelled" ? "运行已取消" : "运行完成", content: result === "failed" ? value("message") || "Core 返回运行失败" : result === "cancelled" ? "本轮运行已停止，可以继续输入新的 Prompt" : "本轮 Coding 任务已完成", status: result, localTime: timestamp, eventType: event.type }]
   }
   return items
 }
@@ -618,8 +739,19 @@ function formatLocalTime(value = new Date().toISOString()): string {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
-function statusLabel(value: SurfaceStatus): string {
+function statusLabel(value: SurfaceStatus | ChatStatus): string {
   return { streaming: "输出中…", running: "执行中", waiting: "等待处理", completed: "已完成", failed: "失败", cancelled: "已取消", idle: "空闲", "no session": "无 Session", retrying: "重试中", "awaiting permission": "等待权限", "awaiting question": "等待回答" }[value] ?? value
+}
+
+function statusPillClass(value: SurfaceStatus): string {
+  return value.replace(/\s+/g, "-")
+}
+
+function execIcon(value: ChatStatus): string {
+  if (value === "running" || value === "streaming") return "●"
+  if (value === "failed") return "✗"
+  if (value === "cancelled") return "—"
+  return "✓"
 }
 
 function skillIDsFromText(text: string): string[] {
@@ -688,9 +820,11 @@ function upsertChatItem(items: ChatItem[], item: ChatItem): ChatItem[] {
   return items.some((current) => current.id === item.id) ? updateChatItem(items, item.id, item) : [...items, item]
 }
 
-function closeReasoning(items: ChatItem[], runID: string): ChatItem[] {
+function closeReasoning(items: ChatItem[], runID: string, occurredAt?: string): ChatItem[] {
   const last = items.at(-1)
-  return last?.kind === "reasoning" && last.id.startsWith(`reasoning:${runID}:`) ? updateChatItem(items, last.id, { status: "completed" }) : items
+  if (last?.kind !== "reasoning" || !last.id.startsWith(`reasoning:${runID}:`)) return items
+  const elapsedMs = last.startedAt ? Math.max(0, new Date(occurredAt ?? Date.now()).getTime() - new Date(last.startedAt).getTime()) : undefined
+  return updateChatItem(items, last.id, { status: "completed", ...(elapsedMs !== undefined ? { elapsedMs } : {}) })
 }
 
 function compactSummary(value: string): string {

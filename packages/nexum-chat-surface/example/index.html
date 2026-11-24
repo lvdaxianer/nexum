@@ -23,9 +23,47 @@
         border-radius: 16px;
       }
 
+      /* 设备容器切换：验证组件在 PC / Pad / 手机宽度下的断点行为 */
+      .demo-toolbar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0 16px;
+        font-size: 13px;
+        color: #6b7280;
+      }
+
+      .demo-toolbar button {
+        padding: 6px 12px;
+        border: 1px solid #d9e0e8;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #1b2a3d;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .demo-toolbar button.is-active {
+        border-color: #138b8b;
+        background: #e2f2f2;
+        color: #138b8b;
+      }
+
+      .demo-toolbar label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-left: auto;
+        cursor: pointer;
+      }
+
       nexum-chat {
         display: block;
+        max-width: 960px;
+        margin: 0 auto;
         min-height: 680px;
+        transition: max-width 0.2s ease;
       }
 
       dialog {
@@ -43,7 +81,15 @@
   <body>
     <main class="demo-card">
       <h1>独立页面中的 Nexum ChatSurface</h1>
-      <p>把 session-id 和 api-base-url 换成实际值即可连接协议服务。</p>
+      <p>把 session-id 和 api-base-url 换成实际值即可连接协议服务。用下方切换器验证不同容器宽度与主题。</p>
+      <div class="demo-toolbar">
+        <span>容器：</span>
+        <button type="button" data-width="960px" class="is-active">PC · 960</button>
+        <button type="button" data-width="768px">Pad · 768</button>
+        <button type="button" data-width="390px">手机 · 390</button>
+        <button type="button" data-width="100%">自适应</button>
+        <label><input type="checkbox" id="theme-toggle" /> 深色主题</label>
+      </div>
       <nexum-chat
         session-id="replace-with-session-id"
         api-base-url="http://127.0.0.1:4097"
@@ -62,6 +108,18 @@
 
     <script type="module">
       import "../src/index.ts"
+
+      const chat = document.querySelector("nexum-chat")
+      document.querySelectorAll("[data-width]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll("[data-width]").forEach((item) => item.classList.toggle("is-active", item === button))
+          chat.style.maxWidth = button.dataset.width
+        })
+      })
+      document.querySelector("#theme-toggle").addEventListener("change", (event) => {
+        if (event.target.checked) chat.setAttribute("theme", "dark")
+        else chat.removeAttribute("theme")
+      })
 
       document.querySelector("#open-chat").addEventListener("click", () => {
         document.querySelector("#chat-dialog").showModal()
