@@ -6,53 +6,209 @@
 
 ### 对外 route 覆盖表
 
-| 路由归属 | 对外端点 | 文档章节 | 覆盖状态 |
-| --- | --- | --- | --- |
-| Nexum Runtime | `GET /api/nexum/skills`、`GET /api/nexum/skills/:id` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
-| Nexum Runtime | `POST /api/nexum/skills/register`、`POST /api/nexum/skills/refresh`、`POST /api/nexum/skills/validate` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
-| Nexum Runtime | `DELETE /api/nexum/skills/:id`、`POST /api/nexum/skills/:id/activate` | [Skill 注册管理](#skill-注册管理) | 已覆盖 |
-| Nexum Runtime | `GET /api/nexum/role-prompt`、`PUT /api/nexum/role-prompt`、`DELETE /api/nexum/role-prompt` | [默认角色提示词](#默认角色提示词) | 已覆盖 |
-| Nexum Runtime | `GET /api/experimental/nexum/session/:sessionID/messages` | [Session 对话历史](#session-对话历史) | 已覆盖 |
+下表以 `packages/nexum-server/src/index.ts` 的路由分支为准。路径参数使用 `:name` 表示，文档中的 `{name}` 示例值必须进行 URL path 编码。
+
+| 路由归属    | 对外端点                                                   | 文档章节                                                                 | 覆盖状态 |
+| ----------- | ---------------------------------------------------------- | ------------------------------------------------------------------------ | -------- |
+| Health      | `GET /health/live`、`GET /health/ready`                    | [Health 与 Capabilities](#health-与-capabilities)                        | 已覆盖   |
+| Runtime     | `GET /api/nexum/capabilities`                              | [Health 与 Capabilities](#health-与-capabilities)                        | 已覆盖   |
+| Model       | `GET /api/nexum/model`、`PUT /api/nexum/model`             | [Model 配置与 Probe](#model-配置与-probe)                                | 已覆盖   |
+| Model       | `POST /api/nexum/model/probe`                              | [Model 配置与 Probe](#model-配置与-probe)                                | 已覆盖   |
+| Role Prompt | `GET` / `PUT` / `DELETE /api/nexum/role-prompt`            | [默认角色提示词](#默认角色提示词)                                        | 已覆盖   |
+| Session     | `GET` / `POST /api/nexum/session`                          | [Session 资源与状态](#session-资源与状态)                                | 已覆盖   |
+| Session     | `PUT` / `DELETE /api/nexum/session/:sessionID`             | [Session 资源与状态](#session-资源与状态)；[Session 删除](#session-删除) | 已覆盖   |
+| Session     | `GET /api/nexum/session/:sessionID/state`                  | [Session 资源与状态](#session-资源与状态)                                | 已覆盖   |
+| Session     | `POST /api/nexum/session/:sessionID/prompt`                | [Session 运行端点](#session-运行端点)                                    | 已覆盖   |
+| Session     | `GET /api/experimental/nexum/session/:sessionID/messages`  | [Session 对话历史](#session-对话历史)                                    | 已覆盖   |
+| Session     | `POST /api/experimental/nexum/session/:sessionID/continue` | [实验性：继续运行](#实验性继续运行)                                      | 已覆盖   |
+| Session     | `POST /api/nexum/session/:sessionID/cancel`                | [Session 运行端点](#session-运行端点)                                    | 已覆盖   |
+| Session     | `GET /api/nexum/session/:sessionID/events`                 | [事件语义](#事件语义)                                                    | 已覆盖   |
+| Permission  | `/api/nexum/permission...`                                 | [Permission 与策略](#permission-与策略)                                  | 待补齐   |
+| Question    | `/api/nexum/session/:sessionID/question...`                | [Question 反问](#question-反问)                                          | 待补齐   |
+| Skill       | `/api/nexum/skills...`                                     | [Skill 注册管理](#skill-注册管理)                                        | 已覆盖   |
 
 ## 协议约定
 
-| 项目 | 约定 |
-| --- | --- |
-| 协议版本 | `nexum.runtime.v1` |
-| HTTP 前缀 | `/api/nexum`；继续运行实验性接口使用 `/api/experimental/nexum` |
-| 健康检查 | `/health/live`、`/health/ready` |
-| 响应格式 | JSON Envelope：`data` + `meta.protocolVersion` + `meta.traceId` |
-| 事件传输 | SSE；事件包含 `eventID`、`runID`、`sessionID`、`sequence` 和 `occurredAt` |
+| 项目      | 约定                                                                      |
+| --------- | ------------------------------------------------------------------------- |
+| 协议版本  | `nexum.runtime.v1`                                                        |
+| HTTP 前缀 | `/api/nexum`；继续运行实验性接口使用 `/api/experimental/nexum`            |
+| 健康检查  | `/health/live`、`/health/ready`                                           |
+| 响应格式  | JSON Envelope：`data` + `meta.protocolVersion` + `meta.traceId`           |
+| 事件传输  | SSE；事件包含 `eventID`、`runID`、`sessionID`、`sequence` 和 `occurredAt` |
 
 ## 资源与操作
 
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| `GET` | `/api/nexum/capabilities` | 能力发现和事件类型发现 |
-| `GET` / `PUT` | `/api/nexum/model` | 读取和保存模型配置 |
-| `POST` | `/api/nexum/model/probe` | 探测模型能力 |
-| `GET` / `PUT` / `DELETE` | `/api/nexum/role-prompt` | 读取、保存和恢复默认角色提示词 |
-| `GET` / `POST` | `/api/nexum/session` | 列出或创建 Session |
-| `PUT` / `DELETE` | `/api/nexum/session/:sessionID` | 更新或删除 Session |
-| `GET` | `/api/nexum/session/:sessionID/state` | 获取恢复状态 |
-| `GET` | `/api/experimental/nexum/session/:sessionID/messages` | 分页读取 canonical 对话历史；实验性接口 |
-| `POST` | `/api/nexum/session/:sessionID/prompt` | 提交长任务 Prompt |
-| `POST` | `/api/experimental/nexum/session/:sessionID/continue` | 从既有 User/Tool 上下文继续运行；实验性接口 |
-| `POST` | `/api/nexum/session/:sessionID/cancel` | 取消当前运行 |
-| `GET` | `/api/nexum/session/:sessionID/events` | 订阅 SSE 事件流 |
-| `GET` / `POST` | `/api/nexum/session/:sessionID/permission...` | 查询和回复权限请求 |
-| `GET` / `POST` | `/api/nexum/session/:sessionID/question...` | 查询、回答和取消结构化反问 |
-| `GET` / `POST` / `DELETE` | `/api/nexum/skills...` | Skill 列表、详情、按地址注册、刷新、校验、取消注册和激活 |
+| 方法                      | 路径                                                  | 用途                                                     |
+| ------------------------- | ----------------------------------------------------- | -------------------------------------------------------- |
+| `GET`                     | `/api/nexum/capabilities`                             | 能力发现和事件类型发现                                   |
+| `GET` / `PUT`             | `/api/nexum/model`                                    | 读取和保存模型配置                                       |
+| `POST`                    | `/api/nexum/model/probe`                              | 探测模型能力                                             |
+| `GET` / `PUT` / `DELETE`  | `/api/nexum/role-prompt`                              | 读取、保存和恢复默认角色提示词                           |
+| `GET` / `POST`            | `/api/nexum/session`                                  | 列出或创建 Session                                       |
+| `PUT` / `DELETE`          | `/api/nexum/session/:sessionID`                       | 更新或删除 Session                                       |
+| `GET`                     | `/api/nexum/session/:sessionID/state`                 | 获取恢复状态                                             |
+| `GET`                     | `/api/experimental/nexum/session/:sessionID/messages` | 分页读取 canonical 对话历史；实验性接口                  |
+| `POST`                    | `/api/nexum/session/:sessionID/prompt`                | 提交长任务 Prompt                                        |
+| `POST`                    | `/api/experimental/nexum/session/:sessionID/continue` | 从既有 User/Tool 上下文继续运行；实验性接口              |
+| `POST`                    | `/api/nexum/session/:sessionID/cancel`                | 取消当前运行                                             |
+| `GET`                     | `/api/nexum/session/:sessionID/events`                | 订阅 SSE 事件流                                          |
+| `GET` / `POST`            | `/api/nexum/session/:sessionID/permission...`         | 查询和回复权限请求                                       |
+| `GET` / `POST`            | `/api/nexum/session/:sessionID/question...`           | 查询、回答和取消结构化反问                               |
+| `GET` / `POST` / `DELETE` | `/api/nexum/skills...`                                | Skill 列表、详情、按地址注册、刷新、校验、取消注册和激活 |
+
+## Health 与 Capabilities
+
+### Health
+
+| 方法  | URL             | 成功响应                                             | 失败行为                                   |
+| ----- | --------------- | ---------------------------------------------------- | ------------------------------------------ |
+| `GET` | `/health/live`  | `200`，`{"service":"nexum-server","status":"ok"}`    | 非 GET 返回 `405 NEXUM_METHOD_NOT_ALLOWED` |
+| `GET` | `/health/ready` | `200`，`{"service":"nexum-server","status":"ready"}` | 非 GET 返回 `405 NEXUM_METHOD_NOT_ALLOWED` |
+
+Health 响应是轻量 JSON，不包含 `meta`，但会带 `X-Trace-Id`；请求体、Cookie 和认证信息均不适用。
+
+### Capabilities
+
+`GET /api/nexum/capabilities` 返回当前 Protocol 版本、传输方式、feature 名称、事件类型和 capability 操作矩阵。当前传输为 JSON + SSE；调用方应以 `status` 和 `operations` 判断能力是否可用，不应把未配置的可选 Runtime 当作已启用。
+
+下面示例为缩略响应；实际 `features` 和 `eventTypes` 数组以服务返回为准，`capabilities` 返回完整矩阵。
+
+```json
+{
+  "data": {
+    "protocolVersion": "nexum.runtime.v1",
+    "transport": { "http": "json", "events": "sse" },
+    "features": ["model", "session", "prompt", "permission", "question", "skill"],
+    "eventTypes": ["assistant.text", "session.completed", "run.settled"],
+    "capabilities": [
+      {
+        "id": "session",
+        "version": "1",
+        "status": "enabled",
+        "operations": ["create", "list", "get", "update", "delete", "continue"]
+      }
+    ]
+  },
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_capabilities_001" }
+}
+```
+
+响应失败时使用统一 `NEXUM_METHOD_NOT_ALLOWED` 错误结构；Cookies 不适用。
+
+```bash
+curl --request GET 'http://127.0.0.1:4097/api/nexum/capabilities' \
+  --header 'Accept: application/json' \
+  --header 'X-Trace-Id: trace_capabilities_001'
+```
+
+## Model 配置与 Probe
+
+### `GET /api/nexum/model`
+
+读取安全模型配置。成功 `200` 的 `data` 为 `null` 或 `{baseUrl, model, credentialConfigured, credentialRef?}`；credential 原文永不返回。未配置 Store 返回 `503 NEXUM_MODEL_CONFIG_NOT_CONFIGURED`。
+
+### `PUT /api/nexum/model`
+
+请求体：
+
+```json
+{
+  "baseUrl": "https://model.example.test/v1",
+  "model": "example-model",
+  "credential": "secret-value",
+  "credentialRef": "env:MODEL_TOKEN"
+}
+```
+
+`baseUrl`、`model` 必填字符串；`credential` 和 `credentialRef` 可选但必须是字符串。成功返回 `200` 和安全配置；字段无效返回 `400 NEXUM_INVALID_MODEL_CONFIG`，Store 未配置返回 `503 NEXUM_MODEL_CONFIG_NOT_CONFIGURED`，保存失败返回 `500 NEXUM_MODEL_CONFIG_UPDATE_FAILED`。更新失败时保留旧配置。
+
+### `POST /api/nexum/model/probe`
+
+请求体可省略，或使用 `{ "mode": "text" | "function_calling" | "both" }`；默认 `both`。成功 `200` 返回：
+
+```json
+{
+  "data": { "text": "pass", "functionCalling": "skipped" },
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_probe_001" }
+}
+```
+
+错误：`400 NEXUM_INVALID_MODEL_PROBE` 表示 mode 非法；`401 NEXUM_MODEL_AUTH_FAILED` 表示上游认证失败；`503 NEXUM_MODEL_PROBE_NOT_CONFIGURED` 或 `NEXUM_MODEL_PROBE_FAILED` 表示 Probe 未配置或上游不可用。Probe 只返回能力状态，不返回模型内容或凭据。
+
+请求 Header 仅使用可选 `X-Trace-Id`；Cookie 不适用。
+
+```bash
+curl --request PUT 'http://127.0.0.1:4097/api/nexum/model' \
+  --header 'Content-Type: application/json' \
+  --data '{"baseUrl":"https://model.example.test/v1","model":"example-model","credentialRef":"env:MODEL_TOKEN"}'
+
+curl --request POST 'http://127.0.0.1:4097/api/nexum/model/probe' \
+  --header 'Content-Type: application/json' \
+  --data '{"mode":"both"}'
+```
+
+## Session 资源与状态
+
+### Collection：`GET` / `POST /api/nexum/session`
+
+`GET` 返回用于页面恢复的 Session 摘要数组，每项包含 `id`、`name`、`directory`、`status`、`createdAt` 和 `updatedAt`。`POST` 请求体为 `{ "directory": "/absolute/project", "name": "可选名称" }`；`directory` 必须是非空字符串并通过目录校验，`name` 可选但若提供必须是字符串。
+
+创建成功 `200` 返回 Session 摘要；参数错误返回 `400 NEXUM_INVALID_REQUEST`，目录无效返回 `400 NEXUM_INVALID_DIRECTORY`，创建失败返回 `500 NEXUM_SESSION_CREATE_FAILED`。GET Store 失败返回统一 `500 NEXUM_INTERNAL_ERROR`。
+
+### Resource：`PUT` / `DELETE /api/nexum/session/{sessionID}`
+
+`PUT` 只接受 `{ "name": "新名称" }`，成功返回更新后的 Session；名称非法返回 `400 NEXUM_INVALID_REQUEST`，Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`，保存失败返回 `500 NEXUM_SESSION_UPDATE_FAILED`。DELETE 的完整契约见 [Session 删除](#session-删除)。
+
+### State：`GET /api/nexum/session/{sessionID}/state`
+
+成功 `200` 返回 `session`、`canContinue`、`pendingPermissions`、`pendingQuestions` 和 `lastSequence`。Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`。该快照用于页面恢复，不替代 messages 历史或 SSE 事件。
+
+```json
+{
+  "data": {
+    "session": {
+      "id": "session_001",
+      "name": "project",
+      "directory": "/absolute/project",
+      "status": "idle",
+      "createdAt": "...",
+      "updatedAt": "..."
+    },
+    "canContinue": true,
+    "pendingPermissions": [],
+    "pendingQuestions": [],
+    "lastSequence": 42
+  },
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_state_001" }
+}
+```
+
+所有 Session 请求均使用统一 JSON Envelope；请求 Header 可带 `X-Trace-Id`，请求 Cookie 不适用。
+
+## Session 运行端点
+
+本节只建立 Prompt、Cancel 的路由锚点和公共契约；历史、Continue、SSE 的完整恢复语义见对应章节。
+
+### `POST /api/nexum/session/{sessionID}/prompt`
+
+请求体为 `{ "text": "非空 Prompt" }`。受理成功返回 `200 {"data":{"status":"accepted"}}`，运行在后台继续，调用方应随后订阅 SSE。Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；Session 已运行返回 `409 NEXUM_SESSION_RUN_CONFLICT`；运行时未配置返回 `503 NEXUM_RUNTIME_NOT_CONFIGURED`；`text` 缺失或为空返回 `400 NEXUM_INVALID_REQUEST`。
+
+### `POST /api/nexum/session/{sessionID}/cancel`
+
+请求体为空。成功返回 `200 {"data":{"status":"cancelled"}}`；Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；状态不允许取消返回 `409 NEXUM_SESSION_CANCEL_CONFLICT`。Cancel 只影响运行和交互，不删除消息历史或 Session。
+
+## 默认角色提示词
 
 ## 默认角色提示词
 
 默认角色提示词是独立于模型凭据和 Session 消息历史的全局配置。默认本地 Runtime 将它持久化到 `<dataDirectory>/role-prompt.json`，也可通过 `NEXUM_ROLE_PROMPT_FILE` 指定文件。文件采用原子替换写入并使用 `0600` 权限。
 
-| 方法 | URL | 请求体 | 成功响应 |
-| --- | --- | --- | --- |
-| `GET` | `/api/nexum/role-prompt` | 不适用 | `200`，`data` 为 `{prompt, source, updatedAt?}` |
-| `PUT` | `/api/nexum/role-prompt` | `{prompt}`，非空字符串 | `200`，返回保存后的配置 |
-| `DELETE` | `/api/nexum/role-prompt` | 不适用 | `200`，恢复内置默认配置 |
+| 方法     | URL                      | 请求体                 | 成功响应                                        |
+| -------- | ------------------------ | ---------------------- | ----------------------------------------------- |
+| `GET`    | `/api/nexum/role-prompt` | 不适用                 | `200`，`data` 为 `{prompt, source, updatedAt?}` |
+| `PUT`    | `/api/nexum/role-prompt` | `{prompt}`，非空字符串 | `200`，返回保存后的配置                         |
+| `DELETE` | `/api/nexum/role-prompt` | 不适用                 | `200`，恢复内置默认配置                         |
 
 示例：
 
@@ -71,14 +227,14 @@ Content-Type: application/json
 
 `GET /api/experimental/nexum/session/:sessionID/messages` 从 `MessageStore` 读取 Session 的 canonical 消息历史，默认返回最新一页。它服务于页面恢复和向上滚动，不返回事件日志，也不返回默认角色提示词、Skill 原文、项目上下文原文、工具定义或模型凭据。实验性接口可能变化，不提供兼容别名。
 
-| 项目 | 内容 |
-| --- | --- |
-| 调用方 | Nexum Web UI 或需要恢复对话的 Runtime 客户端 |
-| 前置条件 | `sessionID` 对应现存 Session |
-| 分页 | `limit` 为 1-100 的整数，默认 50；`before` 为非负消息索引，返回其之前的一页；继续翻页时带上上页的 `snapshot` |
-| 排序 | 按 canonical 消息写入顺序升序返回；`index` 是当前历史快照中的零基索引 |
-| 脱敏 | 文本和结构化工具输入在响应边界脱敏；内部模型历史不被修改 |
-| 认证 | 当前认证约定待确认；服务实现未校验认证信息 |
+| 项目     | 内容                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------ |
+| 调用方   | Nexum Web UI 或需要恢复对话的 Runtime 客户端                                                                 |
+| 前置条件 | `sessionID` 对应现存 Session                                                                                 |
+| 分页     | `limit` 为 1-100 的整数，默认 50；`before` 为非负消息索引，返回其之前的一页；继续翻页时带上上页的 `snapshot` |
+| 排序     | 按 canonical 消息写入顺序升序返回；`index` 是当前历史快照中的零基索引                                        |
+| 脱敏     | 文本和结构化工具输入在响应边界脱敏；内部模型历史不被修改                                                     |
+| 认证     | 当前认证约定待确认；服务实现未校验认证信息                                                                   |
 
 ### 请求定义
 
@@ -90,17 +246,17 @@ GET http://127.0.0.1:4097/api/experimental/nexum/session/{sessionID}/messages?li
 
 #### Path parameters
 
-| 参数名 | 类型 | 必填 | 格式/范围 | 示例 | 说明 |
-| --- | --- | --- | --- | --- | --- |
-| `{sessionID}` | string | 是 | URL 编码后的 Session 标识 | `session_001` | 目标 Session |
+| 参数名        | 类型   | 必填 | 格式/范围                 | 示例          | 说明         |
+| ------------- | ------ | ---- | ------------------------- | ------------- | ------------ |
+| `{sessionID}` | string | 是   | URL 编码后的 Session 标识 | `session_001` | 目标 Session |
 
 #### Query parameters
 
-| 参数名 | 类型 | 必填 | 默认值 | 范围 | 说明 |
-| --- | --- | --- | --- | --- | --- |
-| `limit` | integer | 否 | `50` | `1-100` | 本页最多返回的消息数 |
-| `before` | integer | 否 | 历史长度 | `>=0` 且不超过历史长度 | 返回索引小于该值的最近一页；使用上次响应的 `nextBefore` |
-| `snapshot` | string | 翻页时必填 | 无 | 上页响应的 `snapshotID` | `8d3f…` | 校验分页期间 canonical 历史未被重写 |
+| 参数名     | 类型    | 必填       | 默认值   | 范围                    | 说明                                                    |
+| ---------- | ------- | ---------- | -------- | ----------------------- | ------------------------------------------------------- | ----------------------------------- |
+| `limit`    | integer | 否         | `50`     | `1-100`                 | 本页最多返回的消息数                                    |
+| `before`   | integer | 否         | 历史长度 | `>=0` 且不超过历史长度  | 返回索引小于该值的最近一页；使用上次响应的 `nextBefore` |
+| `snapshot` | string  | 翻页时必填 | 无       | 上页响应的 `snapshotID` | `8d3f…`                                                 | 校验分页期间 canonical 历史未被重写 |
 
 #### Request headers and cookies
 
@@ -137,17 +293,17 @@ GET http://127.0.0.1:4097/api/experimental/nexum/session/{sessionID}/messages?li
 }
 ```
 
-| 字段路径 | 类型 | 必有/可选 | 说明 |
-| --- | --- | --- | --- |
-| `data.messages` | array | 必有 | 当前页消息，按 canonical 顺序升序排列 |
-| `data.messages[].index` | integer | 必有 | 当前消息在历史快照中的零基索引 |
-| `data.messages[].message` | object | 必有 | `system`、`user`、`assistant` 或 `tool` 消息 |
-| `data.total` | integer | 必有 | 当前历史快照的消息总数 |
-| `data.hasMore` | boolean | 必有 | 是否还有更早消息 |
-| `data.nextBefore` | integer | 可选 | 下一次请求使用的 `before`；没有更早消息时省略 |
-| `data.snapshotID` | string | 必有 | 当前 canonical 历史快照标识；向上翻页时原样作为 `snapshot` 传回 |
-| `meta.protocolVersion` | string | 必有 | 固定为 `nexum.runtime.v1` |
-| `meta.traceId` | string | 必有 | 请求链路标识 |
+| 字段路径                  | 类型    | 必有/可选 | 说明                                                            |
+| ------------------------- | ------- | --------- | --------------------------------------------------------------- |
+| `data.messages`           | array   | 必有      | 当前页消息，按 canonical 顺序升序排列                           |
+| `data.messages[].index`   | integer | 必有      | 当前消息在历史快照中的零基索引                                  |
+| `data.messages[].message` | object  | 必有      | `system`、`user`、`assistant` 或 `tool` 消息                    |
+| `data.total`              | integer | 必有      | 当前历史快照的消息总数                                          |
+| `data.hasMore`            | boolean | 必有      | 是否还有更早消息                                                |
+| `data.nextBefore`         | integer | 可选      | 下一次请求使用的 `before`；没有更早消息时省略                   |
+| `data.snapshotID`         | string  | 必有      | 当前 canonical 历史快照标识；向上翻页时原样作为 `snapshot` 传回 |
+| `meta.protocolVersion`    | string  | 必有      | 固定为 `nexum.runtime.v1`                                       |
+| `meta.traceId`            | string  | 必有      | 请求链路标识                                                    |
 
 `assistant` 消息可包含 `content`、`reasoningContent` 和 `toolCalls`；`tool` 消息包含 `toolCallID` 和 `content`。压缩摘要以 `sourceID: context:summary` 的 `system` 消息返回。
 
@@ -155,13 +311,13 @@ GET http://127.0.0.1:4097/api/experimental/nexum/session/{sessionID}/messages?li
 
 错误响应包含 `errorCode`、中文 `message`、`traceId` 和协议 `meta`；不会返回本地文件路径、异常堆栈或凭据。
 
-| HTTP 状态码 | `errorCode` | 触发条件 | 调用方处理 |
-| --- | --- | --- | --- |
-| `400` | `NEXUM_INVALID_REQUEST` | `limit`、`before` 缺失格式错误或超出范围 | 修正分页参数后重试 |
-| `404` | `NEXUM_SESSION_NOT_FOUND` | Session 不存在 | 清除本地 Session 选择并重新加载列表 |
-| `409` | `NEXUM_HISTORY_SNAPSHOT_EXPIRED` | 翻页期间历史被压缩或重写 | 丢弃旧游标，从最新页重新加载 |
-| `405` | `NEXUM_METHOD_NOT_ALLOWED` | 使用非 GET 方法 | 改用 GET |
-| `500` | `NEXUM_INTERNAL_ERROR` | MessageStore 不可读或服务内部失败 | 使用 `traceId` 排障，保留当前页面内容并稍后重试 |
+| HTTP 状态码 | `errorCode`                      | 触发条件                                 | 调用方处理                                      |
+| ----------- | -------------------------------- | ---------------------------------------- | ----------------------------------------------- |
+| `400`       | `NEXUM_INVALID_REQUEST`          | `limit`、`before` 缺失格式错误或超出范围 | 修正分页参数后重试                              |
+| `404`       | `NEXUM_SESSION_NOT_FOUND`        | Session 不存在                           | 清除本地 Session 选择并重新加载列表             |
+| `409`       | `NEXUM_HISTORY_SNAPSHOT_EXPIRED` | 翻页期间历史被压缩或重写                 | 丢弃旧游标，从最新页重新加载                    |
+| `405`       | `NEXUM_METHOD_NOT_ALLOWED`       | 使用非 GET 方法                          | 改用 GET                                        |
+| `500`       | `NEXUM_INTERNAL_ERROR`           | MessageStore 不可读或服务内部失败        | 使用 `traceId` 排障，保留当前页面内容并稍后重试 |
 
 ### curl 示例
 
@@ -186,14 +342,14 @@ curl --get 'http://127.0.0.1:4097/api/experimental/nexum/session/session_001/mes
 
 `DELETE /api/nexum/session/:sessionID` 删除指定 Session 的持久化历史和运行记录，但保留工作目录与模型配置。服务按 `messageStore`、可选 `interactionStore`、`eventHub`、`sessionService` 的顺序删除；任一步依赖失败都会返回稳定的 `NEXUM_SESSION_DELETE_FAILED`，不会暴露内部错误文本。
 
-| 项目 | 内容 |
-| --- | --- |
-| 接口用途 | 删除不再需要的 Nexum Session 及其消息、交互和事件记录 |
-| 调用方 | 已确认 Session 不再需要的 Runtime 客户端 |
-| 前置条件 | `sessionID` 对应现存且当前不处于 `running` 状态的 Session |
-| 权限要求 | 当前认证约定待确认；服务实现未校验认证信息 |
-| 幂等性 | 重复删除不视为成功幂等：首次成功返回 `200`，之后返回 `404 NEXUM_SESSION_NOT_FOUND` |
-| 数据保留 | 工作目录和模型配置不受影响 |
+| 项目     | 内容                                                                               |
+| -------- | ---------------------------------------------------------------------------------- |
+| 接口用途 | 删除不再需要的 Nexum Session 及其消息、交互和事件记录                              |
+| 调用方   | 已确认 Session 不再需要的 Runtime 客户端                                           |
+| 前置条件 | `sessionID` 对应现存且当前不处于 `running` 状态的 Session                          |
+| 权限要求 | 当前认证约定待确认；服务实现未校验认证信息                                         |
+| 幂等性   | 重复删除不视为成功幂等：首次成功返回 `200`，之后返回 `404 NEXUM_SESSION_NOT_FOUND` |
+| 数据保留 | 工作目录和模型配置不受影响                                                         |
 
 ### 请求定义
 
@@ -203,18 +359,18 @@ curl --get 'http://127.0.0.1:4097/api/experimental/nexum/session/session_001/mes
 DELETE http://127.0.0.1:4097/api/nexum/session/{sessionID}
 ```
 
-| 项目 | 内容 |
-| --- | --- |
-| Method | `DELETE` |
-| URL | `/api/nexum/session/{sessionID}`；`sessionID` 必须进行 URL path 编码 |
-| Content-Type | 不适用；请求体为空 |
-| Accept | 可选；服务返回 JSON |
+| 项目         | 内容                                                                 |
+| ------------ | -------------------------------------------------------------------- |
+| Method       | `DELETE`                                                             |
+| URL          | `/api/nexum/session/{sessionID}`；`sessionID` 必须进行 URL path 编码 |
+| Content-Type | 不适用；请求体为空                                                   |
+| Accept       | 可选；服务返回 JSON                                                  |
 
 #### Path parameters
 
-| 参数名 | 类型 | 必填 | 格式/范围 | 示例 | 说明 |
-| --- | --- | --- | --- | --- | --- |
-| `{sessionID}` | string | 是 | 已存在的 Session 标识；作为 URL path segment 传输 | `session_001` | 待删除 Session |
+| 参数名        | 类型   | 必填 | 格式/范围                                         | 示例          | 说明           |
+| ------------- | ------ | ---- | ------------------------------------------------- | ------------- | -------------- |
+| `{sessionID}` | string | 是   | 已存在的 Session 标识；作为 URL path segment 传输 | `session_001` | 待删除 Session |
 
 #### Query parameters
 
@@ -222,10 +378,10 @@ DELETE http://127.0.0.1:4097/api/nexum/session/{sessionID}
 
 #### Request headers
 
-| Header | 必填 | 类型/格式 | 示例 | 用途 | 缺失或非法时 |
-| --- | --- | --- | --- | --- | --- |
-| `X-Trace-Id` | 否 | 1-128 位字母、数字、`.`、`_`、`:` 或 `-` | `trace_delete_001` | 排障关联；响应 Header 和响应体会返回同一 trace ID | 缺失或非法时生成新的 trace ID |
-| `Authorization` | 不适用 | — | — | 当前接口未实现认证校验 | 当前实现不会因缺失该 Header 返回认证错误 |
+| Header          | 必填   | 类型/格式                                | 示例               | 用途                                              | 缺失或非法时                             |
+| --------------- | ------ | ---------------------------------------- | ------------------ | ------------------------------------------------- | ---------------------------------------- |
+| `X-Trace-Id`    | 否     | 1-128 位字母、数字、`.`、`_`、`:` 或 `-` | `trace_delete_001` | 排障关联；响应 Header 和响应体会返回同一 trace ID | 缺失或非法时生成新的 trace ID            |
+| `Authorization` | 不适用 | —                                        | —                  | 当前接口未实现认证校验                            | 当前实现不会因缺失该 Header 返回认证错误 |
 
 #### Request cookies
 
@@ -241,12 +397,12 @@ DELETE http://127.0.0.1:4097/api/nexum/session/{sessionID}
 
 所有 JSON 响应包含以下 Header：
 
-| Header | 示例 | 用途 |
-| --- | --- | --- |
-| `Content-Type` | `application/json;charset=utf-8` | JSON 响应媒体类型 |
-| `Cache-Control` | `no-store` | 禁止缓存删除结果 |
-| `Vary` | `origin` | CORS 响应变化标识 |
-| `X-Trace-Id` | `trace_delete_001` | 与响应体 `traceId` 一致 |
+| Header          | 示例                             | 用途                    |
+| --------------- | -------------------------------- | ----------------------- |
+| `Content-Type`  | `application/json;charset=utf-8` | JSON 响应媒体类型       |
+| `Cache-Control` | `no-store`                       | 禁止缓存删除结果        |
+| `Vary`          | `origin`                         | CORS 响应变化标识       |
+| `X-Trace-Id`    | `trace_delete_001`               | 与响应体 `traceId` 一致 |
 
 响应 Cookie：不适用。
 
@@ -265,23 +421,23 @@ DELETE http://127.0.0.1:4097/api/nexum/session/{sessionID}
 }
 ```
 
-| 字段路径 | 类型 | 必有/可选 | 示例 | 说明 |
-| --- | --- | --- | --- | --- |
-| `data.id` | string | 必有 | `session_001` | 被删除的 Session ID |
-| `data.deleted` | boolean literal | 必有 | `true` | 固定为 `true`，表示删除成功 |
-| `meta.protocolVersion` | string | 必有 | `nexum.runtime.v1` | 协议版本 |
-| `meta.traceId` | string | 必有 | `trace_delete_001` | 请求链路标识 |
+| 字段路径               | 类型            | 必有/可选 | 示例               | 说明                        |
+| ---------------------- | --------------- | --------- | ------------------ | --------------------------- |
+| `data.id`              | string          | 必有      | `session_001`      | 被删除的 Session ID         |
+| `data.deleted`         | boolean literal | 必有      | `true`             | 固定为 `true`，表示删除成功 |
+| `meta.protocolVersion` | string          | 必有      | `nexum.runtime.v1` | 协议版本                    |
+| `meta.traceId`         | string          | 必有      | `trace_delete_001` | 请求链路标识                |
 
 #### 错误响应
 
 错误响应沿用统一错误结构，包含 `errorCode`、`message`、`traceId` 和 `meta`；`message` 不包含内部 Store 或异常文本。
 
-| HTTP 状态码 | `errorCode` | 触发条件 | 调用方处理 |
-| --- | --- | --- | --- |
-| `404` | `NEXUM_SESSION_NOT_FOUND` | Session 未知或已经成功删除后再次删除 | 停止重试该 Session ID |
-| `409` | `NEXUM_SESSION_RUN_CONFLICT` | Session 当前处于 `running`，或删除过程中检测到运行冲突 | 等待本轮运行结束后再发起删除 |
-| `405` | `NEXUM_METHOD_NOT_ALLOWED` | 对该资源使用非 `PUT`/`DELETE` 方法 | 改用支持的方法 |
-| `500` | `NEXUM_SESSION_DELETE_FAILED` | Message、Interaction、Event 或 Session Store 删除失败 | 使用 `traceId` 排障；按服务恢复策略重试 |
+| HTTP 状态码 | `errorCode`                   | 触发条件                                               | 调用方处理                              |
+| ----------- | ----------------------------- | ------------------------------------------------------ | --------------------------------------- |
+| `404`       | `NEXUM_SESSION_NOT_FOUND`     | Session 未知或已经成功删除后再次删除                   | 停止重试该 Session ID                   |
+| `409`       | `NEXUM_SESSION_RUN_CONFLICT`  | Session 当前处于 `running`，或删除过程中检测到运行冲突 | 等待本轮运行结束后再发起删除            |
+| `405`       | `NEXUM_METHOD_NOT_ALLOWED`    | 对该资源使用非 `PUT`/`DELETE` 方法                     | 改用支持的方法                          |
+| `500`       | `NEXUM_SESSION_DELETE_FAILED` | Message、Interaction、Event 或 Session Store 删除失败  | 使用 `traceId` 排障；按服务恢复策略重试 |
 
 `404` 示例：
 
@@ -349,27 +505,27 @@ Session Agent 使用内置 `skill_registry` 工具管理 Nexum 注册表，操�
 
 ### 通用约定
 
-| 项目 | 约定 |
-| --- | --- |
-| 权限 | 当前服务认证约定待确认；注册/刷新/取消注册由调用方的 Nexum 管理权限边界负责，服务端不读取 Cookie。 |
-| `Content-Type` | 有 JSON body 的 POST 使用 `application/json`；GET/DELETE 请求体不适用。 |
-| `Accept` | 可选，推荐 `application/json`。 |
-| `X-Trace-Id` | 可选，1-128 位安全字符；缺失或非法时服务生成新的 trace ID。 |
-| Cookie | 请求 Cookie 和响应 Cookie 均不适用。 |
-| 幂等性 | 同一规范化 address 重复注册不会创建重复记录；DELETE 重复执行返回 `404 NEXUM_SKILL_NOT_FOUND`。 |
-| 地址安全 | 只接受本地目录；拒绝 HTTP(S)、路径遍历、源目录符号链接和 Skill 内符号链接。 |
+| 项目           | 约定                                                                                               |
+| -------------- | -------------------------------------------------------------------------------------------------- |
+| 权限           | 当前服务认证约定待确认；注册/刷新/取消注册由调用方的 Nexum 管理权限边界负责，服务端不读取 Cookie。 |
+| `Content-Type` | 有 JSON body 的 POST 使用 `application/json`；GET/DELETE 请求体不适用。                            |
+| `Accept`       | 可选，推荐 `application/json`。                                                                    |
+| `X-Trace-Id`   | 可选，1-128 位安全字符；缺失或非法时服务生成新的 trace ID。                                        |
+| Cookie         | 请求 Cookie 和响应 Cookie 均不适用。                                                               |
+| 幂等性         | 同一规范化 address 重复注册不会创建重复记录；DELETE 重复执行返回 `404 NEXUM_SKILL_NOT_FOUND`。     |
+| 地址安全       | 只接受本地目录；拒绝 HTTP(S)、路径遍历、源目录符号链接和 Skill 内符号链接。                        |
 
 ### 端点覆盖
 
-| 方法 | URL | 请求体 | 成功响应 | 实际错误 |
-| --- | --- | --- | --- | --- |
-| `GET` | `/api/nexum/skills` | 不适用 | `200`，`data` 为 Skill 摘要数组 | `503 NEXUM_SKILL_REGISTRY_NOT_CONFIGURED` |
-| `GET` | `/api/nexum/skills/:id` | 不适用 | `200`，`data` 为单个摘要 | `404 NEXUM_SKILL_NOT_FOUND` |
-| `POST` | `/api/nexum/skills/register` | `{address}` | `200`，`data` 为注册后的摘要 | `400 NEXUM_INVALID_REQUEST` 或 `NEXUM_SKILL_REGISTER_FAILED` |
-| `POST` | `/api/nexum/skills/refresh` | `{id?}` | `200`，`data` 为刷新后的数组 | `400 NEXUM_INVALID_REQUEST` |
-| `POST` | `/api/nexum/skills/validate` | `{id?}` | `200`，`data.valid` 和摘要数组 | `400 NEXUM_INVALID_REQUEST` |
-| `DELETE` | `/api/nexum/skills/:id` | 不适用 | `200`，`data.deleted=true` | `404 NEXUM_SKILL_NOT_FOUND` |
-| `POST` | `/api/nexum/skills/:id/activate` | `{sessionID,text}` | `200`，`data` 为 Skill prompt attachment | `404`/`409` Skill 或 Session 错误 |
+| 方法     | URL                              | 请求体             | 成功响应                                 | 实际错误                                                     |
+| -------- | -------------------------------- | ------------------ | ---------------------------------------- | ------------------------------------------------------------ |
+| `GET`    | `/api/nexum/skills`              | 不适用             | `200`，`data` 为 Skill 摘要数组          | `503 NEXUM_SKILL_REGISTRY_NOT_CONFIGURED`                    |
+| `GET`    | `/api/nexum/skills/:id`          | 不适用             | `200`，`data` 为单个摘要                 | `404 NEXUM_SKILL_NOT_FOUND`                                  |
+| `POST`   | `/api/nexum/skills/register`     | `{address}`        | `200`，`data` 为注册后的摘要             | `400 NEXUM_INVALID_REQUEST` 或 `NEXUM_SKILL_REGISTER_FAILED` |
+| `POST`   | `/api/nexum/skills/refresh`      | `{id?}`            | `200`，`data` 为刷新后的数组             | `400 NEXUM_INVALID_REQUEST`                                  |
+| `POST`   | `/api/nexum/skills/validate`     | `{id?}`            | `200`，`data.valid` 和摘要数组           | `400 NEXUM_INVALID_REQUEST`                                  |
+| `DELETE` | `/api/nexum/skills/:id`          | 不适用             | `200`，`data.deleted=true`               | `404 NEXUM_SKILL_NOT_FOUND`                                  |
+| `POST`   | `/api/nexum/skills/:id/activate` | `{sessionID,text}` | `200`，`data` 为 Skill prompt attachment | `404`/`409` Skill 或 Session 错误                            |
 
 成功响应统一使用：
 
@@ -498,13 +654,13 @@ Content-Type: application/json
 }
 ```
 
-| HTTP 状态码 | `errorCode` | 触发条件 | 调用方处理 |
-| --- | --- | --- | --- |
-| `400` | `NEXUM_INVALID_REQUEST` | 请求体不是 JSON 对象 | 修正为 `{}` 后重试 |
-| `404` | `NEXUM_SESSION_NOT_FOUND` | Session 不存在 | 不要继续重试相同 ID |
-| `409` | `NEXUM_SESSION_RUN_CONFLICT` | Session 已在运行 | 等待 `run.settled` 后重试 |
-| `409` | `NEXUM_SESSION_NOT_CONTINUABLE` | 没有可继续的 User/Tool 上下文 | 提交新的 Prompt |
-| `503` | `NEXUM_CONTINUE_NOT_CONFIGURED` / `NEXUM_CONTINUE_FAILED` | Runtime 未配置或 Continue 不可用 | 按服务状态稍后重试 |
+| HTTP 状态码 | `errorCode`                                               | 触发条件                         | 调用方处理                |
+| ----------- | --------------------------------------------------------- | -------------------------------- | ------------------------- |
+| `400`       | `NEXUM_INVALID_REQUEST`                                   | 请求体不是 JSON 对象             | 修正为 `{}` 后重试        |
+| `404`       | `NEXUM_SESSION_NOT_FOUND`                                 | Session 不存在                   | 不要继续重试相同 ID       |
+| `409`       | `NEXUM_SESSION_RUN_CONFLICT`                              | Session 已在运行                 | 等待 `run.settled` 后重试 |
+| `409`       | `NEXUM_SESSION_NOT_CONTINUABLE`                           | 没有可继续的 User/Tool 上下文    | 提交新的 Prompt           |
+| `503`       | `NEXUM_CONTINUE_NOT_CONFIGURED` / `NEXUM_CONTINUE_FAILED` | Runtime 未配置或 Continue 不可用 | 按服务状态稍后重试        |
 
 错误体沿用统一 Envelope 外的稳定错误结构，包含 `errorCode`、中文 `message`、`traceId` 和协议元数据；不会返回内部异常文本。
 
