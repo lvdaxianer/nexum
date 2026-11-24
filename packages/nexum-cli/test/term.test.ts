@@ -32,10 +32,17 @@ test("paint and style emit ANSI codes only when color is enabled", () => {
 test("gradient degrades by color level", () => {
   const none = { isTTY: true, color: "none", anim: false, theme: "dark" } as const
   const ansi16 = { isTTY: true, color: "ansi16", anim: true, theme: "dark" } as const
+  const light16 = { isTTY: true, color: "ansi16", anim: true, theme: "light" } as const
+  const ansi256 = { isTTY: true, color: "ansi256", anim: true, theme: "dark" } as const
   const truecolor = { isTTY: true, color: "truecolor", anim: true, theme: "dark" } as const
   expect(gradient(none, "NEX", ["#7dcfff", "#bb9af7", "#f7768e"])).toBe("NEX")
   expect(gradient(ansi16, "NEX", ["#7dcfff", "#bb9af7", "#f7768e"])).toBe("\x1b[36mNEX\x1b[0m")
+  expect(gradient(light16, "NEX", ["#7dcfff", "#bb9af7", "#f7768e"])).toBe("\x1b[34mNEX\x1b[0m")
+  const c256 = gradient(ansi256, "NEX", ["#7dcfff", "#bb9af7", "#f7768e"])
+  expect(c256).toContain("38;5;")
+  expect(c256.endsWith("\x1b[0m")).toBe(true)
   const colored = gradient(truecolor, "NEX", ["#7dcfff", "#bb9af7", "#f7768e"])
-  expect(colored).toContain("38;2;")
+  expect(colored.startsWith("\x1b[38;2;125;207;255mN")).toBe(true)
   expect(colored.endsWith("\x1b[0m")).toBe(true)
+  expect(gradient(truecolor, "", ["#7dcfff", "#bb9af7", "#f7768e"])).toBe("")
 })

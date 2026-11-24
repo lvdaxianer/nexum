@@ -80,6 +80,7 @@ function to256([r, g, b]: Rgb): number {
 
 /** 装饰性渐变:按能力降级 truecolor → 256 → 16(单色,深色 cyan/浅色 blue) → 无。 */
 export function gradient(caps: TermCaps, text: string, stops: readonly [string, string, string]): string {
+  if (text === "") return text
   if (caps.color === "none") return text
   if (caps.color === "ansi16") return paint(caps, caps.theme === "light" ? "blue" : "cyan", text)
   const rgb = stops.map(hexToRgb)
