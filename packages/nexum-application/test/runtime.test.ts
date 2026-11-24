@@ -6,9 +6,14 @@ import {
   createEmbeddedRuntime,
   createLocalRuntime,
 } from "../src/index.ts"
-import { createFileMemory, createFileRolePromptStore, createNexumModelConfigStore } from "../../nexum-persistence/src/index.ts"
+import {
+  createFileMemory,
+  createFileRolePromptStore,
+  createInMemoryMcpServerConfigStore,
+  createNexumModelConfigStore,
+} from "../../nexum-persistence/src/index.ts"
 import { createHttpMcpAdapter, createLocalHostAdapter, createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
-import type { ModelPort } from "@nexum/core"
+import type { McpConnection, McpServerConfigStore, ModelPort } from "@nexum/core"
 
 const directories: string[] = []
 
@@ -47,6 +52,110 @@ test("creates a file-backed local runtime", async () => {
   expect(runtime.eventHub).toBeDefined()
   expect(runtime.sessionService).toBeDefined()
   await runtime.close()
+})
+
+test("restores MCP configurations and starts enabled connections in the background", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-local-mcp-"))
+  directories.push(directory)
+  const configs = createInMemoryMcpServerConfigStore()
+  await configs.save({ id: "enabled", name: "Enabled MCP", url: "https://enabled.example.test/mcp" })
+  await configs.save({ id: "disabled", name: "Disabled MCP", url: "https://disabled.example.test/mcp", disabled: true })
+  let calls = 0
+  const runtime = createLocalRuntime({
+    dataDirectory: join(directory, ".nexum"),
+    mcpConfigStore: configs,
+    mcpConnector: {
+      async connect() {
+        calls += 1
+        return createConnection()
+      },
+    },
+  })
+  const mcp = runtime.mcp
+  if (!mcp || !runtime.mcpReady) throw new Error("Local runtime MCP 未初始化")
+
+  await runtime.mcpReady
+
+  await Bun.sleep(0)
+  await expect(mcp.listServers()).resolves.toMatchObject([
+    { id: "disabled", status: "disabled" },
+    { id: "enabled", status: "connected" },
+  ])
+  expect(calls).toBe(1)
+  await runtime.close()
+})
+
+test("keeps an empty MCP configuration path network-free", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-empty-mcp-"))
+  directories.push(directory)
+  let calls = 0
+  const runtime = createLocalRuntime({
+    dataDirectory: join(directory, ".nexum"),
+    mcpConfigStore: createInMemoryMcpServerConfigStore(),
+    mcpConnector: {
+      async connect() {
+        calls += 1
+        return createConnection()
+      },
+    },
+  })
+  const mcp = runtime.mcp
+  if (!mcp || !runtime.mcpReady) throw new Error("Local runtime MCP 未初始化")
+
+  await runtime.mcpReady
+
+  await expect(mcp.listServers()).resolves.toEqual([])
+  expect(calls).toBe(0)
+  await runtime.close()
+})
+
+test("closes MCP startup retries with the local runtime", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-mcp-close-"))
+  directories.push(directory)
+  const configs = createInMemoryMcpServerConfigStore()
+  await configs.save({ id: "flaky", name: "Flaky MCP", url: "https://flaky.example.test/mcp" })
+  let calls = 0
+  const runtime = createLocalRuntime({
+    dataDirectory: join(directory, ".nexum"),
+    mcpConfigStore: configs,
+    mcpConnector: {
+      async connect() {
+        calls += 1
+        throw new Error("temporary network failure")
+      },
+    },
+  })
+  const mcp = runtime.mcp
+  if (!mcp || !runtime.mcpReady) throw new Error("Local runtime MCP 未初始化")
+
+  await runtime.mcpReady
+  await Bun.sleep(20)
+  await runtime.close()
+  await Bun.sleep(400)
+
+  expect(calls).toBe(1)
+  await expect(mcp.listServers()).resolves.toMatchObject([{ id: "flaky", status: "disabled" }])
+})
+
+test("cancels MCP configuration restoration when the runtime closes first", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-mcp-restore-close-"))
+  directories.push(directory)
+  let release: (() => void) | undefined
+  const configs = createInMemoryMcpServerConfigStore()
+  await configs.save({ id: "late", name: "Late MCP", url: "https://late.example.test/mcp" })
+  const delayedConfigs: McpServerConfigStore = {
+    ...configs,
+    list: () => new Promise((resolve) => {
+      release = () => void configs.list().then(resolve)
+    }),
+  }
+  const runtime = createLocalRuntime({ dataDirectory: join(directory, ".nexum"), mcpConfigStore: delayedConfigs })
+
+  await runtime.close()
+  release?.()
+
+  await expect(runtime.mcpReady).resolves.toBeUndefined()
+  expect(await runtime.mcp?.listServers()).toEqual([])
 })
 
 test("persists Skill registrations in the local runtime data directory", async () => {
@@ -137,3 +246,13 @@ test("streams reasoning deltas before visible text", async () => {
     { type: "completed", finishReason: "stop" },
   ])
 })
+
+function createConnection(): McpConnection {
+  return {
+    listTools: async () => [],
+    listResources: async () => [],
+    listPrompts: async () => [],
+    callTool: async () => ({ ok: true, output: "ok" }),
+    close: async () => {},
+  }
+}
