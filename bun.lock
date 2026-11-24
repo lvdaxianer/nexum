@@ -30,6 +30,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@nexum/client": "workspace:*",
+        "@nexum/surface-adapter": "workspace:*",
         "dompurify": "catalog:",
         "marked": "catalog:",
         "solid-js": "catalog:",
@@ -104,6 +105,18 @@
       "devDependencies": {
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
+      },
+    },
+    "packages/nexum-surface-adapter": {
+      "name": "@nexum/surface-adapter",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nexum/client": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "packages/nexum-surfaces": {
@@ -300,6 +313,8 @@
     "@nexum/protocol": ["@nexum/protocol@workspace:packages/nexum-protocol"],
 
     "@nexum/server": ["@nexum/server@workspace:packages/nexum-server"],
+
+    "@nexum/surface-adapter": ["@nexum/surface-adapter@workspace:packages/nexum-surface-adapter"],
 
     "@nexum/surfaces": ["@nexum/surfaces@workspace:packages/nexum-surfaces"],
 
