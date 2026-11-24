@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>嵌入 Nexum ChatSurface</title>
+    <link rel="stylesheet" href="../src/styles.css" />
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 32px;
+        background: #f4f5f7;
+        font: 16px/1.5 system-ui, sans-serif;
+      }
+
+      .demo-card {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 24px;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+      }
+
+      nexum-chat {
+        display: block;
+        min-height: 680px;
+      }
+
+      dialog {
+        width: min(920px, calc(100vw - 48px));
+        padding: 0;
+        border: 0;
+        border-radius: 16px;
+      }
+
+      dialog::backdrop {
+        background: rgb(15 23 42 / 35%);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="demo-card">
+      <h1>独立页面中的 Nexum ChatSurface</h1>
+      <p>把 session-id 和 api-base-url 换成实际值即可连接协议服务。</p>
+      <nexum-chat
+        session-id="replace-with-session-id"
+        api-base-url="http://127.0.0.1:4097"
+        title="页面内嵌聊天"
+      ></nexum-chat>
+      <button id="open-chat" type="button">在弹框中打开同一个聊天组件</button>
+    </main>
+
+    <dialog id="chat-dialog">
+      <nexum-chat
+        session-id="replace-with-session-id"
+        api-base-url="http://127.0.0.1:4097"
+        title="弹框聊天"
+      ></nexum-chat>
+    </dialog>
+
+    <script type="module">
+      import "../src/index.ts"
+
+      document.querySelector("#open-chat").addEventListener("click", () => {
+        document.querySelector("#chat-dialog").showModal()
+      })
+    </script>
+  </body>
+</html>

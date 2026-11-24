@@ -1148,6 +1148,14 @@ input[aria-invalid="true"]:focus {
   align-items: stretch;
 }
 
+.chat-surface-host {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chat-surface-host > .nexum-chat-surface {
+  min-height: 0;
+}
+
 .conversation-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

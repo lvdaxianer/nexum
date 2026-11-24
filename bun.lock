@@ -25,6 +25,24 @@
         "@types/bun": "catalog:",
       },
     },
+    "packages/nexum-chat-surface": {
+      "name": "@nexum/chat-surface",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nexum/client": "workspace:*",
+        "dompurify": "catalog:",
+        "marked": "catalog:",
+        "solid-js": "catalog:",
+      },
+      "devDependencies": {
+        "@playwright/test": "catalog:",
+        "@tsconfig/node22": "catalog:",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plugin-solid": "2.11.10",
+      },
+    },
     "packages/nexum-client": {
       "name": "@nexum/client",
       "version": "0.1.0",
@@ -93,6 +111,7 @@
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@nexum/application": "workspace:*",
+        "@nexum/chat-surface": "workspace:*",
         "@nexum/client": "workspace:*",
         "@nexum/integrations": "workspace:*",
         "@nexum/persistence": "workspace:*",
@@ -262,6 +281,8 @@
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "https://registry.npmmirror.com/@napi-rs/lzma-linux-x64-gnu/-/lzma-linux-x64-gnu-1.5.1.tgz", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
     "@nexum/application": ["@nexum/application@workspace:packages/nexum-application"],
+
+    "@nexum/chat-surface": ["@nexum/chat-surface@workspace:packages/nexum-chat-surface"],
 
     "@nexum/client": ["@nexum/client@workspace:packages/nexum-client"],
 

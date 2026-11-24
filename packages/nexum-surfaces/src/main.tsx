@@ -1,29 +1,22 @@
-import { For, Match, Show, Switch, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Show, createSignal, onMount } from "solid-js"
 import { render } from "solid-js/web"
 import { Nexum } from "@nexum/client"
+import { ChatSurface } from "@nexum/chat-surface"
 import { Drawer } from "./drawer"
 import { ConfirmDialog } from "./confirm-dialog"
-import { MarkdownView } from "./markdown"
 import { Popover } from "@kobalte/core/popover"
 import type {
-  NexumEvent,
   NexumModelProbe,
-  NexumPermission,
-  NexumQuestion,
   NexumRolePrompt,
   NexumSession,
-  NexumSessionMessages,
   NexumSkill,
 } from "@nexum/client"
 import "./styles.css"
+import "@nexum/chat-surface/styles.css"
 
-type TimelineEvent = NexumEvent & { localTime: string }
-type PermissionRequest = NexumPermission
-type QuestionRequest = NexumQuestion
 type SessionSummary = NexumSession
 type ModelProbeResult = NexumModelProbe
 type SkillSummary = NexumSkill
-type ContextSource = { sourceID: string; kind: string; path: string }
 type PermissionPolicyEffect = "allow" | "ask" | "deny"
 type PermissionPolicyScope = "global" | "session"
 type PermissionPolicyRule = {
@@ -49,26 +42,9 @@ const permissionModeOptions: ReadonlyArray<{
   { value: "balanced", icon: "🛡", label: "智能审批", description: "常规操作直接执行，仅风险操作请求批准" },
   { value: "full", icon: "⚡", label: "完全访问", description: "不再弹审批，危险操作仍由 Core 拦截询问" },
 ]
-type ChatItemKind = "user" | "assistant" | "reasoning" | "execution" | "status"
-type ChatStatus = "streaming" | "running" | "waiting" | "completed" | "failed" | "cancelled"
-type ChatItem = {
-  id: string
-  kind: ChatItemKind
-  title: string
-  content?: string
-  detail?: string
-  thinking?: boolean
-  thinkingStatus?: string
-  skillIDs?: readonly string[]
-  status: ChatStatus
-  localTime: string
-  eventType?: string
-}
 type ModelField = "baseUrl" | "model" | "credential"
 type ModelFieldErrors = Partial<Record<ModelField, string>>
 type ActionState = "idle" | "pending" | "success" | "error"
-
-const historyPageSize = 50
 
 /** 策略不再有 Action 维度：新建规则以 `*` 表示按资源匹配所有工具调用。 */
 const anyToolAction = "*"
@@ -85,23 +61,8 @@ function App() {
   const [sessionName, setSessionName] = createSignal("")
   const [sessionCreateName, setSessionCreateName] = createSignal("")
   const [directory, setDirectory] = createSignal("")
-  const [prompt, setPrompt] = createSignal("")
   const [sessionID, setSessionID] = createSignal("")
-  const [sessionStatus, setSessionStatus] = createSignal("no session")
   const [sessions, setSessions] = createSignal<SessionSummary[]>([])
-  const [events, setEvents] = createSignal<TimelineEvent[]>([])
-  const [chatItems, setChatItems] = createSignal<ChatItem[]>([])
-  const [historyBefore, setHistoryBefore] = createSignal<number | undefined>()
-  const [historySnapshot, setHistorySnapshot] = createSignal<string | undefined>()
-  const [historyHasMore, setHistoryHasMore] = createSignal(false)
-  const [historyLoading, setHistoryLoading] = createSignal(false)
-  const [historyError, setHistoryError] = createSignal("")
-  const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
-  const [questions, setQuestions] = createSignal<QuestionRequest[]>([])
-  const [questionAnswers, setQuestionAnswers] = createSignal<Record<string, string[][]>>({})
-  const [compactionStatus, setCompactionStatus] = createSignal("idle")
-  const [contextSources, setContextSources] = createSignal<ContextSource[]>([])
-  const [busy, setBusy] = createSignal(false)
   const [modelSaveBusy, setModelSaveBusy] = createSignal(false)
   const [sessionBusy, setSessionBusy] = createSignal(false)
   const [probeBusy, setProbeBusy] = createSignal(false)
@@ -118,7 +79,6 @@ function App() {
   const [sessionDrawerOpen, setSessionDrawerOpen] = createSignal(false)
   const [sessionEditDrawerOpen, setSessionEditDrawerOpen] = createSignal(false)
   const [rolePromptDrawerOpen, setRolePromptDrawerOpen] = createSignal(false)
-  const [chatView, setChatView] = createSignal<"chat" | "events">("chat")
   const [sessionEditName, setSessionEditName] = createSignal("")
   const [skillsDrawerOpen, setSkillsDrawerOpen] = createSignal(false)
   const [skills, setSkills] = createSignal<SkillSummary[]>([])
@@ -135,42 +95,18 @@ function App() {
   const [rolePromptBusy, setRolePromptBusy] = createSignal(false)
   const [rolePromptState, setRolePromptState] = createSignal<ActionState>("idle")
   const [rolePromptMessage, setRolePromptMessage] = createSignal("")
-  const [activeSkillIDs, setActiveSkillIDs] = createSignal<string[]>([])
   const [policyPopoverOpen, setPolicyPopoverOpen] = createSignal(false)
   const [policyRules, setPolicyRules] = createSignal<PermissionPolicyRule[]>([])
   const [policyBusy, setPolicyBusy] = createSignal(false)
   const [policyError, setPolicyError] = createSignal("")
   const [notice, setNotice] = createSignal("准备开始一次 Nexum 运行")
-  const [connected, setConnected] = createSignal(false)
   const [modelConfigured, setModelConfigured] = createSignal(false)
-  const [pendingDecisionID, setPendingDecisionID] = createSignal("")
-  const [pendingQuestionID, setPendingQuestionID] = createSignal("")
-  const [cancelBusy, setCancelBusy] = createSignal(false)
-  const [continueAvailable, setContinueAvailable] = createSignal(false)
-  const [continueBusy, setContinueBusy] = createSignal(false)
   const [renameBusy, setRenameBusy] = createSignal(false)
   const [deleteBusy, setDeleteBusy] = createSignal(false)
   const [deleteState, setDeleteState] = createSignal<ActionState>("idle")
   const [deleteMessage, setDeleteMessage] = createSignal("")
-  const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false)
-  let streamController: AbortController | undefined
-  let conversationBody: HTMLDivElement | undefined
-  let permissionsSection: HTMLElement | undefined
-  let questionsSection: HTMLElement | undefined
-  let promptSequence = 0
   let sessionSelectSequence = 0
-  let historyRequestSequence = 0
-  const eventCursors = new Map<string, string>()
-  const eventStartSequences = new Map<string, number>()
-  const seenEventKeys = new Set<string>()
-
-  /** Agent 回答期间（运行中/等待权限/等待回答）锁定输入，避免打断本轮执行。 */
-  const inputLocked = () => ["running", "retrying", "awaiting permission", "awaiting question"].includes(sessionStatus())
-
-  function scrollRailSection(element: HTMLElement | undefined) {
-    element?.scrollIntoView({ behavior: "smooth", block: "nearest" })
-  }
 
   onMount(async () => {
     const active = await client.experimental.nexum.model.get().catch(() => undefined)
@@ -185,38 +121,6 @@ function App() {
     if (!active) setNotice("Nexum API 尚未连接")
   })
 
-  onCleanup(() => streamController?.abort())
-
-  /**
-   * 新消息或事件到达时把会话区贴到底部；用户向上翻阅超过阈值时停止跟随，回到底部后恢复。
-   */
-  let followTail = true
-  createEffect(() => {
-    const items = chatItems()
-    const eventCount = events().length
-    const body = conversationBody
-    if (!body || items.length + eventCount === 0) return
-    if (followTail) body.scrollTop = body.scrollHeight
-  })
-
-  function handleConversationScroll(element: HTMLDivElement) {
-    followTail = element.scrollHeight - element.scrollTop - element.clientHeight < 96
-    if (element.scrollTop > 96 || !historyHasMore() || historyLoading() || !sessionID()) return
-    void loadEarlierHistory(element)
-  }
-
-  async function loadEarlierHistory(element: HTMLDivElement) {
-    const before = historyBefore()
-    const id = sessionID()
-    if (before === undefined || !id || historyLoading()) return
-    const previousHeight = element.scrollHeight
-    const requestSequence = ++historyRequestSequence
-    const page = await loadSessionMessages(id, before, sessionSelectSequence)
-    if (!page || requestSequence !== historyRequestSequence || id !== sessionID()) return
-    queueMicrotask(() => {
-      element.scrollTop += element.scrollHeight - previousHeight
-    })
-  }
 
   /**
    * 校验模型配置表单，并返回字段级错误。
@@ -412,10 +316,7 @@ function App() {
       setSessions([...available])
       const current = available.find((item) => item.id === sessionID())
       if (current) {
-        const snapshot = await client.experimental.nexum.session.state({ sessionID: current.id })
-        setSessionStatus(snapshot.data.session.status)
-        setPermissions([...snapshot.data.pendingPermissions])
-        setQuestions([...snapshot.data.pendingQuestions])
+        await client.experimental.nexum.session.state({ sessionID: current.id })
       }
       await loadSkills()
       setNotice("运行状态已刷新")
@@ -685,38 +586,14 @@ function App() {
 
   async function selectSession(session: SessionSummary, announce = true) {
     const sequence = ++sessionSelectSequence
-    streamController?.abort()
-    streamController = undefined
-    setConnected(false)
     const snapshot = await client.experimental.nexum.session.state({ sessionID: session.id })
     if (sequence !== sessionSelectSequence) return
     setDeleteState("idle")
     setDeleteMessage("")
     setSessionID(session.id)
     setSessionName(snapshot.data.session.name)
-    setSessionStatus(snapshot.data.session.status)
-    setContinueAvailable(snapshot.data.canContinue)
-    setContinueBusy(false)
     setDirectory(snapshot.data.session.directory)
-    setEvents([])
-    setChatItems(snapshot.data.session.status === "running" ? [thinkingChatItem(session.id)] : [])
-    setHistoryBefore(undefined)
-    setHistorySnapshot(undefined)
-    setHistoryHasMore(false)
-    setHistoryError("")
-    followTail = true
-    setPermissions([...snapshot.data.pendingPermissions])
-    setQuestions([...snapshot.data.pendingQuestions])
-    setQuestionAnswers({})
-    setCompactionStatus("idle")
-    setContextSources([])
-    seenEventKeys.clear()
     sessionStorage.setItem("nexum.sessionID", session.id)
-    eventCursors.delete(session.id)
-    eventStartSequences.set(session.id, snapshot.data.lastSequence)
-    await loadSessionMessages(session.id, undefined, sequence)
-    if (sequence !== sessionSelectSequence) return
-    connectEvents(session.id, snapshot.data.lastSequence)
     if (announce) setNotice(`已选择 Session：${snapshot.data.session.name}`)
     if (policyPopoverOpen()) void loadPermissionPolicy()
   }
@@ -767,31 +644,11 @@ function App() {
    */
   function applyCreatedSession(created: SessionSummary) {
     ++sessionSelectSequence
-    streamController?.abort()
-    streamController = undefined
-    setConnected(false)
     setSessionID(created.id)
     setSessionName(created.name)
-    setSessionStatus(created.status)
     setDirectory(created.directory)
     sessionStorage.setItem("nexum.sessionID", created.id)
     setSessions((current) => [...current.filter((item) => item.id !== created.id), created])
-    setEvents([])
-    setChatItems([])
-    setHistoryBefore(undefined)
-    setHistorySnapshot(undefined)
-    setHistoryHasMore(false)
-    setHistoryError("")
-    followTail = true
-    setPermissions([])
-    setQuestions([])
-    setQuestionAnswers({})
-    setCompactionStatus("idle")
-    setContextSources([])
-    seenEventKeys.clear()
-    eventCursors.delete(created.id)
-    eventStartSequences.set(created.id, 0)
-    connectEvents(created.id)
     setSessionDrawerOpen(false)
     setSessionNameError("")
     setSessionCreateState("success")
@@ -876,11 +733,6 @@ function App() {
       return
     }
 
-    streamController?.abort()
-    streamController = undefined
-    setConnected(false)
-    eventCursors.delete(deletingID)
-    seenEventKeys.clear()
     const currentSessions = sessions()
     const deletingIndex = currentSessions.findIndex((session) => session.id === deletingID)
     const remaining = currentSessions.filter((session) => session.id !== deletingID)
@@ -900,401 +752,12 @@ function App() {
   }
 
   function clearSelectedSession() {
-    const id = sessionID()
     setSessionID("")
     setSessionName("")
     setDirectory("")
-    setSessionStatus("no session")
-    setEvents([])
-    setChatItems([])
-    setHistoryBefore(undefined)
-    setHistorySnapshot(undefined)
-    setHistoryHasMore(false)
-    setHistoryError("")
-    eventCursors.delete(id)
-    eventStartSequences.delete(id)
-    setPermissions([])
-    setQuestions([])
-    setQuestionAnswers({})
-    setCompactionStatus("idle")
-    setContextSources([])
-    setActiveSkillIDs([])
-    setContinueAvailable(false)
-    setContinueBusy(false)
     setDeleteState("idle")
     setDeleteMessage("")
     sessionStorage.removeItem("nexum.sessionID")
-  }
-
-  async function connectEvents(id: string, afterSequence?: number) {
-    streamController?.abort()
-    const controller = new AbortController()
-    streamController = controller
-    setConnected(true)
-    try {
-      const lastEventID = eventCursors.get(id)
-      const initialSequence = afterSequence ?? eventStartSequences.get(id)
-      const eventOptions = lastEventID
-        ? { signal: controller.signal, headers: { "Last-Event-ID": lastEventID } }
-        : { signal: controller.signal, ...(initialSequence !== undefined ? { afterSequence: initialSequence } : {}) }
-      for await (const event of client.experimental.nexum.session.events(
-        { sessionID: id },
-        eventOptions,
-      )) {
-        const eventKey = event.eventID
-        if (seenEventKeys.has(eventKey)) continue
-        if (event.sessionID !== id || id !== sessionID()) continue
-        seenEventKeys.add(eventKey)
-        eventCursors.set(id, event.eventID)
-        setEvents((current) => [
-          ...[
-            ...current,
-            { ...event, localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
-          ].slice(-200),
-        ])
-        setChatItems((current) => projectChatEvent(current, event))
-        const data = eventDataOf(event.data)
-        if (event.type === "model.attempt") {
-          setSessionStatus("running")
-          setNotice(`模型第 ${typeof data.attempt === "number" ? data.attempt : ""} 次尝试`)
-        }
-        if (event.type === "model.retry") {
-          setSessionStatus("retrying")
-          const delayMs = data.delayMs
-          setNotice(`模型调用失败，${typeof delayMs === "number" ? `${delayMs}ms 后` : "即将"}自动重试`)
-        }
-        if (event.type === "run.settled") {
-          const result = runResultFromEvent(data)
-          if (!result) {
-            setNotice("收到无效的运行结算事件")
-            continue
-          }
-          setContinueBusy(false)
-          setContinueAvailable(result === "failed")
-          setSessionStatus(result)
-          setNotice(result === "failed" ? "本轮运行失败，可以继续运行" : result === "completed" ? "本轮运行已完成" : "本轮运行已取消")
-        }
-        if (event.type === "session.completed") {
-          setContinueBusy(false)
-          setContinueAvailable(false)
-          setSessionStatus("completed")
-        }
-        if (event.type === "session.failed") {
-          setSessionStatus("failed")
-        }
-        if (event.type === "session.cancelled") {
-          setContinueBusy(false)
-          setContinueAvailable(false)
-          setSessionStatus("cancelled")
-        }
-        if (event.type === "tool.request" || event.type === "permission.requested")
-          setSessionStatus("awaiting permission")
-        if (event.type === "question.request") {
-          setSessionStatus("awaiting question")
-          void refreshQuestions(id)
-        }
-        if (event.type === "question.result" || event.type === "question.cancelled") void refreshQuestions(id)
-        if (event.type === "tool.result" || event.type === "assistant.thinking" || event.type === "assistant.reasoning" || event.type === "assistant.text") setSessionStatus("running")
-        if (event.type === "context.compaction.started") setCompactionStatus("compressing")
-        if (event.type === "context.compaction.completed") setCompactionStatus("completed")
-        if (event.type === "context.compaction.failed") setCompactionStatus("failed")
-        if (event.type === "context.project.loaded") setContextSources(sourcesFromEvent(event.data))
-        if (event.type === "skill.activated") {
-          const id = skillIDFromEvent(event.data)
-          if (id) setActiveSkillIDs((current) => (current.includes(id) ? current : [...current, id]))
-        }
-        if (event.type === "skill.failed") setNotice("Skill 激活失败，请检查状态和权限")
-        if (event.type === "tool.request" || event.type === "permission.requested") void refreshPermissions(id)
-      }
-    } catch (error) {
-      if (!controller.signal.aborted) setNotice(messageFrom(error, "事件流已断开，请重新连接"))
-    } finally {
-      if (streamController === controller) {
-        streamController = undefined
-        setConnected(false)
-      }
-    }
-  }
-
-  async function refreshPermissions(id = sessionID()) {
-    if (!id) return
-    try {
-      setPermissions([...(await client.experimental.nexum.session.permission.list({ sessionID: id })).data])
-    } catch {
-      // A missing permission endpoint should not break the event timeline.
-    }
-  }
-
-  async function loadSessionMessages(
-    id: string,
-    before: number | undefined,
-    selectionSequence: number,
-  ): Promise<NexumSessionMessages | undefined> {
-    if (selectionSequence !== sessionSelectSequence || id !== sessionID()) return undefined
-    setHistoryLoading(true)
-    setHistoryError("")
-    try {
-      const response = await client.experimental.nexum.session.messages({
-        sessionID: id,
-        before,
-        limit: historyPageSize,
-        ...(before !== undefined && historySnapshot() ? { snapshotID: historySnapshot() } : {}),
-      })
-      if (selectionSequence !== sessionSelectSequence || id !== sessionID()) return undefined
-      setHistoryBefore(response.data.nextBefore)
-      setHistorySnapshot(response.data.snapshotID)
-      setHistoryHasMore(response.data.hasMore)
-      const nextItems = historyItemsFromMessages(response.data.messages)
-      setChatItems((current) => (before === undefined ? nextItems : prependHistoryItems(current, nextItems)))
-      return response.data
-    } catch (error) {
-      if (
-        before !== undefined &&
-        error instanceof Error &&
-        "code" in error &&
-        (error.code === "NEXUM_INVALID_REQUEST" || error.code === "NEXUM_HISTORY_SNAPSHOT_EXPIRED")
-      ) {
-        setHistoryBefore(undefined)
-        setHistoryHasMore(false)
-        return loadSessionMessages(id, undefined, selectionSequence)
-      }
-      if (selectionSequence === sessionSelectSequence && id === sessionID()) {
-        setHistoryError(messageFrom(error, "历史对话加载失败，请重试"))
-        setNotice(messageFrom(error, "历史对话加载失败，请重试"))
-      }
-      return undefined
-    } finally {
-      if (selectionSequence === sessionSelectSequence && id === sessionID()) setHistoryLoading(false)
-    }
-  }
-
-  async function refreshQuestions(id = sessionID()) {
-    if (!id) return
-    try {
-      setQuestions([...(await client.experimental.nexum.session.question.list({ sessionID: id })).data])
-    } catch {
-      // A missing Question endpoint should not break the event timeline.
-    }
-  }
-
-  function chooseAnswer(request: QuestionRequest, questionIndex: number, label: string) {
-    const answers = questionAnswers()[request.id] ?? request.questions.map(() => [])
-    const current = answers[questionIndex] ?? []
-    const question = request.questions[questionIndex]
-    const next = question?.multiple
-      ? current.includes(label)
-        ? current.filter((value) => value !== label)
-        : [...current, label]
-      : [label]
-    setQuestionAnswers({
-      ...questionAnswers(),
-      [request.id]: answers.map((value, index) => (index === questionIndex ? next : value)),
-    })
-  }
-
-  function answerSelected(requestID: string, questionIndex: number, label: string) {
-    return questionAnswers()[requestID]?.[questionIndex]?.includes(label) ?? false
-  }
-
-  /**
-   * 根据输入末尾的 @token 计算可选 Skill。
-   * @returns 当前输入匹配的 ready Skill
-   * @author lvdaxianer@yeah.net
-   * @date 2026-11-20
-   */
-  function skillSuggestions(): SkillSummary[] {
-    const match = prompt().match(/(?:^|\s)@([a-z0-9-]*)$/i)
-    if (!match) return []
-    const query = match[1]?.toLowerCase() ?? ""
-    return skills()
-      .filter((skill) => skill.status === "ready" && skill.id.toLowerCase().includes(query))
-      .slice(0, 5)
-  }
-
-  /**
-   * 将下拉选择替换回输入框中的 mention token。
-   * @param skill - 用户选中的 Skill 摘要
-   * @author lvdaxianer@yeah.net
-   * @date 2026-11-20
-   */
-  function selectSkill(skill: SkillSummary) {
-    const value = prompt()
-    const match = value.match(/(?:^|\s)@([a-z0-9-]*)$/i)
-    if (!match || match.index === undefined) return
-    const tokenStart = match.index + (match[0].startsWith(" ") ? 1 : 0)
-    setPrompt(`${value.slice(0, tokenStart)}@${skill.id} `)
-    setActiveSkillIDs((current) => (current.includes(skill.id) ? current : [...current, skill.id]))
-  }
-
-  async function replyQuestion(request: QuestionRequest) {
-    if (!sessionID()) return
-    setBusy(true)
-    try {
-      const answers = questionAnswers()[request.id] ?? request.questions.map(() => [])
-      await client.experimental.nexum.session.question.reply({
-        sessionID: sessionID(),
-        requestID: request.id,
-        answers,
-      })
-      setChatItems((current) =>
-        updateChatItem(current, `question:${request.id}`, { status: "completed", content: "补充信息已提交" }),
-      )
-      await refreshQuestions()
-      setNotice("补充信息已提交，运行继续")
-    } catch (error) {
-      setNotice(messageFrom(error, "补充信息提交失败，请重试"))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function cancelQuestion(requestID: string) {
-    if (!sessionID() || pendingQuestionID()) return
-    setPendingQuestionID(requestID)
-    try {
-      await client.experimental.nexum.session.question.cancel({ sessionID: sessionID(), requestID })
-      setChatItems((current) =>
-        updateChatItem(current, `question:${requestID}`, { status: "cancelled", content: "补充信息已取消" }),
-      )
-      await refreshQuestions()
-      setNotice("已取消补充信息，Core 不会伪造答案")
-    } catch (error) {
-      setNotice(messageFrom(error, "取消补充信息失败，请重试"))
-    } finally {
-      setPendingQuestionID("")
-    }
-  }
-
-  async function sendPrompt() {
-    if (!sessionID() || !prompt().trim() || inputLocked()) return
-    setBusy(true)
-    seenEventKeys.clear()
-    const text = prompt().trim()
-    const thinkingID = `thinking:${sessionID()}:${Date.now()}:${promptSequence++}`
-    setChatItems((current) =>
-      appendChatItem(
-        appendChatItem(current, {
-          id: `user:${Date.now()}:${promptSequence++}`,
-          kind: "user",
-          title: "你",
-          content: text,
-          skillIDs: skillIDsFromText(text),
-          status: "completed",
-          localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        }),
-        thinkingChatItem(sessionID(), thinkingID),
-      ),
-    )
-    const previousStatus = sessionStatus()
-    setContinueAvailable(false)
-    setContinueBusy(false)
-    setSessionStatus("running")
-    try {
-      setActiveSkillIDs(skillIDsFromText(text))
-      await client.experimental.nexum.session.prompt({ sessionID: sessionID(), text })
-      await refreshPermissions()
-      setPrompt("")
-      setNotice("Prompt 已提交，等待下一条运行事件")
-    } catch (error) {
-      setSessionStatus(previousStatus)
-      setChatItems((current) =>
-        appendChatItem(
-          current.filter((item) => item.id !== thinkingID),
-          {
-            id: `status:prompt:${Date.now()}`,
-            kind: "status",
-            title: "Prompt 提交失败",
-            content: messageFrom(error, "请检查连接后重试"),
-            status: "failed",
-            localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          },
-        ),
-      )
-      setNotice(messageFrom(error, "Prompt 未提交成功，请重试"))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /**
-   * 从失败运行的最后一个 User 或 Tool 上下文继续执行。
-   *
-   * @returns 无可继续请求或请求失败时保持失败态
-   * @author lvdaxianer@yeah.net
-   */
-  async function continueRun() {
-    if (!sessionID() || !continueAvailable() || continueBusy()) return
-    setContinueBusy(true)
-    setSessionStatus("running")
-    setNotice("正在继续运行，等待新的生命周期事件")
-    try {
-      await client.experimental.nexum.session.continue({ sessionID: sessionID() })
-    } catch (error) {
-      setContinueBusy(false)
-      setSessionStatus("failed")
-      setNotice(messageFrom(error, "继续运行失败，请重试"))
-    }
-  }
-
-  /**
-   * 打开取消确认对话框；取消运行不可恢复，必须先让用户看到后果再提交。
-   * @author lvdaxianer@yeah.net
-   * @date 2026-11-20
-   */
-  function requestCancel() {
-    if (!sessionID() || cancelBusy()) return
-    setCancelConfirmOpen(true)
-  }
-
-  /**
-   * 确认后请求 Core 取消当前运行；请求结束前确认按钮保持 busy，结果通过 notice 可发现。
-   * @author lvdaxianer@yeah.net
-   * @date 2026-11-20
-   */
-  async function confirmCancelSession() {
-    if (!sessionID() || cancelBusy()) return
-    setCancelBusy(true)
-    try {
-      await client.experimental.nexum.session.cancel({ sessionID: sessionID() })
-      setSessionStatus("cancelled")
-      setNotice("已请求取消运行")
-    } catch (error) {
-      setNotice(messageFrom(error, "取消运行失败，请重试"))
-    } finally {
-      setCancelBusy(false)
-      setCancelConfirmOpen(false)
-    }
-  }
-
-  async function reconnectEvents() {
-    if (!sessionID()) return
-    connectEvents(sessionID())
-    setNotice("事件流正在重新连接")
-  }
-
-  async function decide(requestID: string, decision: "allow_once" | "allow_always" | "deny") {
-    if (pendingDecisionID()) return
-    setPendingDecisionID(requestID)
-    try {
-      await client.experimental.nexum.session.permission.reply({ sessionID: sessionID(), requestID, decision })
-      setChatItems((current) =>
-        updateChatItem(current, `permission:${requestID}`, {
-          status: decision === "deny" ? "failed" : "completed",
-          content: decision === "deny" ? "权限已拒绝" : "权限已通过",
-        }),
-      )
-      await refreshPermissions()
-      if (decision === "allow_always") {
-        await loadPermissionPolicy()
-        setNotice("已保存全局「始终允许」策略：按该资源匹配所有工具，可在「权限策略」中修改或删除")
-        return
-      }
-      setNotice(decision === "deny" ? "权限已拒绝" : "权限已通过")
-    } catch (error) {
-      setNotice(messageFrom(error, "权限处理失败，请重试"))
-    } finally {
-      setPendingDecisionID("")
-    }
   }
 
   return (
@@ -1728,7 +1191,7 @@ function App() {
         </section>
 
         <div class="notice" aria-live="polite">
-          <span class={`notice-light ${connected() ? "is-live" : ""}`} />
+          <span class="notice-light" />
           {notice()}
         </div>
       </aside>
@@ -1742,7 +1205,6 @@ function App() {
               <Show when={sessionID()}>
                 <span class="topbar-sep">·</span>
                 <strong class="topbar-session">{sessionName()}</strong>
-                <span class={`pill pill-${sessionStatus()}`}>{sessionStatus()}</span>
               </Show>
             </div>
             <Show when={sessionID()}>
@@ -1755,38 +1217,7 @@ function App() {
             </Show>
           </div>
           <div class="topbar-meta">
-            <Show when={permissions().length > 0}>
-              <button type="button" class="attention-badge" onClick={() => scrollRailSection(permissionsSection)}>
-                ⚡ 权限 <span class="attention-count">{permissions().length}</span>
-              </button>
-            </Show>
-            <Show when={questions().length > 0}>
-              <button type="button" class="attention-badge" onClick={() => scrollRailSection(questionsSection)}>
-                ? 待答 <span class="attention-count">{questions().length}</span>
-              </button>
-            </Show>
-            <span class={`connection-chip ${connected() ? "is-live" : ""}`}>
-              <span class="status-dot" />
-              {connected() ? "事件流已连接" : "等待连接"}
-            </span>
             <span class="model-chip">{model() ? `全局模型 · ${model()}` : "未配置全局模型"}</span>
-            <button
-              class="toolbar-button toolbar-danger"
-              disabled={!sessionID() || cancelBusy()}
-              onClick={requestCancel}
-            >
-              取消运行
-            </button>
-            <Show when={continueAvailable()}>
-              <button
-                class="toolbar-button"
-                aria-label="继续运行"
-                disabled={continueBusy()}
-                onClick={() => void continueRun()}
-              >
-                {continueBusy() ? "继续中…" : "继续运行"}
-              </button>
-            </Show>
             <Drawer
               title="会话操作"
               description="重命名、恢复当前 Session，或删除不再需要的运行记录。"
@@ -1828,12 +1259,9 @@ function App() {
                 {renameBusy() ? "保存中…" : "保存名称"}
               </button>
               <div class="drawer-toolbar">
-                <p class="helper-text">事件流断开或状态停滞时，可以在这里手动恢复。</p>
+                <p class="helper-text">Session 状态和聊天事件由 ChatSurface 管理。</p>
               </div>
               <div class="button-stack">
-                <button class="button button-secondary" disabled={!sessionID()} onClick={reconnectEvents}>
-                  重新连接
-                </button>
                 <button
                   class="button button-secondary"
                   disabled={!sessionID() || refreshBusy()}
@@ -1858,499 +1286,8 @@ function App() {
           </div>
         </header>
 
-        <section class="main-grid">
-          <section class="conversation-panel panel-surface">
-            <div class="panel-header">
-              <div>
-                <span class="section-kicker">实时执行</span>
-                <h2>Coding Loop</h2>
-              </div>
-              <div class="view-tabs" role="tablist" aria-label="对话区视图">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={chatView() === "chat"}
-                  class="view-tab"
-                  classList={{ "is-active": chatView() === "chat" }}
-                  onClick={() => setChatView("chat")}
-                >
-                  对话
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={chatView() === "events"}
-                  class="view-tab"
-                  classList={{ "is-active": chatView() === "events" }}
-                  onClick={() => setChatView("events")}
-                >
-                  事件<span class="view-count">{events().length}</span>
-                </button>
-              </div>
-            </div>
-            <div
-              class="conversation-body"
-              ref={(element) => (conversationBody = element)}
-              onScroll={(event) => handleConversationScroll(event.currentTarget)}
-            >
-              <div class="chat-stream" role="log" aria-live="polite" classList={{ "is-hidden": chatView() !== "chat" }}>
-                <Show when={historyLoading()}>
-                  <div class="history-load-status" role="status" aria-live="polite">
-                    正在加载更早的对话…
-                  </div>
-                </Show>
-                <Show when={historyError()}>
-                  <div class="history-load-error" role="alert">
-                    <span>{historyError()}</span>
-                    <button
-                      type="button"
-                      class="text-button"
-                      disabled={historyLoading() || !sessionID()}
-                      onClick={() => void loadSessionMessages(sessionID(), historyBefore(), sessionSelectSequence)}
-                    >
-                      重试
-                    </button>
-                  </div>
-                </Show>
-                <Show
-                  when={chatItems().length > 0}
-                  fallback={
-                    <Show
-                      when={sessionID()}
-                      fallback={
-                        <div class="empty-state">
-                          <span>◌</span>
-                          <strong>等待一次 Prompt</strong>
-                          <p>按下面的顺序准备好运行环境，Agent 的执行过程会实时出现在这里。</p>
-                          <div class="empty-steps">
-                            <div class={`empty-step ${modelConfigured() ? "is-done" : ""}`}>
-                              <span class="step-mark">{modelConfigured() ? "✓" : "1"}</span>
-                              打开「模型配置」抽屉保存模型服务配置
-                              <small>{modelConfigured() ? "已配置" : "待完成"}</small>
-                            </div>
-                            <div class="empty-step">
-                              <span class="step-mark">2</span>
-                              创建或选择一个 Session
-                              <small>待完成</small>
-                            </div>
-                            <div class="empty-step">
-                              <span class="step-mark">3</span>
-                              在下方输入第一个 Coding 任务
-                              <small>待开始</small>
-                            </div>
-                          </div>
-                        </div>
-                      }
-                    >
-                      <div class="empty-state">
-                        <span>◌</span>
-                        <strong>Session 已就绪</strong>
-                        <p>在下方输入你的第一个 Coding 任务，Agent 的流式输出、工具调用和权限请求都会出现在这里。</p>
-                      </div>
-                    </Show>
-                  }
-                >
-                  <For each={chatItems()}>
-                    {(item) => (
-                      <article
-                        class={`chat-message ${item.kind} chat-status-${item.status} ${item.thinking ? "thinking" : ""}`}
-                      >
-                        <Switch>
-                          <Match when={item.kind === "user" || item.kind === "assistant"}>
-                            <div class="turn-label">
-                              <span class={`who ${item.kind === "user" ? "is-user" : ""}`}>{item.title}</span>
-                              <span class="turn-meta">
-                                {item.localTime} · {chatStatusLabel(item.status)}
-                              </span>
-                              <Show when={item.kind === "assistant" && item.status === "streaming"}>
-                                <span class="stream-cursor" aria-hidden="true">
-                                  ▍
-                                </span>
-                              </Show>
-                            </div>
-                            <MarkdownView
-                              class="chat-copy"
-                              content={item.content || (item.status === "streaming" ? "Agent 正在输出…" : "")}
-                            />
-                            <Show when={item.kind === "user" && (item.skillIDs?.length ?? 0) > 0}>
-                              <div class="turn-chips">
-                                <For each={item.skillIDs}>
-                                  {(id) => <span class="skill-chip">@{id}</span>}
-                                </For>
-                              </div>
-                            </Show>
-                          </Match>
-                          <Match when={item.kind === "reasoning"}>
-                            <details
-                              class="reasoning-fold"
-                              open={item.status === "streaming"}
-                              aria-label="模型思考过程"
-                            >
-                              <summary>
-                                <span class="rf-icon" aria-hidden="true">
-                                  💭
-                                </span>
-                                <span class="rf-title">{item.title}</span>
-                                <span class="rf-meta">
-                                  约 {(item.content ?? "").length} 字 · {item.localTime}
-                                </span>
-                                <Show when={item.status === "streaming"}>
-                                  <span class="stream-cursor" aria-hidden="true">
-                                    ▍
-                                  </span>
-                                </Show>
-                                <span class="rf-chevron" aria-hidden="true">
-                                  ▸
-                                </span>
-                              </summary>
-                              <div class="reasoning-copy">{item.content}</div>
-                            </details>
-                          </Match>
-                          <Match when={item.kind === "execution"}>
-                            <div
-                              class={`act-row ${
-                                item.status === "waiting"
-                                  ? "warn"
-                                  : item.status === "failed"
-                                    ? "bad"
-                                    : item.status === "cancelled"
-                                      ? "mut"
-                                      : ""
-                              }`}
-                            >
-                              <span class="act-icon" aria-hidden="true">
-                                {item.status === "waiting" ? "⚡" : item.status === "failed" ? "!" : "·"}
-                              </span>
-                              <strong class="act-name">{item.title}</strong>
-                              <span class="act-desc" title={item.content}>
-                                {item.content}
-                              </span>
-                              <span
-                                class={`act-status ${
-                                  item.status === "completed"
-                                    ? "ok"
-                                    : item.status === "running"
-                                      ? "run"
-                                      : item.status === "failed"
-                                        ? "bad"
-                                        : ""
-                                }`}
-                              >
-                                {chatStatusLabel(item.status)}
-                              </span>
-                              <Show when={item.detail}>
-                                <details>
-                                  <summary>查看结构化详情</summary>
-                                  <pre>{item.detail}</pre>
-                                </details>
-                              </Show>
-                            </div>
-                          </Match>
-                          <Match when={item.kind === "status"}>
-                            <Show
-                              when={item.thinking}
-                              fallback={<div class="turn-end">{item.content}</div>}
-                            >
-                              <div class="thinking-status" role="status" aria-label="正在思考">
-                                <span class="thinking-status-dot" aria-hidden="true" />
-                                <span>{item.content || item.thinkingStatus || "正在思考"}</span>
-                                <span class="thinking-status-cursor" aria-hidden="true">
-                                  ▍
-                                </span>
-                              </div>
-                            </Show>
-                          </Match>
-                        </Switch>
-                      </article>
-                    )}
-                  </For>
-                </Show>
-              </div>
-              <div class="event-trace" classList={{ "is-hidden": chatView() !== "events" }}>
-                <div class="event-trace-head">事件明细 · {events().length.toString().padStart(2, "0")} 条</div>
-                <Show when={events().length > 0} fallback={<p class="empty-copy">本轮还没有收到运行事件</p>}>
-                  <div class="timeline">
-                    <For each={events()}>
-                      {(event) => (
-                        <article class="event-row">
-                          <span class="event-seq">{String(event.sequence).padStart(2, "0")}</span>
-                          <div class="event-body">
-                            <strong>{event.type}</strong>
-                            <small>
-                              {event.localTime} · {event.sessionID.slice(0, 8)}
-                            </small>
-                            <Show when={event.data}>
-                              <pre>{JSON.stringify(event.data, null, 2)}</pre>
-                            </Show>
-                          </div>
-                        </article>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </div>
-            </div>
-            <Show when={permissions().length > 0}>
-              <section class="permission-prompt" data-testid="prompt-permission" aria-live="assertive">
-                <div class="permission-prompt-head">
-                  <div>
-                    <strong>需要你的权限确认</strong>
-                    <span class="section-kicker">同类请求可选择始终允许，后续将直接执行</span>
-                  </div>
-                  <span class="permission-prompt-count">{permissions().length} 条</span>
-                </div>
-                <div class="permission-prompt-list">
-                  <For each={permissions()}>
-                    {(request) => (
-                      <div class="permission-prompt-card">
-                        <div class="permission-prompt-copy">
-                          <strong title={request.resource}>
-                            {request.action} · {request.resource}
-                          </strong>
-                          <span>{request.reason}</span>
-                        </div>
-                        <div class="permission-actions">
-                          <button
-                            disabled={Boolean(pendingDecisionID())}
-                            onClick={() => decide(request.id, "allow_once")}
-                          >
-                            {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
-                          </button>
-                          <button
-                            disabled={Boolean(pendingDecisionID())}
-                            onClick={() => decide(request.id, "allow_always")}
-                          >
-                            始终允许
-                          </button>
-                          <button
-                            class="deny"
-                            disabled={Boolean(pendingDecisionID())}
-                            onClick={() => decide(request.id, "deny")}
-                          >
-                            拒绝
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </section>
-            </Show>
-            <div class="prompt-shell">
-              <textarea
-                class="prompt-input"
-                aria-label="Coding Prompt"
-                rows={1}
-                value={prompt()}
-                onInput={(event) => setPrompt(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendPrompt()
-                }}
-                placeholder={inputLocked() ? "Agent 正在回复，本轮完成后可继续输入…" : "描述下一步 Coding 任务…"}
-                disabled={!sessionID() || busy() || inputLocked()}
-              />
-              <Show when={skillSuggestions().length > 0}>
-                <div class="skill-suggestions" role="listbox" aria-label="Skill 建议">
-                  <For each={skillSuggestions()}>
-                    {(skill) => (
-                      <button
-                        class="skill-suggestion"
-                        role="option"
-                        aria-label={`@${skill.id}`}
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => selectSkill(skill)}
-                      >
-                        <span>@{skill.id}</span>
-                        <small>{skill.description}</small>
-                      </button>
-                    )}
-                  </For>
-                </div>
-              </Show>
-              <Show when={activeSkillIDs().length > 0}>
-                <div class="active-skill-row" aria-label="已附加 Skill">
-                  <span class="section-kicker">已附加</span>
-                  <For each={activeSkillIDs()}>{(id) => <span class="skill-chip">@{id}</span>}</For>
-                </div>
-              </Show>
-              <div class="prompt-bar">
-                <span class={`prompt-hint ${inputLocked() ? "is-locked" : ""}`}>
-                  {inputLocked() ? (
-                    <>
-                      <span class="prompt-hint-dot" aria-hidden="true" />
-                      Agent 正在回复，完成后可继续输入
-                    </>
-                  ) : (
-                    "⌘ ↵ 发送 · @ 引用 Skill"
-                  )}
-                </span>
-                <Popover.Trigger class="text-button" aria-label="权限策略">
-                  ⚙ 权限策略
-                </Popover.Trigger>
-                <button
-                  class="send-fab"
-                  disabled={!sessionID() || !prompt().trim() || busy() || inputLocked()}
-                  onClick={sendPrompt}
-                  aria-label="发送 Prompt"
-                >
-                  {busy() ? "…" : "↑"}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <aside class="status-rail">
-            <section class="rail-panel panel-surface">
-              <div class="panel-header">
-                <div>
-                  <span class="section-kicker">运行监控</span>
-                  <h2>运行状态</h2>
-                </div>
-                <span class={`status-badge ${connected() ? "success" : "muted"}`}>{connected() ? "在线" : "离线"}</span>
-              </div>
-              <div class="rail-kv">
-                <div>
-                  <span>Session</span>
-                  <strong>{sessionStatus()}</strong>
-                </div>
-                <div>
-                  <span>事件流</span>
-                  <strong>{connected() ? "实时" : "未连接"}</strong>
-                </div>
-                <div>
-                  <span>上下文</span>
-                  <strong class={`context-value ${capabilityStateClass(compactionStatus())}`}>
-                    {compactionStatus()}
-                  </strong>
-                </div>
-              </div>
-
-              <Show when={permissions().length > 0}>
-                <div class="rail-section" ref={(element) => (permissionsSection = element)}>
-                  <div class="rail-section-head">
-                    <strong>权限队列</strong>
-                    <span class="rail-count">{permissions().length}</span>
-                  </div>
-                  <div class="permission-list">
-                    <For each={permissions()}>
-                      {(request) => (
-                        <div class="permission-card">
-                          <div>
-                            <span class="permission-action">{request.action}</span>
-                            <strong>{request.resource}</strong>
-                            <small>{request.reason}</small>
-                          </div>
-                          <div class="permission-actions" data-testid="permission-actions">
-                            <button
-                              disabled={Boolean(pendingDecisionID())}
-                              onClick={() => decide(request.id, "allow_once")}
-                            >
-                              {pendingDecisionID() === request.id ? "处理中…" : "允许一次"}
-                            </button>
-                            <button
-                              disabled={Boolean(pendingDecisionID())}
-                              onClick={() => decide(request.id, "allow_always")}
-                            >
-                              始终允许
-                            </button>
-                            <button
-                              class="deny"
-                              disabled={Boolean(pendingDecisionID())}
-                              onClick={() => decide(request.id, "deny")}
-                            >
-                              拒绝
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={questions().length > 0}>
-                <div class="rail-section" ref={(element) => (questionsSection = element)}>
-                  <div class="rail-section-head">
-                    <strong>补充信息</strong>
-                    <span class="rail-count">{questions().length}</span>
-                  </div>
-                  <div class="question-list">
-                    <For each={questions()}>
-                      {(request) => (
-                        <article class="question-card">
-                          <div class="question-card-head">
-                            <span class="permission-action">{request.id}</span>
-                            <button
-                              class="text-button"
-                              disabled={Boolean(pendingQuestionID())}
-                              onClick={() => cancelQuestion(request.id)}
-                            >
-                              {pendingQuestionID() === request.id ? "取消中…" : "取消"}
-                            </button>
-                          </div>
-                          <For each={request.questions}>
-                            {(question, questionIndex) => (
-                              <div class="question-block">
-                                <strong>{question.question}</strong>
-                                <div class="answer-options">
-                                  <For each={question.options}>
-                                    {(option) => (
-                                      <button
-                                        class={`answer-option ${answerSelected(request.id, questionIndex(), option.label) ? "is-selected" : ""}`}
-                                        aria-pressed={answerSelected(request.id, questionIndex(), option.label)}
-                                        onClick={() => chooseAnswer(request, questionIndex(), option.label)}
-                                      >
-                                        <span>{option.label}</span>
-                                        <small>{option.description}</small>
-                                      </button>
-                                    )}
-                                  </For>
-                                </div>
-                              </div>
-                            )}
-                          </For>
-                          <button
-                            class="button button-primary"
-                            disabled={busy() || Boolean(pendingQuestionID())}
-                            onClick={() => replyQuestion(request)}
-                          >
-                            {busy() ? "提交中…" : "提交回答"}
-                          </button>
-                        </article>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={contextSources().length > 0}>
-                <div class="rail-section">
-                  <div class="rail-section-head">
-                    <strong>上下文来源</strong>
-                    <span class="rail-count">{contextSources().length}</span>
-                  </div>
-                  <div class="rail-kv">
-                    <For each={contextSources().slice(0, 3)}>
-                      {(source) => (
-                        <div>
-                          <span>{source.kind}</span>
-                          <strong class="rail-source-path" title={source.path}>
-                            {source.path}
-                          </strong>
-                        </div>
-                      )}
-                    </For>
-                    <Show when={contextSources().length > 3}>
-                      <div>
-                        <span>…</span>
-                        <strong>共 {contextSources().length} 项</strong>
-                      </div>
-                    </Show>
-                  </div>
-                </div>
-              </Show>
-            </section>
-          </aside>
+        <section class="main-grid chat-surface-host">
+          <ChatSurface sessionID={sessionID()} client={{ baseUrl: apiBaseUrl }} />
         </section>
 
         <footer>
@@ -2358,15 +1295,6 @@ function App() {
           <span>UI 是控制面，Runtime 在 Core</span>
         </footer>
 
-        <ConfirmDialog
-          title="取消当前运行？"
-          description="取消后正在执行的 Agent 任务会立即停止，本轮进度不可恢复。确认要继续吗？"
-          confirmLabel="确认取消运行"
-          open={cancelConfirmOpen()}
-          onOpenChange={setCancelConfirmOpen}
-          busy={cancelBusy()}
-          onConfirm={confirmCancelSession}
-        />
         <ConfirmDialog
           title="删除当前 Session？"
           description="删除会清理消息、交互和事件记录，但不会删除工作目录或全局模型配置。此操作不可恢复，确认要继续吗？"
@@ -2416,522 +1344,6 @@ async function requestPermissionPolicy<T>(path: string, init: RequestInit = {}):
 
 function messageFrom(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
-}
-
-function sourcesFromEvent(data: unknown): ContextSource[] {
-  if (!data || typeof data !== "object" || !Array.isArray((data as { sources?: unknown }).sources)) return []
-  return (data as { sources: unknown[] }).sources.filter(isContextSource)
-}
-
-function isContextSource(value: unknown): value is ContextSource {
-  if (!value || typeof value !== "object") return false
-  const source = value as Record<string, unknown>
-  return typeof source.sourceID === "string" && typeof source.kind === "string" && typeof source.path === "string"
-}
-
-/** 将 canonical 消息转换为可滚动展示的对话条目。 */
-function historyItemsFromMessages(messages: NexumSessionMessages["messages"]): ChatItem[] {
-  return messages.reduce<ChatItem[]>((items, entry) => {
-    const message = entry.message
-    const localTime = "历史"
-    if (message.role === "user") {
-      items.push({
-        id: `history:user:${entry.index}`,
-        kind: "user",
-        title: "你",
-        content: message.content,
-        skillIDs: skillIDsFromText(message.content),
-        status: "completed",
-        localTime,
-      })
-      return items
-    }
-    if (message.role === "assistant") {
-      if (message.reasoningContent !== undefined) {
-        items.push({
-          id: `history:reasoning:${entry.index}`,
-          kind: "reasoning",
-          title: "模型思考",
-          content: message.reasoningContent,
-          status: "completed",
-          localTime,
-        })
-      }
-      if (message.content !== undefined) {
-        items.push({
-          id: `history:assistant:${entry.index}`,
-          kind: "assistant",
-          title: "Agent",
-          content: message.content,
-          status: "completed",
-          localTime,
-        })
-      }
-      message.toolCalls?.forEach((toolCall) => {
-        items.push({
-          id: `history:tool-call:${entry.index}:${toolCall.id}`,
-          kind: "execution",
-          title: `工具调用 · ${toolCall.name}`,
-          content: "历史工具调用",
-          detail: JSON.stringify(toolCall.input, null, 2),
-          status: "completed",
-          localTime,
-        })
-      })
-      return items
-    }
-    if (message.role === "tool") {
-      const result: ChatItem = {
-        id: `history:tool-result:${entry.index}:${message.toolCallID}`,
-        kind: "execution",
-        title: "工具结果",
-        content: compactSummary(message.content) || "工具执行完成",
-        detail: message.content,
-        status: "completed",
-        localTime,
-      }
-      items.push(result)
-      return items
-    }
-    items.push({
-      id: `history:system:${entry.index}`,
-      kind: "execution",
-      title: message.sourceID === "context:summary" ? "上下文压缩摘要" : "系统上下文",
-      content: message.sourceID === "context:summary" ? "已保存的上下文压缩摘要" : "已保存的系统消息",
-      detail: message.content,
-      status: "completed",
-      localTime,
-    })
-    return items
-  }, [])
-}
-
-/** 将历史页插入当前对话，并按稳定条目 ID 去重。 */
-function prependHistoryItems(current: ChatItem[], incoming: ChatItem[]): ChatItem[] {
-  const existing = new Set(current.map((item) => item.id))
-  return [...incoming.filter((item) => !existing.has(item.id)), ...current]
-}
-
-/** 将一条聊天条目追加到前端运行记录中。 */
-function appendChatItem(items: ChatItem[], item: ChatItem): ChatItem[] {
-  return [...items, item]
-}
-
-function thinkingChatItem(sessionID: string, id = `thinking:${sessionID}`): ChatItem {
-  return {
-    id,
-    kind: "status",
-    title: "Agent 思考",
-    thinking: true,
-    content: "正在思考",
-    status: "running",
-    localTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-  }
-}
-
-/**
- * 按稳定条目 ID 更新聊天卡片，避免重连时重建整条消息流。
- * @param items 当前聊天条目
- * @param id 卡片 ID
- * @param patch 要更新的字段
- * @returns 更新后的聊天条目
- */
-function updateChatItem(items: ChatItem[], id: string, patch: Partial<ChatItem>): ChatItem[] {
-  return items.map((item) => (item.id === id ? { ...item, ...patch } : item))
-}
-
-function upsertChatItem(items: ChatItem[], item: ChatItem): ChatItem[] {
-  const existing = items.find((current) => current.id === item.id)
-  return existing ? updateChatItem(items, item.id, item) : appendChatItem(items, item)
-}
-
-function closeReasoning(items: ChatItem[], runID: string): ChatItem[] {
-  const last = items.at(-1)
-  if (last?.kind !== "reasoning" || !last.id.startsWith(`reasoning:${runID}:`)) return items
-  return updateChatItem(items, last.id, { status: "completed" })
-}
-
-/**
- * 将 Nexum SSE 事件投影为用户可读的聊天消息或执行卡片。
- * @param items 当前聊天条目
- * @param event 已去重的 Nexum 事件
- * @returns 更新后的聊天条目
- */
-function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
-  const data = eventDataOf(event.data)
-  const localTime = new Date(event.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  const detail = JSON.stringify(data, null, 2)
-  const value = (key: string) => (typeof data[key] === "string" ? data[key] : "")
-  const upsert = (item: ChatItem) => {
-    return upsertChatItem(items, item)
-  }
-
-  switch (event.type) {
-    case "assistant.thinking": {
-      const thinking = items.find((item) => item.kind === "status" && item.thinking)
-      const elapsedMs = typeof data.elapsedMs === "number" ? data.elapsedMs : undefined
-      const elapsed = elapsedMs === undefined ? "" : ` · 已等待 ${Math.max(1, Math.round(elapsedMs / 1000))}s`
-      return upsert({
-        id: thinking?.id ?? `thinking:${event.runID}`,
-        kind: "status",
-        title: "Agent 思考",
-        content: value("message") || "正在思考",
-        thinking: true,
-        thinkingStatus: `${value("message") || "模型正在思考"}${elapsed}`,
-        status: "streaming",
-        localTime,
-        eventType: event.type,
-      })
-    }
-    case "assistant.reasoning": {
-      const activeItems = items.filter((item) => !item.thinking)
-      const last = activeItems.at(-1)
-      const reasoningPrefix = `reasoning:${event.runID}:`
-      if (
-        last?.kind === "reasoning" &&
-        last.id.startsWith("history:reasoning:") &&
-        last.content?.includes(value("content"))
-      ) {
-        return activeItems
-      }
-      if (last?.kind === "reasoning" && last.id.startsWith(reasoningPrefix)) {
-        return updateChatItem(activeItems, last.id, {
-          content: `${last.content ?? ""}${value("content")}`,
-          status: "streaming",
-          localTime,
-          eventType: event.type,
-        })
-      }
-      return appendChatItem(activeItems, {
-        id: `${reasoningPrefix}${event.sequence}`,
-        kind: "reasoning",
-        title: "模型思考",
-        content: value("content"),
-        status: "streaming",
-        localTime,
-        eventType: event.type,
-      })
-    }
-    case "assistant.text": {
-      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
-      const idPrefix = `assistant:${event.runID}:`
-      const last = activeItems.at(-1)
-      if (
-        last?.kind === "assistant" &&
-        last.id.startsWith("history:assistant:") &&
-        last.content?.includes(value("content"))
-      ) {
-        return activeItems
-      }
-      if (last?.kind === "assistant" && last.id.startsWith(idPrefix)) {
-        return updateChatItem(activeItems, last.id, {
-          content: `${last.content ?? ""}${value("content")}`,
-          status: "streaming",
-          localTime,
-          eventType: event.type,
-        })
-      }
-      return appendChatItem(activeItems, {
-        id: `${idPrefix}${event.sequence}`,
-        kind: "assistant",
-        title: "Agent",
-        content: value("content"),
-        status: "streaming",
-        localTime,
-        eventType: event.type,
-      })
-    }
-    case "tool.request": {
-      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
-      const toolCallID = value("toolCallID")
-      if (activeItems.some((item) => item.id.endsWith(`:${toolCallID}`) && item.id.startsWith("history:tool-call:"))) {
-        return activeItems
-      }
-      return upsertChatItem(activeItems, {
-        id: `tool:${toolCallID}`,
-        kind: "execution",
-        title: `工具调用 · ${value("toolName") || value("action") || "unknown"}`,
-        content: "Core 正在执行工具",
-        detail,
-        status: "running",
-        localTime,
-        eventType: event.type,
-      })
-    }
-    case "tool.result": {
-      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
-      const toolCallID = value("toolCallID")
-      if (activeItems.some((item) => item.id.endsWith(`:${toolCallID}`) && item.id.startsWith("history:tool-result:"))) {
-        return activeItems
-      }
-      return upsertChatItem(activeItems, {
-        id: `tool:${toolCallID}`,
-        kind: "execution",
-        title: `工具结果 · ${value("toolName") || value("toolCallID").slice(0, 12) || "工具"}`,
-        content: data.ok === false ? "工具执行失败" : compactSummary(value("output")) || "工具执行完成",
-        detail,
-        status: data.ok === false ? "failed" : "completed",
-        localTime,
-        eventType: event.type,
-      })
-    }
-    case "permission.requested":
-      return upsert({
-        id: `permission:${value("requestID")}`,
-        kind: "execution",
-        title: `权限请求 · ${value("action") || "操作"}`,
-        content: value("reason") || "等待权限处理",
-        detail,
-        status: "waiting",
-        localTime,
-        eventType: event.type,
-      })
-    case "question.request":
-      return upsert({
-        id: `question:${value("requestID")}`,
-        kind: "execution",
-        title: "补充信息 · 等待回答",
-        content: "Core 正在等待你的补充信息",
-        detail,
-        status: "waiting",
-        localTime,
-        eventType: event.type,
-      })
-    case "question.result":
-      return updateChatItem(items, `question:${value("requestID")}`, {
-        title: "补充信息 · 已提交",
-        content: "补充信息已提交，运行继续",
-        status: "completed",
-        localTime,
-      })
-    case "question.cancelled":
-      return updateChatItem(items, `question:${value("requestID")}`, {
-        title: "补充信息 · 已取消",
-        content: "补充信息已取消",
-        status: "cancelled",
-        localTime,
-      })
-    case "context.compaction.started":
-    case "context.compaction.completed":
-    case "context.compaction.failed":
-      return upsert({
-        id: `context:${event.runID}`,
-        kind: "execution",
-        title: "上下文压缩",
-        content:
-          value("message") ||
-          `上下文压缩${event.type.endsWith("started") ? "进行中" : event.type.endsWith("failed") ? "失败" : "完成"}`,
-        detail,
-        status: event.type.endsWith("started") ? "running" : event.type.endsWith("failed") ? "failed" : "completed",
-        localTime,
-        eventType: event.type,
-      })
-    case "context.project.loaded":
-      return appendChatItem(items, {
-        id: `context-source:${event.sequence}`,
-        kind: "execution",
-        title: "项目上下文 · 已加载",
-        content: "Core 已加载项目指令和上下文来源",
-        detail,
-        status: "completed",
-        localTime,
-        eventType: event.type,
-      })
-    case "skill.activated":
-      return upsert({
-        id: `skill:${value("skillID")}`,
-        kind: "execution",
-        title: `Skill · ${value("name") || value("skillID") || "已激活"}`,
-        content: "Skill 已进入模型上下文",
-        detail,
-        status: "completed",
-        localTime,
-        eventType: event.type,
-      })
-    case "skill.failed":
-      return upsert({
-        id: `skill:${value("skillID")}`,
-        kind: "execution",
-        title: `Skill · ${value("skillID") || "激活失败"}`,
-        content: value("code") || "Skill 激活失败",
-        detail,
-        status: "failed",
-        localTime,
-        eventType: event.type,
-      })
-    case "model.attempt":
-      return upsert({
-        id: `model-attempt:${event.runID}`,
-        kind: "execution",
-        title: "模型尝试",
-        content: `第 ${String(data.attempt ?? "")} 次模型调用`,
-        detail,
-        status: "running",
-        localTime,
-        eventType: event.type,
-      })
-    case "model.retry":
-      return upsert({
-        id: `model-retry:${event.runID}`,
-        kind: "execution",
-        title: "模型重试",
-        content: `调用失败，${String(data.delayMs ?? 0)}ms 后重试`,
-        detail,
-        status: "running",
-        localTime,
-        eventType: event.type,
-      })
-    case "run.settled":
-      {
-        const result = runResultFromEvent(data)
-        if (!result) return items
-      return upsert({
-        id: `run:${event.runID}:settled`,
-        kind: "status",
-        title: "运行已结算",
-        content: result === "failed" ? "运行失败，可继续执行" : result === "completed" ? "运行完成" : "运行已取消",
-        status: result === "failed" ? "failed" : result === "cancelled" ? "cancelled" : "completed",
-        localTime,
-        eventType: event.type,
-      })
-      }
-    case "session.completed": {
-      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
-      return appendChatItem(
-        activeItems.map((item) =>
-          item.id.startsWith(`assistant:${event.runID}:`) ? { ...item, status: "completed" } : item,
-        ),
-        {
-          id: `session:${event.runID}:completed`,
-          kind: "status",
-          title: "运行完成",
-          content: "本轮 Coding 任务已完成",
-          status: "completed",
-          localTime,
-          eventType: event.type,
-        },
-      )
-    }
-    case "session.failed": {
-      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
-      return appendChatItem(activeItems, {
-        id: `session:${event.runID}:failed`,
-        kind: "status",
-        title: "运行失败",
-        content: value("message") || "Core 返回运行失败",
-        status: "failed",
-        localTime,
-        eventType: event.type,
-      })
-    }
-    case "session.cancelled": {
-      const activeItems = closeReasoning(items.filter((item) => !item.thinking), event.runID)
-      return appendChatItem(activeItems, {
-        id: `session:${event.runID}:cancelled`,
-        kind: "status",
-        title: "运行已取消",
-        content: "本轮运行已停止，可以继续输入新的 Prompt",
-        status: "cancelled",
-        localTime,
-        eventType: event.type,
-      })
-    }
-    default:
-      return items
-  }
-}
-
-function compactSummary(value: string): string {
-  return value.replace(/\s+/g, " ").trim().slice(0, 120)
-}
-
-/**
- * 将协议事件数据收窄为应用层可安全读取的对象。
- *
- * @param data - 协议事件数据
- * @returns 非数组对象或空对象
- * @author lvdaxianer@yeah.net
- */
-function eventDataOf(data: unknown): Record<string, unknown> {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return {}
-  return data as Record<string, unknown>
-}
-
-/**
- * 读取并校验运行结算结果。
- *
- * @param data - 已收窄的事件数据
- * @returns 有效的运行结果或 undefined
- * @author lvdaxianer@yeah.net
- */
-function runResultFromEvent(data: Record<string, unknown>): "completed" | "failed" | "cancelled" | undefined {
-  if (data.result === "completed" || data.result === "failed" || data.result === "cancelled") return data.result
-  return undefined
-}
-
-/**
- * 根据能力卡片当前值计算状态色，让一眼可扫的正异常状态有区分。
- * @param value 卡片显示值
- * @returns 状态修饰类名
- */
-function capabilityStateClass(value: string): string {
-  if (value.includes("待处理") || value.includes("个问题") || value === "compressing") return "is-attention"
-  if (value === "fail" || value === "failed") return "is-danger"
-  if (value === "待探测" || value === "idle" || value === "空闲" || value === "未激活") return "is-idle"
-  return "is-good"
-}
-
-/**
- * 将聊天状态转换为中文状态标签。
- * @param status 内部聊天状态
- * @returns 页面显示文案
- */
-function chatStatusLabel(status: ChatStatus): string {
-  return {
-    streaming: "输出中…",
-    running: "执行中",
-    waiting: "等待处理",
-    completed: "已完成",
-    failed: "失败",
-    cancelled: "已取消",
-  }[status]
-}
-
-/**
- * 从 Prompt 中提取去重后的 Skill ID。
- * @param text - Prompt 文本
- * @returns mention 中的 Skill ID
- * @author lvdaxianer@yeah.net
- * @date 2026-11-20
- */
-function skillIDsFromText(text: string): string[] {
-  return [...text.matchAll(/@([a-z0-9]+(?:-[a-z0-9]+)*)/gi)].map((match) => match[1]!).filter(uniqueValue)
-}
-
-/**
- * 从 Skill 事件安全提取 Skill ID。
- * @param data - 事件数据
- * @returns Skill ID 或 undefined
- * @author lvdaxianer@yeah.net
- * @date 2026-11-20
- */
-function skillIDFromEvent(data: unknown): string | undefined {
-  if (!data || typeof data !== "object") return undefined
-  const value = (data as { skillID?: unknown }).skillID
-  return typeof value === "string" ? value : undefined
-}
-
-/**
- * 判断字符串是否为数组中的首次出现。
- * @param value - 当前值
- * @param index - 当前下标
- * @param values - 全部值
- * @returns 是否保留当前值
- * @author lvdaxianer@yeah.net
- * @date 2026-11-20
- */
-function uniqueValue(value: string, index: number, values: string[]): boolean {
-  return values.indexOf(value) === index
 }
 
 export default App
