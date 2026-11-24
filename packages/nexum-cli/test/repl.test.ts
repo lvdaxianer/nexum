@@ -327,7 +327,7 @@ test("readlineLineSource completes @skill tokens in place", async () => {
   source.close()
 })
 
-test("readlineLineSource draws the box on showPrompt and closes it on submit", async () => {
+test("readlineLineSource draws a closed box on showPrompt and moves the cursor below it on submit", async () => {
   const input = new PassThrough()
   const output = new PassThrough()
   let rendered = ""
@@ -339,16 +339,47 @@ test("readlineLineSource draws the box on showPrompt and closes it on submit", a
   source.showPrompt?.()
   source.showPrompt?.()
   await new Promise((resolve) => setTimeout(resolve, 20))
+  // 空闲即完整闭合:顶边 → 提示行 → 输入行 → 底边,随后光标上移归位到输入行
   expect(rendered.match(/╭/g)?.length).toBe(1)
-  expect(rendered).toContain("输入任务")
+  expect(rendered.match(/╰/g)?.length).toBe(1)
+  const plainRendered = rendered.replace(/\x1b\[[0-9;]*m/g, "")
+  expect(plainRendered.indexOf("输入任务")).toBeGreaterThan(plainRendered.indexOf("╭"))
+  expect(plainRendered.indexOf("╰")).toBeGreaterThan(plainRendered.indexOf("输入任务"))
+  expect(rendered).toContain("\x1b[1A\r")
+  expect(rendered.lastIndexOf("\x1b[1A")).toBeGreaterThan(rendered.lastIndexOf("╰"))
   const line = source.next()
   input.write("你好\n")
   expect(await line).toBe("你好")
   await new Promise((resolve) => setTimeout(resolve, 20))
-  expect(rendered).toContain("╰")
+  // 提交后光标移到底边之下,框保持闭合
+  expect(rendered).toContain("\x1b[1B")
   source.showPrompt?.()
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(rendered.match(/╭/g)?.length).toBe(2)
+  expect(rendered.match(/╰/g)?.length).toBe(2)
+  source.close()
+})
+
+test("readlineLineSource rewrites readline clear-to-screen-end sequences so edits keep the box bottom", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 60)!
+  const source = readlineLineSource(() => [], { input, output, box })
+  source.showPrompt?.()
+  const line = source.next()
+  input.write("abc")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  // 退格触发 readline 全行重绘;^[[0J(清到屏尾)会抹掉底边,必须被改写为 ^[[0K(清到行尾)
+  input.write("\x7f")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  expect(rendered).not.toContain("\x1b[0J")
+  expect(rendered).toContain("\x1b[0K")
+  input.write("\n")
+  expect(await line).toBe("ab")
   source.close()
 })
 
@@ -395,8 +426,10 @@ test("repl does not stick the settle line to the input box on double terminal ev
   expect(settled).toBeGreaterThan(bottom)
   // 终态行必须落在新框顶边之前,不粘在 │ › 输入行后面
   expect(text.indexOf("╭", settled)).toBeGreaterThan(settled)
-  // 最后停在打开的框:顶边 = 底边 + 1
-  expect(text.match(/╭/g)?.length).toBe((text.match(/╰/g)?.length ?? 0) + 1)
+  // 每个框完整闭合:顶边数 = 底边数;结束后光标归位序列在最后一个底边之后(光标停在框内)
+  expect(text.match(/╭/g)?.length).toBe(2)
+  expect(text.match(/╰/g)?.length).toBe(2)
+  expect(text.lastIndexOf("\x1b[1A")).toBeGreaterThan(text.lastIndexOf("╰"))
 })
 
 test("repl redraws the input box after an empty line submit", async () => {
@@ -409,6 +442,8 @@ test("repl redraws the input box after an empty line submit", async () => {
   source.close()
   await run
   const text = plain()
-  expect(text.match(/╰/g)?.length).toBe(1)
+  // 空行提交闭合旧框并重画新框:两对顶边/底边,光标归位在框内
+  expect(text.match(/╰/g)?.length).toBe(2)
   expect(text.match(/╭/g)?.length).toBe(2)
+  expect(text.lastIndexOf("\x1b[1A")).toBeGreaterThan(text.lastIndexOf("╰"))
 })

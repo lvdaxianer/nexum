@@ -45,8 +45,15 @@ export function readlineLineSource(
   skills: () => readonly string[],
   options: { input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream; box?: InputBox } = {},
 ): LineSource & { prompter: Prompter } {
-  const output = options.output ?? process.stdout
+  const rawOutput = options.output ?? process.stdout
   const box = options.box
+  // 实证(bun terminal 模式):退格等编辑触发全行重绘,序列 ^[[0J 清到屏尾会抹掉闭合框底边;
+  // box 模式改写为 ^[[0K(清到行尾),重绘只影响输入行。已知限制:多行粘贴的重绘会留残影。
+  const output = box
+    ? (Object.create(rawOutput, {
+        write: { value: (text: string) => rawOutput.write(text.replaceAll("\x1b[0J", "\x1b[0K")) },
+      }) as NodeJS.WritableStream)
+    : rawOutput
   const rl = createInterface({
     input: options.input ?? process.stdin,
     output,
@@ -77,8 +84,9 @@ export function readlineLineSource(
   })
   closedSignal.catch(() => {})
   rl.on("line", (line) => {
-    // 提交时闭合输入框;提示符不再自动重画,由 runRepl 在空闲时驱动。
-    if (promptActive && box) output.write(box.bottom + "\n")
+    // 闭合框在 showPrompt 时已画好;实证(bun terminal 模式):Enter 时 readline 先写 \r\n,
+    // 'line' 触发时光标在底边行行首,这里再下移一行,后续输出落在框外下方。
+    if (promptActive && box) output.write("\x1b[1B")
     promptActive = false
     const waiter = waiters.shift()
     if (waiter) waiter(line)
@@ -108,10 +116,14 @@ export function readlineLineSource(
       if (closed || promptActive) return
       promptActive = true
       if (box) {
-        output.write(box.top + "\n")
-        output.write(box.hint + "\n")
+        output.write(`${box.top}\n${box.hint}\n`)
         rl.setPrompt(box.inputPrefix)
         rl.prompt()
+        // 画出底边形成完整闭合框,再上移一行归位:光标回到输入行 inputPrefix 之后,
+        // 与 readline 内部跟踪的位置一致(补全/退格的重绘都基于该位置)。
+        // 已知限制:输入超长换行会压到底边行。
+        output.write(`\n${box.bottom}`)
+        output.write(`\x1b[1A\r${box.inputPrefix}`)
         return
       }
       rl.setPrompt("nexum ▸ ")
