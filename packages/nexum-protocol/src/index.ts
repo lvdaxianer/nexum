@@ -207,6 +207,62 @@ export type NexumSkill = {
   readonly updatedAt?: string
 }
 
+export type NexumMcpServer = {
+  readonly id: string
+  readonly name: string
+  readonly status: "disabled" | "pending" | "connected" | "failed" | "needs_auth" | "available" | "unavailable"
+  readonly url?: string
+  readonly error?: { readonly code: string; readonly message: string }
+}
+
+export type NexumMcpTool = {
+  readonly name: string
+  readonly description?: string
+  readonly inputSchema?: JsonObject
+}
+
+export type NexumMcpResource = {
+  readonly uri: string
+  readonly name: string
+  readonly description?: string
+  readonly mimeType?: string
+}
+
+export type NexumMcpPrompt = {
+  readonly name: string
+  readonly description?: string
+  readonly arguments?: readonly string[]
+}
+
+export type NexumMcpOAuthAttempt = {
+  readonly id: string
+  readonly serverID: string
+  readonly status: "starting" | "awaiting_user" | "authorized" | "failed" | "cancelled" | "expired"
+  readonly authorizationUrl?: string
+  readonly redirectUrl?: string
+  readonly expiresAt: number
+  readonly error?: { readonly code: string; readonly message: string }
+}
+
+export type NexumMcpOAuthStartInput = {
+  readonly id: string
+  readonly url?: string
+}
+
+export type NexumMcpOAuthCompleteInput = {
+  readonly redirectUrl: string
+}
+
+export type NexumMcpServerInput = {
+  readonly id: string
+  readonly name: string
+  readonly url: string
+  readonly headers?: Readonly<Record<string, string>>
+  readonly disabled?: boolean
+  readonly timeoutMs?: number
+  readonly protocol?: "legacy" | "auto" | "2026-07-28"
+}
+
 export type NexumSkillRegistryUpdateEventData = {
   readonly change: "registered" | "refreshed" | "validated" | "unregistered"
   readonly skillID: string

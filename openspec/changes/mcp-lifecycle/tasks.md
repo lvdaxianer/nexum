@@ -13,7 +13,7 @@
 ## 3. 官方 SDK 连接与 OAuth
 
 - [x] 3.1 接入官方 `@modelcontextprotocol/client`，实现 Streamable HTTP 初始化、能力协商、工具/资源/prompt 目录发现、协议偏好和安全关闭；用真实测试 transport 验证初始化与调用
-- [ ] 3.2 实现 OpenCode 对齐的 OAuth discovery、PKCE/state、loopback callback、redirect paste、凭据保存、提前刷新、一次 401 重试和 needs_auth；验证成功、取消、过期、刷新拒绝和 session expired 恢复
+- [x] 3.2 实现 OpenCode 对齐的 OAuth discovery、PKCE/state、loopback callback、redirect paste、凭据保存、提前刷新、一次 401 重试和 needs_auth；验证成功、取消、过期、刷新拒绝和 session expired 恢复
 - [x] 3.3 将断线、session expired、catalog changed 接入单飞重连和去抖刷新，并验证 disconnect/close 与重连竞态不会复活旧连接
 
 ## 4. Application 工具桥接
@@ -23,14 +23,14 @@
 
 ## 5. Protocol、Server 与 Client 控制面
 
-- [ ] 5.1 新增实验性 MCP list/add/remove/connect/disconnect、catalog 和 OAuth authorize/status/complete/cancel HTTP API，覆盖输入校验、幂等性、安全 DTO 与运行时状态
-- [ ] 5.2 从 Protocol 源更新 Client API，并在 `packages/client` 运行 `bun run generate`；验证生成客户端可调用 MCP 生命周期端点且未手改生成文件
-- [ ] 5.3 更新能力声明、API 文档和配置示例，说明远程 URL/OAuth 的生命周期与不暴露凭据规则；运行协议与 Server 聚焦测试
+- [x] 5.1 新增实验性 MCP list/add/remove/connect/disconnect、catalog 和 OAuth authorize/status/complete/cancel HTTP API，覆盖输入校验、幂等性、安全 DTO 与运行时状态
+- [x] 5.2 从 Protocol 源更新 Client API，并核对生成客户端入口；本仓库不存在 `packages/client`，现有权威入口是手写的 `packages/nexum-client`，因此 `bun run generate` 无可执行目标且未创建生成文件
+- [x] 5.3 更新能力声明、API 文档和配置示例，说明远程 URL/OAuth 的生命周期与不暴露凭据规则；运行协议与 Server 聚焦测试
 
 ## 6. 集成与交付验证
 
-- [ ] 6.1 将 MCP Registry 接入 embedded/local runtime、Server 和工具执行生命周期，验证无 MCP 配置启动路径不变、runtime.close 释放连接且重复 close 安全
-- [ ] 6.2 运行受影响包的测试与 typecheck，再从仓库根目录运行 `bun run check`；按 review checklist 检查依赖方向、日志脱敏、错误边界和生成文件状态
+- [x] 6.1 将 MCP Registry 接入 embedded/local runtime、Server 和工具执行生命周期，验证无 MCP 配置启动路径不变、runtime.close 释放连接且重复 close 安全
+- [x] 6.2 运行受影响包的测试与 typecheck，再从仓库根目录运行 `bun run check`；按 review checklist 检查依赖方向、日志脱敏、错误边界和生成文件状态
 
 ## Workflow follow-up
 

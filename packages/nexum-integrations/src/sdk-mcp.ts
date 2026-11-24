@@ -1,14 +1,16 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js"
-import type { McpConnection, McpConnector, McpServerConfig, McpToolCall, ToolResult } from "@nexum/core"
+import { McpError, type McpConnection, type McpConnector, type McpServerConfig, type McpToolCall, type ToolResult } from "@nexum/core"
 
 export interface McpSdkConnectorOptions {
   readonly clientName?: string
   readonly clientVersion?: string
   readonly fetch?: FetchLike
   readonly oauth?: (config: McpServerConfig) => OAuthClientProvider | undefined
+  readonly onAuthorizationRequired?: (config: McpServerConfig) => void | Promise<void>
 }
 
 /** 使用官方 MCP TypeScript SDK 创建远程 Streamable HTTP 连接。 */
@@ -46,10 +48,17 @@ export function createMcpSdkConnector(options: McpSdkConnectorOptions = {}): Mcp
       })
       transport.onclose = () => closed.forEach((listener) => listener())
       signal.addEventListener("abort", () => void transport.close(), { once: true })
-      return client.connect(transport).then(() => createConnection(client, transport, toolsChanged, closed)).catch((error: unknown) => {
-        void transport.close()
+      try {
+        await client.connect(transport)
+        return createConnection(client, transport, toolsChanged, closed)
+      } catch (error) {
+        await transport.close()
+        if (error instanceof UnauthorizedError) {
+          await options.onAuthorizationRequired?.(config)
+          throw new McpError("needs_auth", "MCP OAuth 需要用户授权")
+        }
         throw error
-      })
+      }
     },
   }
 }
