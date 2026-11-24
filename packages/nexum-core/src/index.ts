@@ -1483,7 +1483,24 @@ export type {
 } from "./skill-invocation.js"
 export type { MemoryItem, MemoryPort, MemoryQuery } from "./memory.js"
 export type { HostPort, HostReadInput, HostShellInput, HostWriteInput } from "./host.js"
-export type { McpPort, McpPrompt, McpResource, McpServer, McpTool, McpToolCall } from "./mcp.js"
+export { McpError, createMcpRegistry } from "./mcp.js"
+export type {
+  McpConnection,
+  McpConnectionErrorCode,
+  McpConnector,
+  McpErrorSummary,
+  McpLegacyServerStatus,
+  McpPort,
+  McpPrompt,
+  McpRegistry,
+  McpRegistryOptions,
+  McpResource,
+  McpServer,
+  McpServerConfig,
+  McpServerStatus,
+  McpTool,
+  McpToolCall,
+} from "./mcp.js"
 export { createNexumRuntime, NexumRuntimeError } from "./runtime.js"
 export type {
   NexumCapability,
