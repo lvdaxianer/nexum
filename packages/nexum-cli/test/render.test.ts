@@ -70,16 +70,17 @@ test("status tracks permission, question and retry events", () => {
   expect(renderer.status()).toBe("cancelled")
 })
 
-test("thinking live never overwrites an active tool live line", () => {
+test("thinking live never overwrites an active tool live line", async () => {
   const io = memoryIO({ anim: true })
   const renderer = createRenderer({ io })
   renderer.event(event("tool.request", { toolCallID: "tool_1", toolName: "read" }, 1))
   renderer.event(event("assistant.reasoning", { content: "工具运行期间的推理" }, 2))
   renderer.event(event("tool.result", { toolCallID: "tool_1", toolName: "read", ok: true, output: "完成" }, 3))
   renderer.close()
+  await new Promise((resolve) => setTimeout(resolve, 200))
   const out = io.plain()
   expect(out).toContain("✓ 工具结果 read")
-  expect(out).not.toContain("思考过程")
+  expect(out.split("✓ 工具结果 read · 完成\n")[1]).toBe("")
 })
 
 test("historyLines compacts canonical history", () => {
