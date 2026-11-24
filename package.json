@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "bun run --cwd packages/nexum-test dev",
     "dev:surface": "bun run --cwd packages/nexum-surfaces dev",
+    "dev:server": "bun run --cwd packages/nexum-server dev",
+    "cli": "bun run --cwd packages/nexum-cli start",
     "build": "bun turbo build",
     "lint": "oxlint packages/nexum-*",
     "typecheck": "bun turbo typecheck --concurrency=3",

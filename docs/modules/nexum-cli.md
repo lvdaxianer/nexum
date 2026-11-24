@@ -17,6 +17,9 @@
 包通过 `bin` 暴露 `nexum` 命令，入口为 [`src/main.ts`](../../packages/nexum-cli/src/main.ts)：
 
 ```bash
+# 仓库根目录(推荐)
+bun run cli -- --help
+
 # 开发环境直接运行
 bun packages/nexum-cli/src/main.ts --help
 

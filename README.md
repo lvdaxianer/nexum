@@ -267,6 +267,14 @@ bun install
 bun run --cwd packages/nexum-test dev
 ```
 
+启动 Headless Server 与终端 CLI：
+
+```bash
+bun run dev:server      # 前台启动 Server(http://127.0.0.1:4097),Ctrl+C 停止
+bun run cli             # 进入 REPL(另开一个终端)
+bun run cli -- --help   # 查看全部命令;子命令直接跟在后面,如 bun run cli session list
+```
+
 分别验证包：
 
 ```bash
