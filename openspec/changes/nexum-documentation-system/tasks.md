@@ -23,7 +23,7 @@
 ## 4. Package 模块文档
 
 - [x] 4.1 创建 `docs/modules/nexum-protocol.md`、`nexum-client.md`、`nexum-server.md`、`nexum-chat-surface.md` 和 `nexum-surfaces.md`；核对公开入口、依赖方向、能力映射、接入示例和测试命令，并验证源码链接存在。
-- [ ] 4.2 创建 `docs/modules/nexum-core.md`、`nexum-application.md`、`nexum-persistence.md`、`nexum-integrations.md` 和 `nexum-test.md`；核对职责边界、端口/适配器、持久化/恢复行为、运行时组合和测试入口，并验证 package 级命令可从文档定位。
+- [x] 4.2 创建 `docs/modules/nexum-core.md`、`nexum-application.md`、`nexum-persistence.md`、`nexum-integrations.md` 和 `nexum-test.md`；核对职责边界、端口/适配器、持久化/恢复行为、运行时组合和测试入口，并验证 package 级命令可从文档定位。
 - [ ] 4.3 为每份模块文档补充“修改同步清单”，将其关联到对应能力文档、API 文档、源码入口和测试；验证 `packages/` 下每个 `nexum-*` 目录都有且只有一个模块文档入口。
 
 ## 5. 集成验证与交付
