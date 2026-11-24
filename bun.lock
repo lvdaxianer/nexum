@@ -44,6 +44,22 @@
         "vite-plugin-solid": "2.11.10",
       },
     },
+    "packages/nexum-cli": {
+      "name": "@nexum/cli",
+      "version": "0.1.0",
+      "bin": {
+        "nexum": "./src/main.ts",
+      },
+      "dependencies": {
+        "@nexum/client": "workspace:*",
+        "@nexum/surface-adapter": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/nexum-client": {
       "name": "@nexum/client",
       "version": "0.1.0",
@@ -301,6 +317,8 @@
     "@nexum/application": ["@nexum/application@workspace:packages/nexum-application"],
 
     "@nexum/chat-surface": ["@nexum/chat-surface@workspace:packages/nexum-chat-surface"],
+
+    "@nexum/cli": ["@nexum/cli@workspace:packages/nexum-cli"],
 
     "@nexum/client": ["@nexum/client@workspace:packages/nexum-client"],
 
