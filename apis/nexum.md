@@ -2,7 +2,7 @@
 
 本文是 Nexum Runtime 对外 API 的使用说明。协议模型的权威定义位于 [`packages/nexum-protocol`](../packages/nexum-protocol/README.md)，服务端装配位于 [`packages/nexum-server`](../packages/nexum-server/README.md)。
 
-本文档覆盖 Nexum Runtime 的模型、默认角色提示词、Session、Permission、Question、Skill 和事件路由；其中 Skill 管理路由归属 `Skill Registry` 模块，调用方是 Nexum Web UI 和 Session Agent。
+本文档覆盖 Nexum Runtime 的模型、默认角色提示词、Session、Permission、Question、Skill、MCP 和事件路由；其中 Skill 管理路由归属 `Skill Registry` 模块，MCP 路由归属 `MCP Runtime Registry`，调用方是 Nexum Web UI 和 Session Agent。
 
 ### 对外 route 覆盖表
 
@@ -27,6 +27,7 @@
 | Permission  | `/api/nexum/session/:sessionID/permission`、`/permission/:requestID/reply`        | [Permission 与策略](#permission-与策略)                                  | 已覆盖   |
 | Question    | `/api/nexum/session/:sessionID/question`、`/question/:requestID/reply`、`/cancel` | [Question 反问](#question-反问)                                          | 已覆盖   |
 | Skill       | `/api/nexum/skills...`                                                            | [Skill 注册管理](#skill-注册管理)                                        | 已覆盖   |
+| MCP         | `/api/experimental/nexum/mcp...`                                                  | [MCP 生命周期](#mcp-生命周期)                                            | 已覆盖   |
 
 ### 逐路由审计
 
@@ -62,6 +63,18 @@
 | `POST`                   | `/api/nexum/skills/validate`                                | [Skill 注册管理](#skill-注册管理)         | 已记录 valid、诊断和 safe summary                | HTTP      |
 | `POST`                   | `/api/nexum/skills/:id/activate`                            | [Skill 注册管理](#skill-注册管理)         | 已记录 sessionID/text、权限和激活错误            | 表格      |
 | `DELETE`                 | `/api/nexum/skills/:id`                                     | [Skill 注册管理](#skill-注册管理)         | 已记录 deleted、源目录保留和 not found           | HTTP      |
+| `GET`                    | `/api/experimental/nexum/mcp`                               | [MCP 生命周期](#mcp-生命周期)             | 已记录安全状态、retrying 字段和启动快照语义      | JSON      |
+| `POST`                   | `/api/experimental/nexum/mcp`                               | [MCP 生命周期](#mcp-生命周期)             | 已记录远程 URL 注册、持久化和配置错误            | JSON      |
+| `POST`                   | `/api/experimental/nexum/mcp/:id/connect`                   | [MCP 生命周期](#mcp-生命周期)             | 已记录显式连接、重试预算重置和安全错误           | JSON      |
+| `POST`                   | `/api/experimental/nexum/mcp/:id/disconnect`                | [MCP 生命周期](#mcp-生命周期)             | 已记录主动断开和取消自动重试                     | JSON      |
+| `DELETE`                 | `/api/experimental/nexum/mcp/:id`                           | [MCP 生命周期](#mcp-生命周期)             | 已记录移除 Registry 与配置                       | JSON      |
+| `GET`                    | `/api/experimental/nexum/mcp/:id/tools`                     | [MCP 生命周期](#mcp-生命周期)             | 已记录工具目录和连接错误                         | JSON      |
+| `GET`                    | `/api/experimental/nexum/mcp/:id/resources`                 | [MCP 生命周期](#mcp-生命周期)             | 已记录资源目录和连接错误                         | JSON      |
+| `GET`                    | `/api/experimental/nexum/mcp/:id/prompts`                   | [MCP 生命周期](#mcp-生命周期)             | 已记录 Prompt 目录和连接错误                     | JSON      |
+| `POST`                   | `/api/experimental/nexum/mcp/:id/oauth/authorize`           | [MCP OAuth](#mcp-oauth)                   | 已记录授权尝试、state/PKCE 和安全响应            | JSON      |
+| `GET`                    | `/api/experimental/nexum/mcp/oauth/:attemptID`              | [MCP OAuth](#mcp-oauth)                   | 已记录授权状态和过期语义                         | JSON      |
+| `POST`                   | `/api/experimental/nexum/mcp/oauth/:attemptID/complete`     | [MCP OAuth](#mcp-oauth)                   | 已记录 redirect 提交和连接恢复                   | JSON      |
+| `POST`                   | `/api/experimental/nexum/mcp/oauth/:attemptID/cancel`       | [MCP OAuth](#mcp-oauth)                   | 已记录取消授权和凭据不落地                       | JSON      |
 
 未知信息明确标记为“当前认证约定待确认；服务实现未校验认证信息”。当前实现不读取 Cookie，相关章节均标注“不适用”；不要把这些说明解释成已实现的认证承诺。
 
@@ -77,23 +90,24 @@
 
 ## 资源与操作
 
-| 方法                      | 路径                                                  | 用途                                                     |
-| ------------------------- | ----------------------------------------------------- | -------------------------------------------------------- |
-| `GET`                     | `/api/nexum/capabilities`                             | 能力发现和事件类型发现                                   |
-| `GET` / `PUT`             | `/api/nexum/model`                                    | 读取和保存模型配置                                       |
-| `POST`                    | `/api/nexum/model/probe`                              | 探测模型能力                                             |
-| `GET` / `PUT` / `DELETE`  | `/api/nexum/role-prompt`                              | 读取、保存和恢复默认角色提示词                           |
-| `GET` / `POST`            | `/api/nexum/session`                                  | 列出或创建 Session                                       |
-| `PUT` / `DELETE`          | `/api/nexum/session/:sessionID`                       | 更新或删除 Session                                       |
-| `GET`                     | `/api/nexum/session/:sessionID/state`                 | 获取恢复状态                                             |
-| `GET`                     | `/api/experimental/nexum/session/:sessionID/messages` | 分页读取 canonical 对话历史；实验性接口                  |
-| `POST`                    | `/api/nexum/session/:sessionID/prompt`                | 提交长任务 Prompt                                        |
-| `POST`                    | `/api/experimental/nexum/session/:sessionID/continue` | 从既有 User/Tool 上下文继续运行；实验性接口              |
-| `POST`                    | `/api/nexum/session/:sessionID/cancel`                | 取消当前运行                                             |
-| `GET`                     | `/api/nexum/session/:sessionID/events`                | 订阅 SSE 事件流                                          |
-| `GET` / `POST`            | `/api/nexum/session/:sessionID/permission...`         | 查询和回复权限请求                                       |
-| `GET` / `POST`            | `/api/nexum/session/:sessionID/question...`           | 查询、回答和取消结构化反问                               |
-| `GET` / `POST` / `DELETE` | `/api/nexum/skills...`                                | Skill 列表、详情、按地址注册、刷新、校验、取消注册和激活 |
+| 方法                      | 路径                                                  | 用途                                                        |
+| ------------------------- | ----------------------------------------------------- | ----------------------------------------------------------- |
+| `GET`                     | `/api/nexum/capabilities`                             | 能力发现和事件类型发现                                      |
+| `GET` / `PUT`             | `/api/nexum/model`                                    | 读取和保存模型配置                                          |
+| `POST`                    | `/api/nexum/model/probe`                              | 探测模型能力                                                |
+| `GET` / `PUT` / `DELETE`  | `/api/nexum/role-prompt`                              | 读取、保存和恢复默认角色提示词                              |
+| `GET` / `POST`            | `/api/nexum/session`                                  | 列出或创建 Session                                          |
+| `PUT` / `DELETE`          | `/api/nexum/session/:sessionID`                       | 更新或删除 Session                                          |
+| `GET`                     | `/api/nexum/session/:sessionID/state`                 | 获取恢复状态                                                |
+| `GET`                     | `/api/experimental/nexum/session/:sessionID/messages` | 分页读取 canonical 对话历史；实验性接口                     |
+| `POST`                    | `/api/nexum/session/:sessionID/prompt`                | 提交长任务 Prompt                                           |
+| `POST`                    | `/api/experimental/nexum/session/:sessionID/continue` | 从既有 User/Tool 上下文继续运行；实验性接口                 |
+| `POST`                    | `/api/nexum/session/:sessionID/cancel`                | 取消当前运行                                                |
+| `GET`                     | `/api/nexum/session/:sessionID/events`                | 订阅 SSE 事件流                                             |
+| `GET` / `POST`            | `/api/nexum/session/:sessionID/permission...`         | 查询和回复权限请求                                          |
+| `GET` / `POST`            | `/api/nexum/session/:sessionID/question...`           | 查询、回答和取消结构化反问                                  |
+| `GET` / `POST` / `DELETE` | `/api/nexum/skills...`                                | Skill 列表、详情、按地址注册、刷新、校验、取消注册和激活    |
+| `GET` / `POST` / `DELETE` | `/api/experimental/nexum/mcp...`                      | MCP 注册、状态、连接控制、目录读取和 OAuth 授权；实验性接口 |
 
 ## Health 与 Capabilities
 
@@ -865,6 +879,67 @@ DELETE http://127.0.0.1:4097/api/nexum/skills/metric-view-lifecycle
 ### Skill registry 事件
 
 注册、刷新、校验和取消注册可产生 `skill.updated` 事件，数据只包含 Skill ID、变更类型和安全状态，不包含绝对路径或文件正文。已有 `skill.activated` 和 `skill.failed` 事件保持不变。
+
+## MCP 生命周期
+
+MCP 接口位于实验性前缀 `/api/experimental/nexum/mcp`。注册远程 URL 后，Server 将配置写入 Runtime 的 `McpServerConfigStore`；Local Runtime 启动时恢复配置并异步连接。Server 等待配置恢复完成，但不等待远程 transport 建连，因此 `GET /mcp` 可能先返回 `pending`。
+
+Runtime 是连接、timer、transport、工具目录和 OAuth 凭据的唯一所有者。Client 页面启动时读取列表；对 `pending/retrying` 状态进行可见性受控的轮询，对 `failed` 调用 `connect`，对 `needs_auth` 调用 OAuth authorize。Client 不自行创建 MCP transport、不保存凭据，也不复制自动重试逻辑。
+
+### `GET /api/experimental/nexum/mcp`
+
+成功返回当前注册列表。状态包括 `disabled`、`pending`、`retrying`、`connected`、`failed`、`needs_auth`、`available` 和 `unavailable`；重试期间可返回 `retryAttempt` 与 Unix 毫秒时间戳 `nextRetryAt`。
+
+```json
+{
+  "data": [
+    {
+      "id": "remote-search",
+      "name": "Remote Search",
+      "status": "retrying",
+      "url": "https://example.com/mcp",
+      "retryAttempt": 1,
+      "nextRetryAt": 1795505000000,
+      "error": { "code": "connection_failed", "message": "连接失败" }
+    }
+  ],
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_mcp_001" }
+}
+```
+
+响应只包含安全快照，不包含请求 Header、OAuth token、refresh token、client secret 或其他凭据。列表为空表示当前没有已注册配置，不表示 MCP 功能异常。
+
+### `POST /api/experimental/nexum/mcp`
+
+注册一个远程 MCP URL：
+
+```json
+{
+  "id": "remote-search",
+  "name": "Remote Search",
+  "url": "https://example.com/mcp"
+}
+```
+
+成功返回 `200` 和已注册快照，并将配置持久化；缺少字段或 URL 无效返回 `400 NEXUM_MCP_INVALID_CONFIG`，Runtime/Registry 未装配返回 `503 NEXUM_MCP_UNAVAILABLE`，持久化失败返回 `500 NEXUM_MCP_CONFIG_SAVE_FAILED`。公开配置不得承载 Authorization、Cookie、token、secret 或 API key。
+
+### `POST /api/experimental/nexum/mcp/{id}/connect`
+
+显式发起或重新发起连接。该操作清除旧的重试 timer，并重置本次自动重试预算；调用返回当前快照，后续状态通过 `GET /mcp` 观察。初始连接或意外断线的自动重试延迟为 `250ms → 1s → 3s`，最多 3 次；达到上限进入 `failed`。`invalid_config` 和 `needs_auth` 不会自动重试。
+
+### `POST /api/experimental/nexum/mcp/{id}/disconnect` 与 `DELETE /api/experimental/nexum/mcp/{id}`
+
+`disconnect` 只停止连接并取消重试，不删除注册配置；`DELETE` 同时移除 Registry 条目和持久化配置。两者都会清理 transport 与 timer。删除持久化配置失败返回 `500 NEXUM_MCP_CONFIG_REMOVE_FAILED`。
+
+### 目录读取
+
+`GET /mcp/{id}/tools`、`GET /mcp/{id}/resources` 和 `GET /mcp/{id}/prompts` 读取已连接 Server 的目录。目录变化由 Runtime 事件触发 Application Tool Registry 刷新；未连接、已移除或连接失败时返回对应的 MCP 控制错误，不等待一个尚未加载的远程连接。
+
+## MCP OAuth
+
+`POST /mcp/{id}/oauth/authorize` 创建一次授权尝试并返回安全的 `attemptID`、状态和可选 `authorizationUrl`。尝试内部绑定 OAuth `state` 与 PKCE verifier；凭据只写入 `McpCredentialStore`。浏览器优先使用 `127.0.0.1` loopback callback，也可以把完整 redirect URL 提交给 `POST /mcp/oauth/{attemptID}/complete`；`GET /mcp/oauth/{attemptID}` 查询状态，`POST /mcp/oauth/{attemptID}/cancel` 取消尝试。
+
+授权完成后由 Runtime OAuth manager 重新连接目标 Server；Client 只打开授权 URL 并继续读取列表状态。授权等待不会被连接重试 timer 反复触发，也不会把 OAuth 凭据返回给 Client。
 
 ## 事件语义
 
