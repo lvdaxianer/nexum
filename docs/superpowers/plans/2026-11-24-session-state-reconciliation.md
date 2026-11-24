@@ -15,11 +15,11 @@
 **Files:**
 - Modify: `packages/nexum-chat-surface/test/chat-projection.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
   构造 `model.attempt`、`assistant.text`、`run.settled` 事件序列，断言同一 run 的模型项和 Agent 项都不再是 `running/streaming`；对 `failed` 和 `cancelled` 各增加一条独立断言。
 
-- [ ] **Step 2: Run the focused test**
+- [x] **Step 2: Run the focused test**
 
   Run: `cd packages/nexum-chat-surface && bun test test/chat-projection.test.ts`
 
@@ -31,15 +31,15 @@
 - Modify: `packages/nexum-chat-surface/src/chat-surface.tsx`
 - Modify: `packages/nexum-chat-surface/src/index.ts`
 
-- [ ] **Step 1: Add the smallest terminal reconciliation helper**
+- [x] **Step 1: Add the smallest terminal reconciliation helper**
 
   在 `projectChatEvent` 的 `run.settled` 分支中，先根据 `runID` 和结果更新 transient thinking、assistant、reasoning、model attempt 与 retry 项，再追加/更新唯一的 settled 状态项；不要覆盖已完成的工具、权限和问题项。
 
-- [ ] **Step 2: Add the optional host callback**
+- [x] **Step 2: Add the optional host callback**
 
   在 `ChatSurfaceProps` 增加可选 `onSessionStatusChange(sessionID, status)`，仅在已识别的终态事件中调用；回调不是必填项，未提供时现有宿主行为保持不变。
 
-- [ ] **Step 3: Run focused tests**
+- [x] **Step 3: Run focused tests**
 
   Run: `cd packages/nexum-chat-surface && bun test test/chat-projection.test.ts`
 
@@ -51,15 +51,15 @@
 - Modify: `packages/nexum-surfaces/src/main.tsx`
 - Test: `packages/nexum-surfaces/test/permission.smoke.spec.ts`
 
-- [ ] **Step 1: Add the failing host-level assertion**
+- [x] **Step 1: Add the failing host-level assertion**
 
   在现有 ChatSurface 宿主测试中验证终态事件到达后，匹配 Session 的状态更新为终态，其他 Session 保持原状态。
 
-- [ ] **Step 2: Merge by stable Session ID**
+- [x] **Step 2: Merge by stable Session ID**
 
   将回调传给 ChatSurface，并用 `setSessions(current => current.map(...))` 只替换匹配项的状态字段；不重新请求整个列表。
 
-- [ ] **Step 3: Run host checks**
+- [x] **Step 3: Run host checks**
 
   Run: `cd packages/nexum-surfaces && bun typecheck`
 
@@ -70,11 +70,11 @@
 **Files:**
 - Modify: `openspec/changes/session-state-reconciliation/tasks.md`
 
-- [ ] **Step 1: Validate artifacts**
+- [x] **Step 1: Validate artifacts**
 
   Run: `openspec validate session-state-reconciliation --strict`
 
-- [ ] **Step 2: Run package and repository verification**
+- [x] **Step 2: Run package and repository verification**
 
   Run: `cd packages/nexum-chat-surface && bun test`
 
@@ -82,10 +82,10 @@
 
   Run: `bun run check`
 
-- [ ] **Step 3: Review the diff**
+- [x] **Step 3: Review the diff**
 
   Confirm only the intended state projection, callback, host merge, tests and change artifacts are modified; confirm no generated client files or unrelated branches are touched.
 
-- [ ] **Step 4: Commit and merge**
+- [x] **Step 4: Commit and merge**
 
   Mark all completed OpenSpec tasks, create a Chinese Conventional Commit with body and `Refs: OpenSpec session-state-reconciliation`, then merge `fix-runtime-state` into `dev-v0.0.1` with `--no-ff`.

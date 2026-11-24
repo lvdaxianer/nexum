@@ -58,6 +58,28 @@ test("ChatSurface records reasoning timing across the streaming lifecycle", () =
   expect(reasoning?.elapsedMs).toBe(12_000)
 })
 
+test("ChatSurface settles streamed items when a run completes", () => {
+  const attempted = projectChatEvent([], event("model.attempt", { attempt: 1, maxRetries: 0 }, 1))
+  const streamed = projectChatEvent(attempted, event("assistant.text", { content: "完成" }, 2))
+  const settled = projectChatEvent(streamed, event("run.settled", { result: "completed" }, 3))
+
+  expect(settled.find((item) => item.id === "model.attempt:run_001")?.status).toBe("completed")
+  expect(settled.find((item) => item.kind === "assistant")?.status).toBe("completed")
+  expect(settled.some((item) => item.status === "running" || item.status === "streaming")).toBe(false)
+})
+
+test.each([
+  ["failed", "failed"],
+  ["cancelled", "cancelled"],
+] as const)("ChatSurface settles streamed items when a run is %s", (result, expectedStatus) => {
+  const attempted = projectChatEvent([], event("model.attempt", { attempt: 1, maxRetries: 0 }, 1))
+  const streamed = projectChatEvent(attempted, event("assistant.text", { content: "中断前输出" }, 2))
+  const settled = projectChatEvent(streamed, event("run.settled", { result }, 3))
+
+  expect(settled.find((item) => item.id === "model.attempt:run_001")?.status).toBe(expectedStatus)
+  expect(settled.find((item) => item.kind === "assistant")?.status).toBe(expectedStatus)
+})
+
 function event(type: NexumEvent["type"], data: Record<string, unknown>, sequence: number, occurredAt = "2026-11-24T00:00:00.000Z"): NexumEvent {
   return {
     eventID: `event_${sequence}`,

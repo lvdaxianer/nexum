@@ -5,6 +5,7 @@ import { ChatSurface } from "@nexum/chat-surface"
 import { Drawer } from "./drawer"
 import { ConfirmDialog } from "./confirm-dialog"
 import { Popover } from "@kobalte/core/popover"
+import { mergeSessionStatus } from "./session-state"
 import type {
   NexumModelProbe,
   NexumRolePrompt,
@@ -1295,6 +1296,7 @@ function App() {
           <ChatSurface
             sessionID={sessionID()}
             client={{ baseUrl: apiBaseUrl }}
+            onSessionStatusChange={(id, status) => setSessions((current) => mergeSessionStatus(current, id, status))}
             onOpenPermissionSettings={openPolicyPopover}
             composerExtras={
               <button type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>

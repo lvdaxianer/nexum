@@ -5,6 +5,7 @@ import type {
   NexumPermission,
   NexumQuestion,
   NexumSessionMessages,
+  NexumSession,
   NexumSkill,
 } from "@nexum/client"
 import { createChatProtocolAdapter } from "./index"
@@ -54,6 +55,8 @@ export type ChatSurfaceProps = {
   readonly composerExtras?: JSX.Element
   /** 用户从组件内请求打开权限设置时调用（请求条「权限设置」）。 */
   readonly onOpenPermissionSettings?: () => void
+  /** 当前 Session 进入终态时通知宿主同步外层列表。 */
+  readonly onSessionStatusChange?: (sessionID: ChatSessionID, status: NexumSession["status"]) => void
 }
 
 const historyPageSize = 50
@@ -263,17 +266,23 @@ export function ChatSurface(props: ChatSurfaceProps) {
         setContinueAvailable(result === "failed")
         setContinueBusy(false)
         setNotice(result === "failed" ? "本轮运行失败，可以继续运行" : result === "completed" ? "本轮运行已完成" : "本轮运行已取消")
+        props.onSessionStatusChange?.(id, result)
       }
     }
     if (event.type === "session.completed") {
       setStatus("completed")
       setContinueAvailable(false)
+      props.onSessionStatusChange?.(id, "completed")
     }
-    if (event.type === "session.failed") setStatus("failed")
+    if (event.type === "session.failed") {
+      setStatus("failed")
+      props.onSessionStatusChange?.(id, "failed")
+    }
     if (event.type === "session.cancelled") {
       setStatus("cancelled")
       setContinueAvailable(false)
       setCancelBusy(false)
+      props.onSessionStatusChange?.(id, "cancelled")
     }
     if (["assistant.thinking", "assistant.reasoning", "assistant.text", "tool.result"].includes(event.type)) setStatus("running")
     if (event.type === "permission.requested") {
@@ -718,11 +727,11 @@ export function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem
   if (event.type === "run.settled") {
     const result = runResultFromEvent(data)
     if (!result) return items
-    return upsertChatItem(items, { id: `run:${event.runID}:settled`, kind: "status", title: "运行已结算", content: result === "failed" ? "运行失败，可继续执行" : result === "completed" ? "运行完成" : "运行已取消", status: result === "failed" ? "failed" : result === "cancelled" ? "cancelled" : "completed", localTime: timestamp, eventType: event.type })
+    return upsertChatItem(settleRunItems(items, event.runID, result, event.occurredAt), { id: `run:${event.runID}:settled`, kind: "status", title: "运行已结算", content: result === "failed" ? "运行失败，可继续执行" : result === "completed" ? "运行完成" : "运行已取消", status: result, localTime: timestamp, eventType: event.type })
   }
   if (event.type === "session.completed" || event.type === "session.failed" || event.type === "session.cancelled") {
     const result = event.type === "session.failed" ? "failed" : event.type === "session.cancelled" ? "cancelled" : "completed"
-    return [...closeReasoning(items.filter((item) => !item.thinking), event.runID, event.occurredAt), { id: `session:${event.runID}:${result}`, kind: "status", title: result === "failed" ? "运行失败" : result === "cancelled" ? "运行已取消" : "运行完成", content: result === "failed" ? value("message") || "Core 返回运行失败" : result === "cancelled" ? "本轮运行已停止，可以继续输入新的 Prompt" : "本轮 Coding 任务已完成", status: result, localTime: timestamp, eventType: event.type }]
+    return [...settleRunItems(items, event.runID, result, event.occurredAt), { id: `session:${event.runID}:${result}`, kind: "status", title: result === "failed" ? "运行失败" : result === "cancelled" ? "运行已取消" : "运行完成", content: result === "failed" ? value("message") || "Core 返回运行失败" : result === "cancelled" ? "本轮运行已停止，可以继续输入新的 Prompt" : "本轮 Coding 任务已完成", status: result, localTime: timestamp, eventType: event.type }]
   }
   return items
 }
@@ -825,6 +834,31 @@ function closeReasoning(items: ChatItem[], runID: string, occurredAt?: string): 
   if (last?.kind !== "reasoning" || !last.id.startsWith(`reasoning:${runID}:`)) return items
   const elapsedMs = last.startedAt ? Math.max(0, new Date(occurredAt ?? Date.now()).getTime() - new Date(last.startedAt).getTime()) : undefined
   return updateChatItem(items, last.id, { status: "completed", ...(elapsedMs !== undefined ? { elapsedMs } : {}) })
+}
+
+/**
+ * 将同一 run 的瞬时投影项收敛到终态。
+ *
+ * @param items 当前聊天投影项
+ * @param runID 需要收敛的运行 ID
+ * @param result 运行的终态
+ * @param occurredAt 运行终态事件时间
+ * @returns 收敛后的聊天投影项
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-24
+ */
+function settleRunItems(items: ChatItem[], runID: string, result: "completed" | "failed" | "cancelled", occurredAt?: string): ChatItem[] {
+  return items
+    .filter((item) => !(item.thinking && item.id === `thinking:${runID}`))
+    .map((item) => {
+      if (item.kind === "reasoning" && item.id.startsWith(`reasoning:${runID}:`)) {
+        const elapsedMs = item.startedAt ? Math.max(0, new Date(occurredAt ?? Date.now()).getTime() - new Date(item.startedAt).getTime()) : undefined
+        return { ...item, status: result, ...(elapsedMs !== undefined ? { elapsedMs } : {}) }
+      }
+      if (item.kind === "assistant" && item.id.startsWith(`assistant:${runID}:`)) return { ...item, status: result }
+      if (item.kind === "execution" && (item.eventType === "model.attempt" || item.eventType === "model.retry") && item.id.endsWith(`:${runID}`)) return { ...item, status: result }
+      return item
+    })
 }
 
 function compactSummary(value: string): string {

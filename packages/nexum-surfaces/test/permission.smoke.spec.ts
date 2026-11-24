@@ -674,6 +674,7 @@ describe.serial("Nexum UI smoke", () => {
       await expect(page.locator(".chat-message.user")).toContainText("查看环境")
       await expect(page.locator(".chat-message.assistant")).toContainText("命令已执行")
       await expect(page.locator(".act-row").filter({ hasText: "工具结果" })).toContainText("已完成")
+      await expect(page.locator(".act-row").filter({ hasText: "模型尝试" })).toContainText("已完成")
       await page.getByRole("tab", { name: /事件/ }).click()
       await expect(page.getByText("tool.result")).toBeVisible()
       await expect(page.locator("body")).not.toContainText("super-secret-token")
@@ -1244,6 +1245,7 @@ describe.serial("Nexum UI smoke", () => {
     await expect(page.locator(".chat-message.assistant")).not.toContainText("先检查仓库源")
     await expect(page.locator(".thinking-card")).toHaveCount(0)
     await expect(page.locator(".thinking-status")).toHaveCount(0)
+    await expect(page.locator(".session-status-completed")).toHaveCount(1)
   })
 })
 
