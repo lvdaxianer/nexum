@@ -40,6 +40,31 @@ export interface McpServerConfig {
   readonly protocol?: "legacy" | "auto" | "2026-07-28"
 }
 
+export interface McpServerConfigStore {
+  readonly list: () => Promise<readonly McpServerConfig[]>
+  readonly get: (serverID: string) => Promise<McpServerConfig | undefined>
+  readonly save: (config: McpServerConfig) => Promise<void>
+  readonly remove: (serverID: string) => Promise<void>
+}
+
+export interface McpOAuthCredential {
+  readonly serverID: string
+  readonly accessToken: string
+  readonly refreshToken?: string
+  readonly expiresAt?: number
+  readonly tokenType?: string
+  readonly scope?: string
+  readonly resource?: string
+  readonly clientId?: string
+  readonly clientSecret?: string
+}
+
+export interface McpCredentialStore {
+  readonly get: (serverID: string) => Promise<McpOAuthCredential | undefined>
+  readonly save: (credential: McpOAuthCredential) => Promise<void>
+  readonly remove: (serverID: string) => Promise<void>
+}
+
 export interface McpServer {
   readonly id: string
   readonly name: string
@@ -131,17 +156,17 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
   const registry = {
     async register(config: McpServerConfig): Promise<McpServer> {
       assertOpen()
-      validateConfig(config)
-      if (entries.has(config.id)) throw new McpError("server_exists", `MCP Server 已存在: ${config.id}`)
+      const normalized = normalizeMcpServerConfig(config)
+      if (entries.has(normalized.id)) throw new McpError("server_exists", `MCP Server 已存在: ${normalized.id}`)
       const entry: McpEntry = {
-        config,
-        server: snapshot(config, config.disabled ? "disabled" : "pending"),
+        config: normalized,
+        server: snapshot(normalized, normalized.disabled ? "disabled" : "pending"),
         generation: 0,
       }
-      entries.set(config.id, entry)
+      entries.set(normalized.id, entry)
       publish(entry.server)
-      if (config.disabled || options.autoConnect === false) return entry.server
-      void registry.connect(config.id)
+      if (normalized.disabled || options.autoConnect === false) return entry.server
+      void registry.connect(normalized.id)
       return entry.server
     },
 
@@ -274,11 +299,37 @@ export function createMcpRegistry(options: McpRegistryOptions): McpRegistry {
   return registry
 }
 
-function validateConfig(config: McpServerConfig): void {
+export function validateMcpServerConfig(config: McpServerConfig): void {
+  normalizeMcpServerConfig(config)
+}
+
+export function normalizeMcpServerConfig(config: McpServerConfig): McpServerConfig {
   if (!config.id.trim() || !config.name.trim()) throw new McpError("invalid_config", "MCP Server id/name 不能为空")
-  if (!/^https?:\/\//.test(config.url)) throw new McpError("invalid_config", "MCP Server URL 必须使用 HTTP(S)")
+  const url = parseMcpUrl(config.url)
+  const headers = config.headers ? { ...config.headers } : undefined
+  if (Object.keys(headers ?? {}).some((name) => /authorization|cookie|token|secret|password|api[-_]?key/i.test(name))) {
+    throw new McpError("invalid_config", "MCP 配置不得持久化凭据 header")
+  }
   if (config.timeoutMs !== undefined && (!Number.isInteger(config.timeoutMs) || config.timeoutMs <= 0)) {
     throw new McpError("invalid_config", "MCP Server timeout 必须是正整数")
+  }
+  return {
+    ...config,
+    id: config.id.trim(),
+    name: config.name.trim(),
+    url: url.toString(),
+    ...(headers ? { headers } : {}),
+  }
+}
+
+function parseMcpUrl(value: string): URL {
+  try {
+    const url = new URL(value.trim())
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error()
+    if (url.username || url.password) throw new Error()
+    return url
+  } catch {
+    throw new McpError("invalid_config", "MCP Server URL 必须是合法的 HTTP(S) 地址")
   }
 }
 
