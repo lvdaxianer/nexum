@@ -19,6 +19,8 @@ export type {
   NexumEvent,
   NexumPermission,
   NexumQuestion,
+  NexumSession,
+  NexumSessionMessages,
   NexumSkill,
 } from "@nexum/surface-adapter"
 

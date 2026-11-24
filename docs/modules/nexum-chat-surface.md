@@ -20,7 +20,7 @@
 - `createChatProtocolAdapter`、`ChatProtocolAdapter`、`ChatProtocolError`（re-export 自 `@nexum/surface-adapter`，保持兼容）。
 - `CHAT_PROTOCOL_METHODS`、`ChatProtocolMethod` 及请求/标识类型。
 - `CHAT_SURFACE_TAG`、`defineChatSurfaceElement`。
-- Permission、Question、Skill 和事件类型。
+- Permission、Question、Skill、Session、消息和事件类型。
 
 Solid 接入：
 
@@ -51,7 +51,7 @@ Web Component 接入：
 
 ## 依赖边界
 
-该包依赖 Surface Adapter、Client、Solid、DOMPurify 和 marked。它可以消费协议类型，但不能依赖 Core、Application 或 Server 内部模块。宿主通过 `@nexum/client` 或自定义 `ChatProtocolAdapter` 接入。
+该包依赖 Surface Adapter、Solid、DOMPurify 和 marked（Client 类型经 Surface Adapter 中转）。它可以消费协议类型，但不能依赖 Core、Application 或 Server 内部模块。宿主通过 `@nexum/client` 或自定义 `ChatProtocolAdapter` 接入。
 
 ## 测试与验证
 

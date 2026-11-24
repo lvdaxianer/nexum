@@ -42,7 +42,7 @@ export const USAGE = `Nexum CLI — 与 Web UI 同级的终端 Surface
 用法: nexum [--server <url>] [--session <id>] [--theme <主题>] [--no-anim] [命令]
 
   (无命令)                进入 REPL(复用最近会话或新建)
-  resume                  交互式选择会话恢复(-c/--continue 直接恢复最近)
+  resume                  交互式选择会话恢复(-c/--continue 跳过选择直接恢复最近)
   session list            列出会话
   session create [--dir <路径>] [--name <名称>]
   prompt <文本> [--session <id>]   流式执行,退出码 0/1/130
@@ -122,7 +122,7 @@ export async function run(argv: string[]): Promise<number> {
       try {
         let sessionID: string | undefined
         if (command === "resume") {
-          sessionID = await cmdResume(client, io, lineSource.prompter)
+          sessionID = values.continue ? await resolveSessionID(client, io) : await cmdResume(client, io, lineSource.prompter)
           if (!sessionID) return 1
         } else {
           sessionID = await resolveSessionID(client, io, values.session)

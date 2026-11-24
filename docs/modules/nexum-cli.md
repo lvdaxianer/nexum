@@ -33,7 +33,7 @@ bun run --cwd packages/nexum-cli start -- --help
 | 命令 | 作用 |
 | ---- | ---- |
 | `nexum`（无命令） | 进入 REPL，复用最近会话或新建 |
-| `nexum resume` | 交互式选择会话恢复；`-c`/`--continue` 直接恢复最近会话 |
+| `nexum resume` | 交互式选择会话恢复；`-c`/`--continue` 跳过选择直接恢复最近 |
 | `nexum session list` / `session create [--dir <路径>] [--name <名称>]` | 列出或创建会话 |
 | `nexum prompt <文本> [--session <id>]` | 一次性流式执行，退出码 0/1/130 |
 | `nexum status` | 连接与配置总览 |
@@ -44,7 +44,7 @@ bun run --cwd packages/nexum-cli start -- --help
 | `nexum skill list \| detail <id> \| validate [id] \| refresh [id] \| register <地址> \| unregister <id>` | Skill 发现、校验和管理 |
 | `nexum mcp list \| add \| connect <id> \| disconnect <id> \| remove <id> \| tools <id> \| resources <id> \| prompts <id>` | MCP 服务器与能力管理 |
 
-全局选项：`--server`、`--session`、`--theme`、`--no-anim`、`--version`、`--help`。
+全局选项：`--server`、`--session`、`-c`/`--continue`、`--theme`、`--no-anim`、`--version`、`--help`。
 
 ## REPL
 

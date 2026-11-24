@@ -4,6 +4,7 @@ import type {
   NexumEventOptions,
   NexumPermission,
   NexumQuestion,
+  NexumSession,
   NexumSessionMessages,
   NexumSessionState,
   NexumSkill,
@@ -187,5 +188,7 @@ export type {
   NexumEvent,
   NexumPermission,
   NexumQuestion,
+  NexumSession,
+  NexumSessionMessages,
   NexumSkill,
 }

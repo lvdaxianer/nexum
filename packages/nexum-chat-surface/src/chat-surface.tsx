@@ -1,19 +1,17 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import type { JSX } from "solid-js"
-import type {
-  NexumEvent,
-  NexumPermission,
-  NexumQuestion,
-  NexumSessionMessages,
-  NexumSession,
-  NexumSkill,
-} from "@nexum/client"
 import { createChatProtocolAdapter } from "./index"
 import type {
   ChatHistoryPage,
   ChatProtocolAdapter,
   ChatSessionID,
   ChatStateSnapshot,
+  NexumEvent,
+  NexumPermission,
+  NexumQuestion,
+  NexumSession,
+  NexumSessionMessages,
+  NexumSkill,
 } from "./index"
 import { Marked } from "marked"
 import DOMPurify from "dompurify"

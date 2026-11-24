@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { NexumEvent } from "@nexum/client"
+import type { NexumEvent } from "../src/index.ts"
 import { historyItemsFromMessages, projectChatEvent } from "../src/chat-surface.tsx"
 
 test("ChatSurface projects canonical history into user, assistant, reasoning and tool items", () => {

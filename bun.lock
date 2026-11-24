@@ -29,7 +29,6 @@
       "name": "@nexum/chat-surface",
       "version": "0.0.1",
       "dependencies": {
-        "@nexum/client": "workspace:*",
         "@nexum/surface-adapter": "workspace:*",
         "dompurify": "catalog:",
         "marked": "catalog:",
