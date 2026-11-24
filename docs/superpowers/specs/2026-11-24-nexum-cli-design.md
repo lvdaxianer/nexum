@@ -1,0 +1,110 @@
+# Nexum CLI Surface 设计
+
+## 背景
+
+协议消费链路为 `Surface → 协议适配器 → @nexum/client → @nexum/protocol → HTTP/SSE → Server`。UI 侧已有两个 Surface 消费者：`@nexum/chat-surface`（可嵌入组件）和 `@nexum/surfaces`（Web 工作台）。
+
+问题：Surface 面向协议的契约 `ChatProtocolAdapter`（10 个方法）与默认实现 `createChatProtocolAdapter` 目前长在 `@nexum/chat-surface` 内，而该包依赖 solid-js / dompurify / marked。CLI 直接 import 会把浏览器 UI 依赖拖进终端进程，违反模块边界。
+
+CLI 与 UI 同层：两者都是 Surface，通过同一个协议适配层对接协议层（`nexum.runtime.v1`），不各自实现协议逻辑。
+
+## 目标
+
+- 新增 `@nexum/cli` 包，作为与 UI 同层的终端 Surface，复用同一协议适配契约。
+- 抽出 `@nexum/surface-adapter` 包承载契约与默认实现，chat-surface 改为 re-export，公开 API 不破坏。
+- 提供 REPL（核心）与一次性命令（可脚本化）两种形态。
+- 覆盖完整交互链路：prompt、流式事件、Permission、Question、取消/继续、历史回放与断线恢复。
+- 零新增运行时三方依赖。
+
+## 非目标
+
+- 全屏 TUI（ink / opentui 等终端 UI 框架）。
+- Server 生命周期管理（不自动拉起、不守护进程）。
+- model / mcp / skill 管理命令（继续由 Web 工作台承担）。
+- 二进制编译与发布分发。
+
+## 方案
+
+### 1. 包结构与依赖方向
+
+新增两个包，均匹配根 workspace 的 `packages/nexum-*` 约定：
+
+- `packages/nexum-surface-adapter`（`@nexum/surface-adapter`）：从 chat-surface 平移 `ChatProtocolAdapter`、`ChatProtocolMethod`、`CHAT_PROTOCOL_METHODS`、全部输入类型、`ChatProtocolError`、`normalizeChatProtocolError`、`createChatProtocolAdapter` 及相关 re-export 的协议类型。符号保持原名，不引入重命名；chat-surface 改为 `export ... from "@nexum/surface-adapter"` 的兼容壳，其公开入口不变。
+- `packages/nexum-cli`（`@nexum/cli`，bin 名 `nexum`）：只依赖 `@nexum/surface-adapter`（间接 `@nexum/client` → `@nexum/protocol`），不依赖 Core、Server、chat-surface。
+
+依赖方向更新为：
+
+```text
+nexum-surface-adapter ──> nexum-client ──> nexum-protocol
+nexum-chat-surface ────> nexum-surface-adapter
+nexum-surfaces ────────> nexum-client + nexum-chat-surface
+nexum-cli ─────────────> nexum-surface-adapter
+```
+
+### 2. CLI 组成
+
+```text
+packages/nexum-cli/src/
+  main.ts       入口：node:util parseArgs 解析 --server/--session 与子命令，分发并约定退出码
+  repl.ts       交互式会话循环（核心）
+  render.ts     NexumEvent → 终端文本行投影（对应 UI 的 projectChatEvent）
+  interact.ts   Permission / Question 的终端问答流
+  commands.ts   一次性命令：session list / session create / prompt
+```
+
+入口以 `#!/usr/bin/env bun` shebang 暴露 bin；开发期通过 `bun run --cwd packages/nexum-cli start` 或 `bun packages/nexum-cli/src/main.ts` 运行。
+
+### 3. 连接与恢复
+
+- Server 地址解析顺序：`--server` flag > `NEXUM_API_URL` 环境变量 > 默认 `http://127.0.0.1:4097`。
+- 启动先调 `capabilities()` 探测；不可达时打印 Server 启动方式（`bun run --cwd packages/nexum-server dev`）并以非零退出。
+- 事件消费与 ChatSurface 一致：`eventID` 去重、`sequence` 单调递增校验、断线后按最后已知 `afterSequence` 重连续传，不假设 SSE 从未中断。
+- 打开会话时先 `loadState` + `loadHistory` 打印紧凑 transcript（用户/助手/工具摘要），再进入实时事件流；历史快照失效（`NEXUM_HISTORY_SNAPSHOT_EXPIRED`）时停止向前翻页，与 UI 处理一致。
+
+### 4. 交互语义
+
+- 状态机完全复用协议事实：`idle / running / retrying / awaiting permission / awaiting question / completed / failed / cancelled`；终态只认 `run.settled` 与 `session.*` 事件，不从文本猜测。
+- 运行中输入锁定；`Ctrl+C` 在运行中触发 `cancelRun`，空闲时退出 REPL。
+- Permission：事件到达即打印 `action / resource / reason`，提示 `允许一次 / 始终允许 / 拒绝` 三选一，调用 `replyPermission`。
+- Question：按题号渲染编号选项，单选输入序号、多选逗号分隔，按问题顺序提交二维字符串数组；支持取消，取消不伪造答案——与 UI 的 `questionAnswers` 语义一致。
+- REPL slash 命令：`/help`、`/new`、`/use <sessionID>`、`/sessions`、`/cancel`、`/continue`、`/skills`、`/events`、`/quit`。
+
+### 5. 渲染约定
+
+- 零新增依赖：`node:readline/promises` 做输入，`node:util` 的 `parseArgs` 做参数解析，ANSI 转义做颜色并尊重 `NO_COLOR`。
+- assistant 文本流式直出原文（终端不做 HTML/Markdown 渲染）；reasoning 以暗色输出；tool 调用/结果、上下文压缩、Skill 激活、模型重试均为单行状态；notice 行承载提示与错误。
+- 同一 run 的瞬时状态在 `run.settled` 时收敛，语义等价于 UI 的 `settleRunItems`。
+
+### 6. 一次性命令与退出码
+
+- `nexum session list`、`nexum session create --dir <path> [--name <name>]`：JSON 或紧凑表格输出，供脚本消费。
+- `nexum prompt "..."`（可带 `--session <id>` 复用已有会话；不带时以当前工作目录为 `directory` 隐式创建新会话）：流式输出到 stdout，`run.settled` 后按结果退出：completed → 0，failed → 1，cancelled → 130；协议错误输出到 stderr 并非零退出。
+
+### 7. 错误处理
+
+- `ChatProtocolError` 透传 `code / message / traceId`，REPL 显示为 notice 行，不中断会话。
+- 事件流断开且非用户主动断开时提示重连；重连复用 `afterSequence` 游标。
+- 参数错误、Server 不可达、协议版本不匹配（`NEXUM_INVALID_RESPONSE`）直接非零退出并给出修复提示。
+
+### 8. 测试策略
+
+- `render.ts`：事件序列 → 输出行断言，覆盖流式文本合并、reasoning 收敛、run.settled 终态收敛。
+- `repl.ts`：脚本化假 `ChatProtocolAdapter`（接口天然可注入，不 mock 全局对象）+ 注入 input/output 流，驱动 prompt、permission、question、取消全流程。
+- `commands.ts`：参数解析、输出格式与退出码。
+- 验收命令：`cd packages/nexum-cli && bun test && bun run typecheck:tsc`；`packages/nexum-chat-surface` 回归测试与类型检查；根目录 `bun run check`。
+
+## 文档同步
+
+- `packages/README.md`：包表格与依赖方向图新增两个包。
+- `docs/architecture/module-boundaries.md`：模块地图、依赖方向与变更边界同步。
+- 新增 `docs/modules/nexum-cli.md`；更新 `docs/modules/nexum-chat-surface.md`（适配器迁出说明）。
+- 根 `README.md` 文档导航补充 CLI 入口。
+- 协议无变更，`apis/nexum.md` 不需要改动。
+
+## 验收
+
+- CLI 与 UI 同层复用同一 `@nexum/surface-adapter` 契约；chat-surface 公开 API 不破坏，现有测试通过。
+- REPL 完成一轮包含 Permission 与 Question 的运行，`Ctrl+C` 取消生效，断线重连后事件不丢不重。
+- 一次性命令可脚本化，退出码符合约定。
+- 零新增运行时三方依赖（`packages/nexum-cli/package.json` 仅含 workspace 依赖）。
+- 受影响包测试、类型检查与根目录 `bun run check` 通过。
