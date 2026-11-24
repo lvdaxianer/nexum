@@ -22,6 +22,14 @@ import {
   type NexumSkillRegisterInput,
   type NexumSkillRefreshInput,
   type NexumSkill,
+  type NexumMcpServer,
+  type NexumMcpServerInput,
+  type NexumMcpTool,
+  type NexumMcpResource,
+  type NexumMcpPrompt,
+  type NexumMcpOAuthAttempt,
+  type NexumMcpOAuthStartInput,
+  type NexumMcpOAuthCompleteInput,
 } from "@nexum/protocol"
 
 export type {
@@ -47,6 +55,14 @@ export type {
   NexumSkillRegisterInput,
   NexumSkillRefreshInput,
   NexumSkill,
+  NexumMcpServer,
+  NexumMcpServerInput,
+  NexumMcpTool,
+  NexumMcpResource,
+  NexumMcpPrompt,
+  NexumMcpOAuthAttempt,
+  NexumMcpOAuthStartInput,
+  NexumMcpOAuthCompleteInput,
 } from "@nexum/protocol"
 
 export type NexumFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -183,6 +199,40 @@ export const Nexum = {
               }),
             unregister: (input: { readonly id: string }) =>
               request<NexumSkillDeleteResult>(`/skills/${encodeURIComponent(input.id)}`, { method: "DELETE" }),
+          },
+          mcp: {
+            list: () => experimentalRequest<readonly NexumMcpServer[]>("/mcp"),
+            add: (input: NexumMcpServerInput) =>
+              experimentalRequest<NexumMcpServer>("/mcp", { method: "POST", body: JSON.stringify(input) }),
+            connect: (input: { readonly id: string }) =>
+              experimentalRequest<NexumMcpServer>(`/mcp/${encodeURIComponent(input.id)}/connect`, { method: "POST", body: "{}" }),
+            disconnect: (input: { readonly id: string }) =>
+              experimentalRequest<NexumMcpServer>(`/mcp/${encodeURIComponent(input.id)}/disconnect`, { method: "POST", body: "{}" }),
+            remove: (input: { readonly id: string }) =>
+              experimentalRequest<{ readonly id: string; readonly deleted: true }>(`/mcp/${encodeURIComponent(input.id)}`, { method: "DELETE" }),
+            tools: (input: { readonly id: string }) =>
+              experimentalRequest<readonly NexumMcpTool[]>(`/mcp/${encodeURIComponent(input.id)}/tools`),
+            resources: (input: { readonly id: string }) =>
+              experimentalRequest<readonly NexumMcpResource[]>(`/mcp/${encodeURIComponent(input.id)}/resources`),
+            prompts: (input: { readonly id: string }) =>
+              experimentalRequest<readonly NexumMcpPrompt[]>(`/mcp/${encodeURIComponent(input.id)}/prompts`),
+            authorize: (input: NexumMcpOAuthStartInput) =>
+              experimentalRequest<NexumMcpOAuthAttempt>(`/mcp/${encodeURIComponent(input.id)}/oauth/authorize`, {
+                method: "POST",
+                body: JSON.stringify(input.url ? { url: input.url } : {}),
+              }),
+            authorizationStatus: (input: { readonly attemptID: string }) =>
+              experimentalRequest<NexumMcpOAuthAttempt>(`/mcp/oauth/${encodeURIComponent(input.attemptID)}`),
+            completeAuthorization: (input: { readonly attemptID: string; readonly redirectUrl: string }) =>
+              experimentalRequest<NexumMcpOAuthAttempt>(`/mcp/oauth/${encodeURIComponent(input.attemptID)}/complete`, {
+                method: "POST",
+                body: JSON.stringify({ redirectUrl: input.redirectUrl } satisfies NexumMcpOAuthCompleteInput),
+              }),
+            cancelAuthorization: (input: { readonly attemptID: string }) =>
+              experimentalRequest<NexumMcpOAuthAttempt>(`/mcp/oauth/${encodeURIComponent(input.attemptID)}/cancel`, {
+                method: "POST",
+                body: "{}",
+              }),
           },
         },
       },

@@ -21,7 +21,7 @@
 ## 文档入口
 
 - UI 交互：[交互协议](ui/interaction-protocol.md)、[状态](ui/states.md)、[Question](ui/question.md)、[Permission](ui/permission.md)。
-- 能力语义：[Session](capabilities/session.md)、[Events](capabilities/events.md)、[Skills](capabilities/skills.md)、[Integrations](capabilities/integrations.md)、[Model/Runtime](capabilities/model-runtime.md)、[Context/History](capabilities/context-and-history.md)。
+- 能力语义：[Session](capabilities/session.md)、[Events](capabilities/events.md)、[Skills](capabilities/skills.md)、[MCP](capabilities/mcp.md)、[Integrations](capabilities/integrations.md)、[Model/Runtime](capabilities/model-runtime.md)、[Context/History](capabilities/context-and-history.md)。
 - 模块实现：[模块文档索引](modules/README.md)。
 - 对外接口：[`apis/nexum.md`](../apis/nexum.md)。
 

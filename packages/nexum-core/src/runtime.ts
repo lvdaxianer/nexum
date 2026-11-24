@@ -4,7 +4,7 @@
 
 import type { EventSink, NexumCodingLoop, NexumSessionService, NexumCodingLoopInput, SessionRecord } from "./index.js"
 import type { HostPort } from "./host.js"
-import type { McpPort } from "./mcp.js"
+import type { McpOAuthControlPort, McpPort } from "./mcp.js"
 import type { MemoryPort } from "./memory.js"
 
 export type NexumRuntimeStatus = "ready" | "closed"
@@ -24,6 +24,7 @@ export interface NexumRuntimeOptions {
   readonly capabilities?: readonly NexumCapability[]
   readonly memory?: MemoryPort
   readonly mcp?: McpPort
+  readonly mcpOAuth?: McpOAuthControlPort
   readonly host?: HostPort
 }
 
@@ -41,6 +42,7 @@ export interface NexumRuntime {
   readonly events: EventSink
   readonly memory?: MemoryPort
   readonly mcp?: McpPort
+  readonly mcpOAuth?: McpOAuthControlPort
   readonly host?: HostPort
   readonly prompt: (input: NexumCodingLoopInput) => Promise<SessionRecord>
   readonly cancel: (sessionID: string) => Promise<SessionRecord>
@@ -61,6 +63,7 @@ export function createNexumRuntime(options: NexumRuntimeOptions): NexumRuntime {
     events: options.events,
     ...(options.memory ? { memory: options.memory } : {}),
     ...(options.mcp ? { mcp: options.mcp } : {}),
+    ...(options.mcpOAuth ? { mcpOAuth: options.mcpOAuth } : {}),
     ...(options.host ? { host: options.host } : {}),
     prompt: async (input) => {
       ensureReady()
@@ -73,6 +76,7 @@ export function createNexumRuntime(options: NexumRuntimeOptions): NexumRuntime {
     close: async () => {
       if (status === "closed") return
       status = "closed"
+      await options.mcpOAuth?.close?.()
       await options.mcp?.close?.()
     },
   }

@@ -16,6 +16,7 @@ import {
   type NexumSkillRegistry,
   type HostPort,
   type McpPort,
+  type McpOAuthControlPort,
   type MemoryPort,
   type ModelPort,
   type MessageStore,
@@ -92,6 +93,7 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly host?: HostPort
   readonly memory?: MemoryPort
   readonly mcp?: McpPort
+  readonly mcpOAuth?: McpOAuthControlPort
   readonly skillRoots?: readonly string[]
   readonly codingLoop?: NexumCodingLoop
   readonly capabilities?: readonly NexumCapability[]
@@ -165,6 +167,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     host,
     memory,
     ...(options.mcp ? { mcp: options.mcp } : {}),
+    ...(options.mcpOAuth ? { mcpOAuth: options.mcpOAuth } : {}),
     ...(options.capabilities ? { capabilities: options.capabilities } : {}),
   })
   return Object.assign(runtime, {

@@ -66,6 +66,26 @@ export interface McpCredentialStore {
   readonly remove: (serverID: string) => Promise<void>
 }
 
+export type McpOAuthAttemptStatus = "starting" | "awaiting_user" | "authorized" | "failed" | "cancelled" | "expired"
+
+export interface McpOAuthAttempt {
+  readonly id: string
+  readonly serverID: string
+  readonly status: McpOAuthAttemptStatus
+  readonly authorizationUrl?: string
+  readonly redirectUrl?: string
+  readonly expiresAt: number
+  readonly error?: McpErrorSummary
+}
+
+export interface McpOAuthControlPort {
+  readonly start: (input: { readonly serverID: string; readonly serverUrl: string }) => Promise<McpOAuthAttempt>
+  readonly status: (attemptID: string) => Promise<McpOAuthAttempt | undefined>
+  readonly complete: (attemptID: string, redirectUrl: string) => Promise<McpOAuthAttempt>
+  readonly cancel: (attemptID: string) => Promise<McpOAuthAttempt | undefined>
+  readonly close?: () => Promise<void>
+}
+
 export interface McpServer {
   readonly id: string
   readonly name: string

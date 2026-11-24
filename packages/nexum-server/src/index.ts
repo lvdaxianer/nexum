@@ -17,6 +17,7 @@ import {
   NexumModelProbeError,
   NexumRolePromptError,
   NexumSkillInvocationError,
+  McpError,
   nexumAnyToolAction,
   redactNexumSensitiveValue,
   type NexumCodingLoop,
@@ -35,6 +36,10 @@ import {
   type MessageStore,
   type ModelMessage,
   type NexumInteractionStore,
+  type McpPort,
+  type McpOAuthControlPort,
+  type McpRegistry,
+  type McpServerConfig,
 } from "@nexum/core"
 import {
   NEXUM_EVENT_TYPES,
@@ -63,6 +68,7 @@ const NEXUM_FEATURES = [
   "project_context",
   "skill",
   "role_prompt",
+  "mcp",
 ] as const
 const NEXUM_CAPABILITIES = [
   { id: "model", version: "1", status: "enabled", operations: ["prompt"] },
@@ -74,7 +80,7 @@ const NEXUM_CAPABILITIES = [
   { id: "skill", version: "1", status: "enabled", operations: ["list", "detail", "register", "refresh", "validate", "unregister", "activate"] },
   { id: "role_prompt", version: "1", status: "enabled", operations: ["get", "update", "reset"] },
   { id: "memory", version: "1", status: "disabled", operations: ["search", "upsert", "remove"] },
-  { id: "mcp", version: "1", status: "disabled", operations: ["listServers", "listTools", "listResources", "listPrompts", "callTool"] },
+  { id: "mcp", version: "1", status: "disabled", operations: ["listServers", "listTools", "listResources", "listPrompts", "callTool", "authorize", "authorizationStatus", "completeAuthorization", "cancelAuthorization"] },
   { id: "host", version: "1", status: "enabled", operations: ["readText", "writeText", "runShell"] },
   { id: "event", version: "1", status: "enabled", operations: ["publish"] },
 ] as const
@@ -105,6 +111,8 @@ export interface NexumServerOptions {
   readonly skillRegistryFile?: string
   readonly skillInvocation?: NexumSkillInvocationPort
   readonly skillRoots?: readonly string[]
+  readonly mcp?: McpRegistry
+  readonly mcpOAuth?: McpOAuthControlPort
   readonly eventHub?: NexumEventHub
   readonly corsOrigins?: readonly string[]
   readonly idleTimeout?: number
@@ -146,8 +154,11 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
     ...(options.skillRegistryFile ? { skillRegistryFile: options.skillRegistryFile } : {}),
     ...(options.skillInvocation ? { skillInvocation: options.skillInvocation } : {}),
     ...(options.codingLoop ? { codingLoop: options.codingLoop } : {}),
+    ...(options.mcp ? { mcp: options.mcp } : {}),
+    ...(options.mcpOAuth ? { mcpOAuth: options.mcpOAuth } : {}),
     skillRoots: options.skillRoots ?? [resolve(process.cwd(), "skills")],
   })
+  const ownsRuntime = options.runtime === undefined
   const sessionService = runtime.sessionService
   const messageStore = runtime.messageStore
   const runtimeInteractionStore = runtime.interactionStore
@@ -162,6 +173,8 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const skillInvocation = runtime.skillInvocation
   const corsOrigins = options.corsOrigins ?? DEFAULT_CORS_ORIGINS
   const codingLoop = runtime.codingLoop
+  const mcp = options.mcp ?? runtime.mcp
+  const mcpOAuth = options.mcpOAuth ?? runtime.mcpOAuth
   assertPort(port)
   if (options.sessionStore) await options.sessionStore.list()
   if (runtimeInteractionStore) await runtimeInteractionStore.list()
@@ -191,6 +204,8 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
           modelProbe,
           skillRegistry,
           skillInvocation,
+          mcp,
+          mcpOAuth,
           traceId,
         )
         const result = withCorsHeaders(response, request, corsOrigins)
@@ -229,7 +244,10 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
 
   return {
     url: server.url,
-    stop: (closeActiveConnections = false) => server.stop(closeActiveConnections),
+    stop: async (closeActiveConnections = false) => {
+      await server.stop(closeActiveConnections)
+      if (ownsRuntime) await runtime.close()
+    },
   }
 }
 
@@ -286,6 +304,8 @@ async function handleRequest(
   modelProbe?: NexumModelProbePort,
   skillRegistry?: NexumSkillRegistry,
   skillInvocation?: NexumSkillInvocationPort,
+  mcp?: McpPort,
+  mcpOAuth?: McpOAuthControlPort,
   requestTraceId?: string,
 ): Promise<Response> {
   const traceId = requestTraceId ?? traceIdFrom(request.headers.get(TRACE_ID_HEADER))
@@ -311,11 +331,54 @@ async function handleRequest(
           transport: { http: "json", events: "sse" },
           features: [...NEXUM_FEATURES],
           eventTypes: [...NEXUM_EVENT_TYPES],
-          capabilities: [...NEXUM_CAPABILITIES],
+          capabilities: capabilitiesFor(mcp),
         },
       },
       traceId,
     )
+  }
+
+  if (url.pathname === `${NEXUM_EXPERIMENTAL_API_PREFIX}/mcp`) {
+    if (request.method === "GET") return listMcpServers(mcp, traceId)
+    if (request.method === "POST") return registerMcpServer(request, mcp, traceId)
+    return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 或 POST 请求", traceId)
+  }
+
+  const mcpOAuthAuthorizeMatch = url.pathname.match(new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/mcp/([^/]+)/oauth/authorize$`))
+  if (mcpOAuthAuthorizeMatch) {
+    if (request.method !== "POST") return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    return startMcpOAuth(
+      request,
+      decodeURIComponent(mcpOAuthAuthorizeMatch[1]!),
+      mcp,
+      mcpOAuth,
+      traceId,
+    )
+  }
+
+  const mcpOAuthAttemptMatch = url.pathname.match(new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/mcp/oauth/([^/]+)(?:/(complete|cancel))?$`))
+  if (mcpOAuthAttemptMatch) {
+    const attemptID = decodeURIComponent(mcpOAuthAttemptMatch[1]!)
+    const operation = mcpOAuthAttemptMatch[2]
+    if (!operation && request.method === "GET") return getMcpOAuthStatus(attemptID, mcpOAuth, traceId)
+    if (operation === "complete" && request.method === "POST") return completeMcpOAuth(request, attemptID, mcpOAuth, traceId)
+    if (operation === "cancel" && request.method === "POST") return cancelMcpOAuth(attemptID, mcpOAuth, traceId)
+    return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "MCP OAuth 操作方法不匹配", traceId)
+  }
+
+  const mcpMatch = url.pathname.match(
+    new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/mcp/([^/]+)(?:/(tools|resources|prompts|connect|disconnect))?$`),
+  )
+  if (mcpMatch) {
+    const serverID = decodeURIComponent(mcpMatch[1]!)
+    const operation = mcpMatch[2]
+    if (!operation && request.method === "DELETE") return removeMcpServer(serverID, mcp, traceId)
+    if (operation === "tools" && request.method === "GET") return listMcpTools(serverID, mcp, traceId)
+    if (operation === "resources" && request.method === "GET") return listMcpResources(serverID, mcp, traceId)
+    if (operation === "prompts" && request.method === "GET") return listMcpPrompts(serverID, mcp, traceId)
+    if (operation === "connect" && request.method === "POST") return connectMcpServer(serverID, mcp, traceId)
+    if (operation === "disconnect" && request.method === "POST") return disconnectMcpServer(serverID, mcp, traceId)
+    return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "MCP 操作方法不匹配", traceId)
   }
 
   if (url.pathname === "/api/nexum/session") {
@@ -774,6 +837,236 @@ function skillInvocationErrorResponse(error: unknown, traceId: string): Response
     return errorResponse(409, "NEXUM_SKILL_NOT_READY", error.message, traceId)
   }
   return errorResponse(409, "NEXUM_SKILL_PERMISSION_DENIED", error.message, traceId)
+}
+
+function capabilitiesFor(mcp: McpPort | undefined) {
+  if (!mcp) return [...NEXUM_CAPABILITIES]
+  return NEXUM_CAPABILITIES.map((capability) =>
+    capability.id === "mcp" ? { ...capability, status: "enabled" as const } : capability,
+  )
+}
+
+async function listMcpServers(mcp: McpPort | undefined, traceId: string): Promise<Response> {
+  if (!mcp) return mcpUnavailable(traceId)
+  return jsonResponse({ data: await mcp.listServers() }, traceId)
+}
+
+async function registerMcpServer(request: Request, mcp: McpPort | undefined, traceId: string): Promise<Response> {
+  const registry = requireMcpRegistry(mcp)
+  if (!registry) return mcpControlUnavailable(traceId)
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload)) return errorResponse(400, "NEXUM_INVALID_REQUEST", "请求体必须是 JSON 对象", traceId)
+  const config = parseMcpServerConfig(payload)
+  if (!config) return errorResponse(400, "NEXUM_MCP_INVALID_CONFIG", "MCP Server 配置无效", traceId)
+  try {
+    return jsonResponse({ data: await registry.register(config) }, traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+async function connectMcpServer(serverID: string, mcp: McpPort | undefined, traceId: string): Promise<Response> {
+  const registry = requireMcpRegistry(mcp)
+  if (!registry) return mcpControlUnavailable(traceId)
+  try {
+    return jsonResponse({ data: await registry.connect(serverID) }, traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+async function disconnectMcpServer(serverID: string, mcp: McpPort | undefined, traceId: string): Promise<Response> {
+  const registry = requireMcpRegistry(mcp)
+  if (!registry) return mcpControlUnavailable(traceId)
+  try {
+    const server = await registry.disconnect(serverID)
+    return server
+      ? jsonResponse({ data: server }, traceId)
+      : errorResponse(404, "NEXUM_MCP_SERVER_NOT_FOUND", "MCP Server 不存在", traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+async function removeMcpServer(serverID: string, mcp: McpPort | undefined, traceId: string): Promise<Response> {
+  const registry = requireMcpRegistry(mcp)
+  if (!registry) return mcpControlUnavailable(traceId)
+  try {
+    await registry.remove(serverID)
+    return jsonResponse({ data: { id: serverID, deleted: true } }, traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+async function listMcpTools(serverID: string, mcp: McpPort | undefined, traceId: string): Promise<Response> {
+  if (!mcp) return mcpUnavailable(traceId)
+  try {
+    return jsonResponse({ data: await mcp.listTools(serverID) }, traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+async function listMcpResources(serverID: string, mcp: McpPort | undefined, traceId: string): Promise<Response> {
+  if (!mcp) return mcpUnavailable(traceId)
+  try {
+    return jsonResponse({ data: await mcp.listResources(serverID) }, traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+async function listMcpPrompts(serverID: string, mcp: McpPort | undefined, traceId: string): Promise<Response> {
+  if (!mcp) return mcpUnavailable(traceId)
+  try {
+    return jsonResponse({ data: await mcp.listPrompts(serverID) }, traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+async function startMcpOAuth(
+  request: Request,
+  serverID: string,
+  mcp: McpPort | undefined,
+  oauth: McpOAuthControlPort | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!oauth) return mcpOAuthUnavailable(traceId)
+  const payload = await request.json().catch(() => ({}))
+  if (!isRecord(payload) || (payload.url !== undefined && typeof payload.url !== "string")) {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "url 必须是字符串", traceId)
+  }
+  const registry = requireMcpRegistry(mcp)
+  const server = await registry?.get(serverID)
+  const serverUrl = server?.url ?? payload.url
+  if (typeof serverUrl !== "string" || serverUrl.trim() === "") {
+    return errorResponse(400, "NEXUM_MCP_INVALID_CONFIG", "MCP Server URL 不存在", traceId)
+  }
+  try {
+    return jsonResponse({ data: await oauth.start({ serverID, serverUrl }) }, traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+async function getMcpOAuthStatus(
+  attemptID: string,
+  oauth: McpOAuthControlPort | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!oauth) return mcpOAuthUnavailable(traceId)
+  const attempt = await oauth.status(attemptID)
+  return attempt
+    ? jsonResponse({ data: attempt }, traceId)
+    : errorResponse(404, "NEXUM_MCP_OAUTH_ATTEMPT_NOT_FOUND", "MCP OAuth 授权尝试不存在", traceId)
+}
+
+async function completeMcpOAuth(
+  request: Request,
+  attemptID: string,
+  oauth: McpOAuthControlPort | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!oauth) return mcpOAuthUnavailable(traceId)
+  const payload = await request.json().catch(() => undefined)
+  if (!isRecord(payload) || typeof payload.redirectUrl !== "string" || payload.redirectUrl.trim() === "") {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "redirectUrl 必须是非空字符串", traceId)
+  }
+  try {
+    return jsonResponse({ data: await oauth.complete(attemptID, payload.redirectUrl) }, traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+async function cancelMcpOAuth(
+  attemptID: string,
+  oauth: McpOAuthControlPort | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!oauth) return mcpOAuthUnavailable(traceId)
+  try {
+    const attempt = await oauth.cancel(attemptID)
+    return attempt
+      ? jsonResponse({ data: attempt }, traceId)
+      : errorResponse(404, "NEXUM_MCP_OAUTH_ATTEMPT_NOT_FOUND", "MCP OAuth 授权尝试不存在", traceId)
+  } catch (error) {
+    return mcpErrorResponse(error, traceId)
+  }
+}
+
+function requireMcpRegistry(mcp: McpPort | undefined): McpRegistry | undefined {
+  if (
+    !mcp ||
+    typeof (mcp as Partial<McpRegistry>).register !== "function" ||
+    typeof (mcp as Partial<McpRegistry>).connect !== "function" ||
+    typeof (mcp as Partial<McpRegistry>).disconnect !== "function" ||
+    typeof (mcp as Partial<McpRegistry>).remove !== "function"
+  ) {
+    return undefined
+  }
+  return mcp as McpRegistry
+}
+
+function parseMcpServerConfig(payload: Record<string, unknown>): McpServerConfig | undefined {
+  if (
+    typeof payload.id !== "string" ||
+    typeof payload.name !== "string" ||
+    typeof payload.url !== "string" ||
+    (payload.disabled !== undefined && typeof payload.disabled !== "boolean") ||
+    (payload.timeoutMs !== undefined && (typeof payload.timeoutMs !== "number" || !Number.isFinite(payload.timeoutMs))) ||
+    (payload.protocol !== undefined && payload.protocol !== "legacy" && payload.protocol !== "auto" && payload.protocol !== "2026-07-28")
+  ) {
+    return undefined
+  }
+  if (payload.headers !== undefined && !isRecord(payload.headers)) return undefined
+  if (payload.headers && Object.values(payload.headers).some((value) => typeof value !== "string")) return undefined
+  return {
+    id: payload.id,
+    name: payload.name,
+    url: payload.url,
+    ...(payload.headers ? { headers: Object.fromEntries(Object.entries(payload.headers).map(([key, value]) => [key, value as string])) } : {}),
+    ...(payload.disabled !== undefined ? { disabled: payload.disabled } : {}),
+    ...(payload.timeoutMs !== undefined ? { timeoutMs: payload.timeoutMs } : {}),
+    ...(payload.protocol !== undefined ? { protocol: payload.protocol } : {}),
+  }
+}
+
+function mcpUnavailable(traceId: string): Response {
+  return errorResponse(503, "NEXUM_MCP_NOT_CONFIGURED", "Nexum MCP 尚未配置", traceId)
+}
+
+function mcpControlUnavailable(traceId: string): Response {
+  return errorResponse(503, "NEXUM_MCP_CONTROL_NOT_CONFIGURED", "Nexum MCP 控制接口尚未配置", traceId)
+}
+
+function mcpOAuthUnavailable(traceId: string): Response {
+  return errorResponse(503, "NEXUM_MCP_OAUTH_NOT_CONFIGURED", "Nexum MCP OAuth 尚未配置", traceId)
+}
+
+function mcpErrorResponse(error: unknown, traceId: string): Response {
+  if (!(error instanceof McpError)) return errorResponse(500, "NEXUM_MCP_OPERATION_FAILED", "MCP 操作失败", traceId)
+  const statuses = {
+    invalid_config: 400,
+    server_exists: 409,
+    server_not_found: 404,
+    server_not_connected: 409,
+    runtime_closed: 409,
+    connection_failed: 502,
+    needs_auth: 401,
+  } as const
+  const codes = {
+    invalid_config: "NEXUM_MCP_INVALID_CONFIG",
+    server_exists: "NEXUM_MCP_SERVER_EXISTS",
+    server_not_found: "NEXUM_MCP_SERVER_NOT_FOUND",
+    server_not_connected: "NEXUM_MCP_SERVER_NOT_CONNECTED",
+    runtime_closed: "NEXUM_RUNTIME_CLOSED",
+    connection_failed: "NEXUM_MCP_CONNECTION_FAILED",
+    needs_auth: "NEXUM_MCP_NEEDS_AUTH",
+  } as const
+  return errorResponse(statuses[error.code], codes[error.code], error.message, traceId)
 }
 
 /**
