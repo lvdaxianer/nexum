@@ -151,7 +151,8 @@ describe.serial("Nexum UI smoke", () => {
     await page.goto(uiOrigin)
     await expect(page.getByRole("heading", { name: "Agent 工作台" })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Coding Loop" })).toBeVisible()
-    await expect(page.getByRole("heading", { name: "运行状态" })).toBeVisible()
+    await expect(page.locator(".nexum-chat-toolbar")).toBeVisible()
+    await expect(page.locator(".nexum-chat-status-cluster")).toBeVisible()
     await expect(page.getByRole("tab", { name: "对话" })).toBeVisible()
     await expect(page.getByRole("tab", { name: /事件/ })).toBeVisible()
     await expect(page.getByText("上下文", { exact: true })).toBeVisible()
@@ -680,6 +681,74 @@ describe.serial("Nexum UI smoke", () => {
   )
 
   test.serial(
+    "approves permission requests at phone and tablet viewports",
+    { timeout: 25_000 },
+    async () => {
+      browser = await chromium.launch({ nexum: true })
+      const page = await browser.newPage()
+      let upstreamCalls = 0
+      upstream = Bun.serve({
+        port: 0,
+        async fetch() {
+          upstreamCalls += 1
+          // 奇数次调用返回工具调用（触发权限请求），偶数次返回完成文本；两轮视口各消费一对。
+          if (upstreamCalls % 2 === 0) return Response.json({ choices: [{ message: { content: "窄屏端已执行" } }] })
+          return Response.json({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: "call_narrow_shell",
+                      type: "function",
+                      function: {
+                        name: "shell",
+                        arguments: JSON.stringify({ command: "pwd" }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          })
+        },
+      })
+      apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+      uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+      directory = await mkdtemp(join(tmpdir(), "nexum-ui-narrow-"))
+
+      await page.goto(uiOrigin)
+      await openDrawer(page, /模型配置/)
+      await page.getByLabel("服务地址").fill(upstream.url.toString().replace(/\/$/, ""))
+      await page.getByLabel("模型名称").fill("fixture-model")
+      await page.getByLabel("凭据值").fill("fixture-secret")
+      await page.getByRole("button", { name: "保存模型配置" }).click()
+      await expect(page.getByText("模型 fixture-model 已就绪")).toBeVisible()
+      await closeDrawer(page)
+
+      // 同一流程分别压测手机（紧凑档）与 Pad（平板档）容器宽度。
+      for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
+        await page.setViewportSize(viewport)
+        await page.getByRole("button", { name: "新建 Session" }).click()
+        await page.getByLabel("工作目录").fill(directory)
+        await page.getByRole("button", { name: "保存并创建 Session" }).click()
+        await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+        await page.getByPlaceholder("描述下一步 Coding 任务…").fill("查看目录")
+        await page.getByRole("button", { name: /发送 Prompt/ }).click()
+        await page.getByTestId("permission-actions").getByRole("button", { name: "允许一次" }).click()
+
+        await expect(page.locator(".pill-completed")).toBeVisible()
+        await expect(page.locator(".chat-message.assistant")).toContainText("窄屏端已执行")
+        await page.getByRole("button", { name: "会话操作" }).click()
+        await page.getByRole("dialog", { name: "会话操作" }).getByRole("button", { name: "删除 Session" }).click()
+        await page.getByRole("button", { name: "确认删除 Session" }).click()
+        await expect(page.getByRole("alertdialog")).toHaveCount(0)
+      }
+    },
+  )
+
+  test.serial(
     "applies a permission mode as action-agnostic global rules",
     { timeout: 20_000 },
     async () => {
@@ -937,6 +1006,7 @@ describe.serial("Nexum UI smoke", () => {
     const page = await browser.newPage()
     apiServer = await startNexumServer({
       port: apiPort,
+      corsOrigins: [uiOrigin],
       modelProbe: {
         async probe(input) {
           expect(input).toEqual({ mode: "both" })

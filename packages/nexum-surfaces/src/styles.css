@@ -1156,6 +1156,33 @@ input[aria-invalid="true"]:focus {
   min-height: 0;
 }
 
+/* 聊天输入栏内的权限模式入口（由宿主注入 ChatSurface 的 composerExtras 插槽） */
+.perm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid #d9e0e8;
+  border-radius: 999px;
+  background: #f7f9fc;
+  color: #1b2a3d;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.perm-chip:hover {
+  border-color: #138b8b;
+  color: #138b8b;
+}
+
+@media (pointer: coarse) {
+  .perm-chip {
+    min-height: 44px;
+  }
+}
+
 .conversation-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

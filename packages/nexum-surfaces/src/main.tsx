@@ -548,6 +548,11 @@ function App() {
     }).length
   }
 
+  /** 当前权限模式对应的展示选项（图标 + 标签），供聊天输入栏的权限入口使用。 */
+  function permissionModeOption() {
+    return permissionModeOptions.find((option) => option.value === currentPermissionMode())
+  }
+
   /** 切换权限模式：重置全局规则后按模式写入对应规则。 */
   async function applyPermissionMode(mode: PermissionMode) {
     if (policyBusy() || mode === currentPermissionMode()) return
@@ -1287,7 +1292,17 @@ function App() {
         </header>
 
         <section class="main-grid chat-surface-host">
-          <ChatSurface sessionID={sessionID()} client={{ baseUrl: apiBaseUrl }} />
+          <ChatSurface
+            sessionID={sessionID()}
+            client={{ baseUrl: apiBaseUrl }}
+            onOpenPermissionSettings={openPolicyPopover}
+            composerExtras={
+              <button type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>
+                <span aria-hidden="true">{permissionModeOption()?.icon ?? "🛡"}</span>
+                <span class="perm-chip-label">{permissionModeOption()?.label ?? "权限策略"}</span>
+              </button>
+            }
+          />
         </section>
 
         <footer>
