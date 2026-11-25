@@ -98,6 +98,8 @@ Authorization: Bearer <authToken>
 
 认证失败返回 `401 NEXUM_AUTH_REQUIRED`。认证 token 不通过 query、Cookie 或响应体传递。客户端应将 token 注入 API 请求和 SSE 请求；CORS 预检请求不要求 token，但实际请求仍然需要认证。
 
+JSON 请求体统一限制为 1 MiB。超过上限、格式无法解析或不是对象时，服务返回 `400 NEXUM_INVALID_REQUEST`，并且不会启动对应业务操作。错误响应中的 `message` 使用稳定的 caller-safe 文案；调用方应依赖 `errorCode`，不要依赖具体文案分支。领域异常的内部文本仅用于服务端日志，不会透传到 HTTP 响应。
+
 ## 资源与操作
 
 | 方法                      | 路径                                                  | 用途                                                        |

@@ -866,12 +866,12 @@ function skillInvocationErrorResponse(error: unknown, traceId: string): Response
     return errorResponse(500, "NEXUM_SKILL_ACTIVATION_FAILED", "Skill 激活失败", traceId)
   }
   if (error.code === "skill_not_found") {
-    return errorResponse(404, "NEXUM_SKILL_NOT_FOUND", error.message, traceId)
+    return errorResponse(404, "NEXUM_SKILL_NOT_FOUND", "Skill 不存在", traceId)
   }
   if (error.code === "skill_not_ready") {
-    return errorResponse(409, "NEXUM_SKILL_NOT_READY", error.message, traceId)
+    return errorResponse(409, "NEXUM_SKILL_NOT_READY", "Skill 当前不可激活", traceId)
   }
-  return errorResponse(409, "NEXUM_SKILL_PERMISSION_DENIED", error.message, traceId)
+  return errorResponse(409, "NEXUM_SKILL_PERMISSION_DENIED", "Skill 权限被拒绝", traceId)
 }
 
 function capabilitiesFor(mcp: McpPort | undefined) {
@@ -1123,7 +1123,16 @@ function mcpErrorResponse(error: unknown, traceId: string): Response {
     connection_failed: "NEXUM_MCP_CONNECTION_FAILED",
     needs_auth: "NEXUM_MCP_NEEDS_AUTH",
   } as const
-  return errorResponse(statuses[error.code], codes[error.code], error.message, traceId)
+  const messages = {
+    invalid_config: "MCP 配置无效",
+    server_exists: "MCP Server 已存在",
+    server_not_found: "MCP Server 不存在",
+    server_not_connected: "MCP Server 尚未连接",
+    runtime_closed: "Nexum Runtime 已关闭",
+    connection_failed: "MCP Server 连接失败",
+    needs_auth: "MCP Server 需要认证",
+  } as const
+  return errorResponse(statuses[error.code], codes[error.code], messages[error.code], traceId)
 }
 
 /**
@@ -1547,7 +1556,7 @@ async function cancelSession(
     return jsonResponse({ data: { status: "cancelled" } }, traceId)
   } catch (error) {
     if (error instanceof NexumSessionError && error.code === "session_not_found") {
-      return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", error.message, traceId)
+      return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
     }
     return errorResponse(409, "NEXUM_SESSION_CANCEL_CONFLICT", "Session 当前状态不允许取消", traceId)
   }
@@ -1714,13 +1723,13 @@ async function replyPermission(
     return jsonResponse({ data: { status: decision === "deny" ? "denied" : "approved" } }, traceId)
   } catch (error) {
     if (error instanceof NexumPermissionError && error.code === "not_found") {
-      return errorResponse(404, "NEXUM_PERMISSION_NOT_FOUND", error.message, traceId)
+      return errorResponse(404, "NEXUM_PERMISSION_NOT_FOUND", "权限请求不存在", traceId)
     }
     if (error instanceof NexumPermissionError && error.code === "session_mismatch") {
-      return errorResponse(409, "NEXUM_PERMISSION_SESSION_MISMATCH", error.message, traceId)
+      return errorResponse(409, "NEXUM_PERMISSION_SESSION_MISMATCH", "权限请求不属于当前 Session", traceId)
     }
     if (error instanceof NexumPermissionError && error.code === "invalid_decision") {
-      return errorResponse(400, "NEXUM_INVALID_REQUEST", error.message, traceId)
+      return errorResponse(400, "NEXUM_INVALID_REQUEST", "无效的权限决策", traceId)
     }
     return errorResponse(500, "NEXUM_PERMISSION_REPLY_FAILED", "权限审批失败", traceId)
   }
@@ -1921,15 +1930,15 @@ function permissionUnavailable(traceId: string): Response {
 function permissionPolicyErrorResponse(error: unknown, traceId: string): Response {
   if (error instanceof NexumPermissionPolicyError) {
     if (error.code === "not_found") {
-      return errorResponse(404, "NEXUM_PERMISSION_POLICY_NOT_FOUND", error.message, traceId)
+      return errorResponse(404, "NEXUM_PERMISSION_POLICY_NOT_FOUND", "权限策略不存在", traceId)
     }
     if (error.code === "duplicate_rule") {
-      return errorResponse(409, "NEXUM_PERMISSION_POLICY_CONFLICT", error.message, traceId)
+      return errorResponse(409, "NEXUM_PERMISSION_POLICY_CONFLICT", "权限策略规则已存在", traceId)
     }
     if (error.code === "invalid_file") {
-      return errorResponse(500, "NEXUM_PERMISSION_POLICY_UNAVAILABLE", error.message, traceId)
+      return errorResponse(500, "NEXUM_PERMISSION_POLICY_UNAVAILABLE", "权限策略暂不可用", traceId)
     }
-    return errorResponse(400, "NEXUM_INVALID_REQUEST", error.message, traceId)
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "权限策略请求无效", traceId)
   }
   return errorResponse(500, "NEXUM_PERMISSION_POLICY_FAILED", "权限策略操作失败", traceId)
 }
@@ -2007,13 +2016,13 @@ async function cancelQuestion(
 
 function questionErrorResponse(error: unknown, traceId: string): Response {
   if (error instanceof NexumQuestionError && error.code === "not_found") {
-    return errorResponse(404, "NEXUM_QUESTION_NOT_FOUND", error.message, traceId)
+    return errorResponse(404, "NEXUM_QUESTION_NOT_FOUND", "Question 不存在", traceId)
   }
   if (error instanceof NexumQuestionError && error.code === "session_mismatch") {
-    return errorResponse(409, "NEXUM_QUESTION_SESSION_MISMATCH", error.message, traceId)
+    return errorResponse(409, "NEXUM_QUESTION_SESSION_MISMATCH", "Question 不属于当前 Session", traceId)
   }
   if (error instanceof NexumQuestionError && error.code === "invalid_answers") {
-    return errorResponse(400, "NEXUM_INVALID_REQUEST", error.message, traceId)
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "Question 回答无效", traceId)
   }
   return errorResponse(500, "NEXUM_QUESTION_FAILED", "Question 操作失败", traceId)
 }
@@ -2063,7 +2072,7 @@ async function createSession(
     )
   } catch (error) {
     if (error instanceof NexumSessionError && error.code === "invalid_directory") {
-      return errorResponse(400, "NEXUM_INVALID_DIRECTORY", error.message, traceId)
+      return errorResponse(400, "NEXUM_INVALID_DIRECTORY", "工作目录无效", traceId)
     }
     return errorResponse(500, "NEXUM_SESSION_CREATE_FAILED", "Session 创建失败", traceId)
   }
@@ -2106,10 +2115,10 @@ async function updateSession(
     )
   } catch (error) {
     if (error instanceof NexumSessionError && error.code === "session_not_found") {
-      return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", error.message, traceId)
+      return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
     }
     if (error instanceof NexumSessionError && error.code === "invalid_name") {
-      return errorResponse(400, "NEXUM_INVALID_REQUEST", error.message, traceId)
+      return errorResponse(400, "NEXUM_INVALID_REQUEST", "Session 名称不能为空", traceId)
     }
     return errorResponse(500, "NEXUM_SESSION_UPDATE_FAILED", "Session 更新失败", traceId)
   }
@@ -2199,7 +2208,12 @@ async function updateModelConfig(
     return jsonResponse({ data: config }, traceId)
   } catch (error) {
     if (error instanceof NexumModelConfigError) {
-      return errorResponse(400, "NEXUM_INVALID_MODEL_CONFIG", error.message, traceId)
+      const messages = {
+        invalid_url: "模型 Base URL 无效",
+        invalid_model: "模型名称无效",
+        invalid_credential: "模型凭据无效",
+      } as const
+      return errorResponse(400, "NEXUM_INVALID_MODEL_CONFIG", messages[error.code], traceId)
     }
     return errorResponse(500, "NEXUM_MODEL_CONFIG_UPDATE_FAILED", "模型配置保存失败", traceId)
   }
@@ -2233,7 +2247,7 @@ async function updateRolePrompt(
     return jsonResponse({ data: await rolePromptStore.update(payload.prompt) }, traceId)
   } catch (error) {
     if (error instanceof NexumRolePromptError) {
-      return errorResponse(400, "NEXUM_INVALID_ROLE_PROMPT", error.message, traceId)
+      return errorResponse(400, "NEXUM_INVALID_ROLE_PROMPT", "角色提示词无效", traceId)
     }
     return errorResponse(500, "NEXUM_ROLE_PROMPT_UPDATE_FAILED", "默认角色提示词保存失败", traceId)
   }
