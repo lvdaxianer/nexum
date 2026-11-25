@@ -26,17 +26,18 @@ export function arrayLineSource(lines: readonly string[]): LineSource {
   }
 }
 
-export type InputBox = { readonly top: string; readonly hint: string; readonly inputPrefix: string; readonly bottom: string }
+export type InputBox = { readonly top: string; readonly hint: string; readonly inputPrefix: string; readonly spacer: string; readonly bottom: string }
 
 /** 行式近似的输入框:非 TTY 或无颜色时降级为 undefined(调用方退回普通提示符)。 */
 export function inputBoxLines(caps: TermCaps, columns: number): InputBox | undefined {
   if (!caps.isTTY || caps.color === "none") return undefined
-  const width = Math.max(44, Math.min(columns, 78))
+  const width = Math.max(44, Math.min(columns - 6, 110))
   const hintText = "输入任务,Enter 发送 · @ 引用 Skill · /help 命令 · Ctrl+C 取消/退出"
   return {
     top: paint(caps, "cyan", `╭${"─".repeat(width - 2)}╮`),
     hint: `${paint(caps, "cyan", "│")} ${paint(caps, "dim", hintText)}`,
     inputPrefix: `${paint(caps, "cyan", "│")} ${paint(caps, "cyan", "›")} `,
+    spacer: `${paint(caps, "cyan", "│")} `,
     bottom: paint(caps, "cyan", `╰${"─".repeat(width - 2)}╯`),
   }
 }
@@ -85,8 +86,8 @@ export function readlineLineSource(
   closedSignal.catch(() => {})
   rl.on("line", (line) => {
     // 闭合框在 showPrompt 时已画好;实证(bun terminal 模式):Enter 时 readline 先写 \r\n,
-    // 'line' 触发时光标在底边行行首,这里再下移一行,后续输出落在框外下方。
-    if (promptActive && box) output.write("\x1b[1B")
+    // 'line' 触发时光标在留白行行首,下移两行(留白→底边→框外),后续输出落在框外下方。
+    if (promptActive && box) output.write("\x1b[2B")
     promptActive = false
     const waiter = waiters.shift()
     if (waiter) waiter(line)
@@ -119,11 +120,11 @@ export function readlineLineSource(
         output.write(`${box.top}\n${box.hint}\n`)
         rl.setPrompt(box.inputPrefix)
         rl.prompt()
-        // 画出底边形成完整闭合框,再上移一行归位:光标回到输入行 inputPrefix 之后,
+        // 画留白行与底边形成五行闭合框,再上移两行归位:光标回到输入行 inputPrefix 之后,
         // 与 readline 内部跟踪的位置一致(补全/退格的重绘都基于该位置)。
-        // 已知限制:输入超长换行会压到底边行。
-        output.write(`\n${box.bottom}`)
-        output.write(`\x1b[1A\r${box.inputPrefix}`)
+        // 已知限制:输入超长换行会压到留白行。
+        output.write(`\n${box.spacer}\n${box.bottom}`)
+        output.write(`\x1b[2A\r${box.inputPrefix}`)
         return
       }
       rl.setPrompt("nexum ▸ ")

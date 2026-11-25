@@ -226,15 +226,21 @@ test("repl exits when the session cannot be opened", async () => {
 test("inputBoxLines returns undefined for non-TTY and box strings for ansi16", () => {
   expect(inputBoxLines({ isTTY: false, color: "none", anim: false, theme: "dark" }, 80)).toBeUndefined()
   expect(inputBoxLines({ isTTY: true, color: "none", anim: false, theme: "dark" }, 80)).toBeUndefined()
+  const plain = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "")
   const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 80)!
   expect(box.top).toContain("╭")
   expect(box.top).toContain("╮")
   expect(box.hint).toContain("输入任务")
   expect(box.hint).toContain("/help 命令")
   expect(box.inputPrefix).toContain("›")
+  expect(plain(box.spacer)).toBe("│ ")
   expect(box.bottom).toContain("╰")
   expect(box.bottom).toContain("╯")
   expect(box.top).toContain("\x1b[36m")
+  // 宽度:columns - 6,上限 110,下限 44
+  expect(plain(box.top)).toHaveLength(74)
+  expect(plain(inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 130)!.top)).toHaveLength(110)
+  expect(plain(inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 40)!.top)).toHaveLength(44)
 })
 
 function createTrackingClient(onCreate: (body: { name?: string }) => void) {
@@ -339,20 +345,22 @@ test("readlineLineSource draws a closed box on showPrompt and moves the cursor b
   source.showPrompt?.()
   source.showPrompt?.()
   await new Promise((resolve) => setTimeout(resolve, 20))
-  // 空闲即完整闭合:顶边 → 提示行 → 输入行 → 底边,随后光标上移归位到输入行
+  // 空闲即完整闭合:顶边 → 提示行 → 输入行 → 留白行 → 底边,随后光标上移两行归位到输入行
   expect(rendered.match(/╭/g)?.length).toBe(1)
   expect(rendered.match(/╰/g)?.length).toBe(1)
   const plainRendered = rendered.replace(/\x1b\[[0-9;]*m/g, "")
   expect(plainRendered.indexOf("输入任务")).toBeGreaterThan(plainRendered.indexOf("╭"))
-  expect(plainRendered.indexOf("╰")).toBeGreaterThan(plainRendered.indexOf("输入任务"))
-  expect(rendered).toContain("\x1b[1A\r")
-  expect(rendered.lastIndexOf("\x1b[1A")).toBeGreaterThan(rendered.lastIndexOf("╰"))
+  expect(plainRendered.indexOf("│ ›")).toBeGreaterThan(plainRendered.indexOf("输入任务"))
+  // 留白行(仅左边界)紧邻底边之上
+  expect(plainRendered).toContain("│ \n╰")
+  expect(rendered).toContain("\x1b[2A\r")
+  expect(rendered.lastIndexOf("\x1b[2A")).toBeGreaterThan(rendered.lastIndexOf("╰"))
   const line = source.next()
   input.write("你好\n")
   expect(await line).toBe("你好")
   await new Promise((resolve) => setTimeout(resolve, 20))
-  // 提交后光标移到底边之下,框保持闭合
-  expect(rendered).toContain("\x1b[1B")
+  // 提交后光标移到底边之下(留白→底边→框外,两行位移),框保持闭合
+  expect(rendered).toContain("\x1b[2B")
   source.showPrompt?.()
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(rendered.match(/╭/g)?.length).toBe(2)
@@ -429,7 +437,7 @@ test("repl does not stick the settle line to the input box on double terminal ev
   // 每个框完整闭合:顶边数 = 底边数;结束后光标归位序列在最后一个底边之后(光标停在框内)
   expect(text.match(/╭/g)?.length).toBe(2)
   expect(text.match(/╰/g)?.length).toBe(2)
-  expect(text.lastIndexOf("\x1b[1A")).toBeGreaterThan(text.lastIndexOf("╰"))
+  expect(text.lastIndexOf("\x1b[2A")).toBeGreaterThan(text.lastIndexOf("╰"))
 })
 
 test("repl redraws the input box after an empty line submit", async () => {
@@ -445,5 +453,5 @@ test("repl redraws the input box after an empty line submit", async () => {
   // 空行提交闭合旧框并重画新框:两对顶边/底边,光标归位在框内
   expect(text.match(/╰/g)?.length).toBe(2)
   expect(text.match(/╭/g)?.length).toBe(2)
-  expect(text.lastIndexOf("\x1b[1A")).toBeGreaterThan(text.lastIndexOf("╰"))
+  expect(text.lastIndexOf("\x1b[2A")).toBeGreaterThan(text.lastIndexOf("╰"))
 })
