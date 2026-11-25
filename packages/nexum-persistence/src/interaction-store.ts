@@ -22,6 +22,36 @@ export interface FileInteractionStoreOptions {
   readonly filePath: string
 }
 
+/**
+ * 创建进程内交互请求 Store。
+ *
+ * @returns 不写入文件且保留与文件 Store 相同脱敏语义的交互 Store
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+export function createInMemoryInteractionStore(): NexumInteractionStore {
+  let records = new Map<string, NexumInteractionRecord>()
+  return {
+    async list() {
+      return sortInteractions([...records.values()].map(cloneInteractionRecord))
+    },
+    async get(requestID) {
+      const record = records.get(requestID)
+      return record ? cloneInteractionRecord(record) : undefined
+    },
+    async save(record) {
+      records = new Map(records).set(record.requestID, redactInteractionRecord(record))
+    },
+    async delete(requestID) {
+      records = new Map(records)
+      records.delete(requestID)
+    },
+    async deleteSession(sessionID) {
+      records = new Map([...records].filter(([, record]) => record.sessionID !== sessionID))
+    },
+  }
+}
+
 interface StoredInteractionFile {
   readonly version: number
   readonly interactions: readonly unknown[]
@@ -215,6 +245,10 @@ function redactInteractionRecord(record: NexumInteractionRecord): NexumInteracti
       ...(item.multiple === undefined ? {} : { multiple: item.multiple }),
     })),
   }
+}
+
+function cloneInteractionRecord(record: NexumInteractionRecord): NexumInteractionRecord {
+  return redactInteractionRecord(record)
 }
 
 function sortInteractions(records: NexumInteractionRecord[]): NexumInteractionRecord[] {

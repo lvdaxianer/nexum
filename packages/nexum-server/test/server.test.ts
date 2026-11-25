@@ -20,6 +20,7 @@ import {
   createFileSessionStore,
   createInMemoryMessageStore,
   createInMemorySessionStore,
+  createMemoryPersistence,
   createNexumModelConfigStore,
 } from "../../nexum-persistence/src/index.ts"
 import { createNexumQuestionPort } from "@nexum/application"
@@ -59,6 +60,23 @@ test("nexum server starts independently and exposes liveness and readiness", asy
     service: "nexum-server",
     status: "ready",
   })
+})
+
+test("uses an injected persistence composition when creating the server runtime", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-persistence-"))
+  temporaryDirectories.push(directory)
+  const persistence = createMemoryPersistence()
+  const server = await startNexumServer({ port: 0, persistence })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/nexum/session", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ directory }),
+  })
+
+  expect(response.status).toBe(200)
+  expect(await persistence.sessionStore.list()).toHaveLength(1)
 })
 
 test("allows the local nexum UI origin and answers CORS preflight", async () => {
