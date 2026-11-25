@@ -21,6 +21,10 @@ export const NEXUM_EVENT_TYPES = [
   "skill.updated",
   "skill.activated",
   "skill.failed",
+  "plugin.updated",
+  "plugin.activated",
+  "plugin.failed",
+  "plugin.deactivated",
   "model.attempt",
   "model.retry",
   "coding-loop.limit.reached",
@@ -74,8 +78,76 @@ export type NexumRunSettledEventData = {
   readonly result: "completed" | "failed" | "cancelled"
 }
 
+export type NexumPluginStatus = "registered" | "activating" | "active" | "failed" | "disabled"
+
+export type NexumPluginExportKind = "skill" | "function" | "workflow" | "hook"
+
+export type NexumPluginExport = {
+  readonly id: string
+  readonly kind: NexumPluginExportKind
+  readonly description: string
+}
+
+export type NexumPluginRouting = {
+  readonly intents: readonly string[]
+  readonly examples: readonly string[]
+  readonly keywords: readonly string[]
+}
+
+export type NexumPlugin = {
+  readonly id: string
+  readonly version: string
+  readonly description: string
+  readonly routing: NexumPluginRouting
+  readonly exports: readonly NexumPluginExport[]
+  readonly permissions: readonly string[]
+  readonly status: NexumPluginStatus
+  readonly diagnostics: readonly string[]
+}
+
+export type NexumPluginDetail = NexumPlugin & {
+  readonly activeSessions: readonly string[]
+}
+
+export type NexumPluginActivationInput = {
+  readonly sessionID: string
+  readonly source?: "explicit" | "automatic"
+}
+
+export type NexumPluginActivationResult = {
+  readonly pluginID: string
+  readonly sessionID: string
+  readonly status: "active"
+  readonly source: "explicit" | "automatic"
+}
+
+export type NexumPluginDeactivationResult = {
+  readonly pluginID: string
+  readonly sessionID: string
+  readonly status: "deactivated"
+}
+
+export type NexumPluginControlErrorCode =
+  | "plugin_not_found"
+  | "plugin_not_ready"
+  | "plugin_permission_denied"
+  | "plugin_mount_failed"
+  | "plugin_unmount_failed"
+
+export type NexumPluginLifecycleEventData = {
+  readonly change: "updated" | "activated" | "failed" | "deactivated"
+  readonly pluginID: string
+  readonly status?: NexumPluginStatus
+  readonly source?: "explicit" | "automatic"
+  readonly errorCode?: NexumPluginControlErrorCode
+}
+
 export type NexumEventDataByType = {
   "skill.updated": NexumSkillRegistryUpdateEventData
+  "plugin.updated": NexumPluginLifecycleEventData
+  "plugin.activated": NexumPluginLifecycleEventData
+  "plugin.failed": NexumPluginLifecycleEventData
+  "plugin.deactivated": NexumPluginLifecycleEventData
   "model.attempt": NexumModelAttemptEventData
   "model.retry": NexumModelRetryEventData
   "run.settled": NexumRunSettledEventData
