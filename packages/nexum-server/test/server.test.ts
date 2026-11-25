@@ -18,11 +18,13 @@ import { createNexumCodingLoop, createNexumPermissionBroker, createNexumSessionS
 import {
   createFileInteractionStore,
   createFileSessionStore,
+} from "@nexum/persistence-file"
+import {
   createInMemoryMessageStore,
   createInMemorySessionStore,
   createMemoryPersistence,
   createNexumModelConfigStore,
-} from "../../nexum-persistence/src/index.ts"
+} from "@nexum/persistence-memory"
 import { createNexumQuestionPort } from "@nexum/application"
 import { createNexumEventHub } from "../src/events.ts"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
@@ -60,6 +62,27 @@ test("nexum server starts independently and exposes liveness and readiness", asy
     service: "nexum-server",
     status: "ready",
   })
+})
+
+test("uses SQLite by default and restores sessions after a server restart", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-sqlite-workspace-"))
+  const dataDirectory = await mkdtemp(join(tmpdir(), "nexum-server-sqlite-data-"))
+  temporaryDirectories.push(directory, dataDirectory)
+  const databasePath = join(dataDirectory, "nexum.db")
+  const first = await startNexumServer({ port: 0, databasePath })
+  const created = await fetch(new URL("/api/nexum/session", first.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ directory }),
+  })
+  expect(created.status).toBe(200)
+  await first.stop(true)
+
+  const second = await startNexumServer({ port: 0, databasePath })
+  servers.push(second)
+  const restored = await fetch(new URL("/api/nexum/session", second.url))
+  expect(restored.status).toBe(200)
+  expect((await restored.json()).data).toHaveLength(1)
 })
 
 test("uses an injected persistence composition when creating the server runtime", async () => {
@@ -143,7 +166,7 @@ test("lists sessions for page-level recovery", async () => {
   const firstDirectory = await mkdtemp(join(tmpdir(), "nexum-server-list-first-"))
   const secondDirectory = await mkdtemp(join(tmpdir(), "nexum-server-list-second-"))
   temporaryDirectories.push(firstDirectory, secondDirectory)
-  const server = await startNexumServer({ port: 0 })
+  const server = await startNexumServer({ port: 0, persistence: createMemoryPersistence() })
   servers.push(server)
 
   for (const directory of [firstDirectory, secondDirectory]) {

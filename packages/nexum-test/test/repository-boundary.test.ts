@@ -75,6 +75,9 @@ test("运行时包按职责保持单向依赖", async () => {
     }
   const core = await readManifest("nexum-core")
   const persistence = await readManifest("nexum-persistence")
+  const memoryPersistence = await readManifest("nexum-persistence-memory")
+  const filePersistence = await readManifest("nexum-persistence-file")
+  const sqlitePersistence = await readManifest("nexum-persistence-sqlite")
   const integrations = await readManifest("nexum-integrations")
   const application = await readManifest("nexum-application")
 
@@ -82,12 +85,32 @@ test("运行时包按职责保持单向依赖", async () => {
   expect(core.dependencies ?? {}).not.toHaveProperty("@nexum/integrations")
   expect(core.dependencies ?? {}).not.toHaveProperty("@nexum/application")
   expect(persistence.dependencies).toEqual({ "@nexum/core": "workspace:*" })
-  expect(integrations.dependencies).toEqual({ "@nexum/core": "workspace:*" })
-  expect(application.dependencies).toEqual({
+  expect(memoryPersistence.dependencies).toEqual({
+    "@nexum/core": "workspace:*",
+    "@nexum/persistence": "workspace:*",
+  })
+  expect(filePersistence.dependencies).toEqual({
+    "@nexum/core": "workspace:*",
+    "@nexum/persistence": "workspace:*",
+  })
+  expect(sqlitePersistence.dependencies).toEqual({
+    "@nexum/core": "workspace:*",
+    "@nexum/persistence": "workspace:*",
+  })
+  expect(integrations.dependencies?.["@nexum/core"]).toBe("workspace:*")
+  expect(integrations.dependencies).not.toHaveProperty("@nexum/application")
+  expect(application.dependencies).toMatchObject({
     "@nexum/core": "workspace:*",
     "@nexum/integrations": "workspace:*",
     "@nexum/persistence": "workspace:*",
   })
+})
+
+test("持久化适配器 workspace 包具有独立职责", async () => {
+  const packages = await readdir(resolve(repositoryRoot, "packages"), { withFileTypes: true })
+  expect(packages.filter((entry) => entry.isDirectory()).map((entry) => entry.name)).toEqual(
+    expect.arrayContaining(["nexum-persistence-memory", "nexum-persistence-file", "nexum-persistence-sqlite"]),
+  )
 })
 
 test("活动代码不再引用旧的聚合适配器包", async () => {

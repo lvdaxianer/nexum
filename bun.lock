@@ -19,6 +19,9 @@
         "@nexum/core": "workspace:*",
         "@nexum/integrations": "workspace:*",
         "@nexum/persistence": "workspace:*",
+        "@nexum/persistence-file": "workspace:*",
+        "@nexum/persistence-memory": "workspace:*",
+        "@nexum/persistence-sqlite": "workspace:*",
       },
       "devDependencies": {
         "@tsconfig/bun": "catalog:",
@@ -101,6 +104,42 @@
         "@types/bun": "catalog:",
       },
     },
+    "packages/nexum-persistence-file": {
+      "name": "@nexum/persistence-file",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nexum/core": "workspace:*",
+        "@nexum/persistence": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+      },
+    },
+    "packages/nexum-persistence-memory": {
+      "name": "@nexum/persistence-memory",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nexum/core": "workspace:*",
+        "@nexum/persistence": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+      },
+    },
+    "packages/nexum-persistence-sqlite": {
+      "name": "@nexum/persistence-sqlite",
+      "version": "0.0.1",
+      "dependencies": {
+        "@nexum/core": "workspace:*",
+        "@nexum/persistence": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+      },
+    },
     "packages/nexum-protocol": {
       "name": "@nexum/protocol",
       "version": "0.1.0",
@@ -118,6 +157,8 @@
         "@nexum/protocol": "workspace:*",
       },
       "devDependencies": {
+        "@nexum/persistence-file": "workspace:*",
+        "@nexum/persistence-memory": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
       },
@@ -144,6 +185,7 @@
         "@nexum/client": "workspace:*",
         "@nexum/integrations": "workspace:*",
         "@nexum/persistence": "workspace:*",
+        "@nexum/persistence-memory": "workspace:*",
         "dompurify": "catalog:",
         "marked": "catalog:",
         "solid-js": "catalog:",
@@ -326,6 +368,12 @@
     "@nexum/integrations": ["@nexum/integrations@workspace:packages/nexum-integrations"],
 
     "@nexum/persistence": ["@nexum/persistence@workspace:packages/nexum-persistence"],
+
+    "@nexum/persistence-file": ["@nexum/persistence-file@workspace:packages/nexum-persistence-file"],
+
+    "@nexum/persistence-memory": ["@nexum/persistence-memory@workspace:packages/nexum-persistence-memory"],
+
+    "@nexum/persistence-sqlite": ["@nexum/persistence-sqlite@workspace:packages/nexum-persistence-sqlite"],
 
     "@nexum/protocol": ["@nexum/protocol@workspace:packages/nexum-protocol"],
 

@@ -21,6 +21,8 @@
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:"
+    "@types/bun": "catalog:",
+    "@nexum/persistence-file": "workspace:*",
+    "@nexum/persistence-memory": "workspace:*"
   }
 }

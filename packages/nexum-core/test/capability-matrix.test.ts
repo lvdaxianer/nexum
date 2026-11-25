@@ -9,7 +9,7 @@ import {
   type ToolPort,
 } from "../src/index.ts"
 import { createNexumCodingLoop, createNexumPermissionBroker, createNexumSessionService } from "./test-ports.ts"
-import { createNexumModelConfigStore } from "../../nexum-persistence/src/index.ts"
+import { createNexumModelConfigStore } from "../../nexum-persistence/src/model-config.ts"
 import { createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
 
 test("rejects malformed OpenAI Function Calling arguments without emitting a tool chunk", async () => {

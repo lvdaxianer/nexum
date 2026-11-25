@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { createFilePersistence, createMemoryPersistence } from "../src/index.ts"
+import { createFilePersistence, createMemoryPersistence } from "../src/composition.ts"
 
 const directories: string[] = []
 

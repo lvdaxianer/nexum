@@ -5,7 +5,7 @@
  * @date 2026-11-19
  */
 
-import { createEmbeddedRuntime, type NexumDefaultRuntime, type NexumPersistence } from "@nexum/application"
+import { createSqliteRuntime, type NexumDefaultRuntime, type NexumPersistence } from "@nexum/application"
 import {
   NexumModelConfigError,
   NexumPermissionError,
@@ -119,6 +119,7 @@ export interface NexumServerOptions {
   readonly corsOrigins?: readonly string[]
   readonly idleTimeout?: number
   readonly persistence?: NexumPersistence
+  readonly databasePath?: string
 }
 
 /** 已启动的 Nexum Service 控制句柄。 */
@@ -140,7 +141,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
   const port = options.port ?? DEFAULT_PORT
   const interactionStore = options.interactionStore
-  const runtime = options.runtime ?? createEmbeddedRuntime({
+  const runtime = options.runtime ?? await createSqliteRuntime({
     ...(options.sessionService ? { sessions: options.sessionService } : {}),
     ...(options.sessionStore ? { sessionStore: options.sessionStore } : {}),
     ...(options.modelConfigStore ? { modelConfig: options.modelConfigStore } : {}),
@@ -160,6 +161,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
     ...(options.mcp ? { mcp: options.mcp } : {}),
     ...(options.mcpOAuth ? { mcpOAuth: options.mcpOAuth } : {}),
     ...(options.persistence ? { persistence: options.persistence } : {}),
+    ...(options.databasePath ? { databasePath: options.databasePath } : {}),
     skillRoots: options.skillRoots ?? [resolve(process.cwd(), "skills")],
   })
   const ownsRuntime = options.runtime === undefined

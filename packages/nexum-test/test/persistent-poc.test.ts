@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test"
-import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
+import { access, mkdir, mkdtemp, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { createLocalRuntime } from "@nexum/application"
+import { createSqliteRuntime } from "@nexum/application"
 import { Nexum } from "@nexum/client"
 import { startNexumServer } from "@nexum/server"
 import { createPocModel } from "../src/fixtures/fake-model.ts"
@@ -20,12 +20,12 @@ afterEach(async () => {
   workspaceDirectory = undefined
 })
 
-test("runs the protocol path with file persistence and restores the session", async () => {
+test("runs the protocol path with SQLite persistence and restores the session", async () => {
   const dataPath = await mkdtemp(join(tmpdir(), "nexum-test-poc-data-"))
   const workspacePath = await mkdtemp(join(tmpdir(), "nexum-test-poc-workspace-"))
   dataDirectory = dataPath
   workspaceDirectory = workspacePath
-  const runtime = createLocalRuntime({ dataDirectory: dataPath, model: createPocModel() })
+  const runtime = await createSqliteRuntime({ databasePath: join(dataPath, "nexum.db"), model: createPocModel() })
   server = await startNexumServer({ port: 0, runtime })
   const client = Nexum.make({ baseUrl: server.url.origin })
 
@@ -57,20 +57,15 @@ test("runs the protocol path with file persistence and restores the session", as
   await runtime.close()
   server = undefined
 
-  const restoredRuntime = createLocalRuntime({ dataDirectory: dataPath, model: createPocModel() })
+  const restoredRuntime = await createSqliteRuntime({ databasePath: join(dataPath, "nexum.db"), model: createPocModel() })
   const restored = await restoredRuntime.sessions.list()
   expect(restored).toHaveLength(1)
   expect(restored[0]?.status).toBe("completed")
-  expect(await readFile(join(dataPath, "sessions.json"), "utf8")).toContain(created.data.id)
   expect(await restoredRuntime.modelConfig.get()).toMatchObject({ model: "poc-model", credentialConfigured: true })
   expect(await restoredRuntime.memory?.search({ text: "file-backed" })).toHaveLength(1)
   expect(await restoredRuntime.permissionBroker.policy.list()).toHaveLength(1)
   expect(await restoredRuntime.interactionStore?.get("poc-interaction")).toMatchObject({ status: "orphaned" })
-  await Promise.all(
-    ["events.json", "messages.json", "model-config.json", "permission-policies.json", "interactions.json", "memory.json"].map((file) =>
-      access(join(dataPath, file)),
-    ),
-  )
+  await access(join(dataPath, "nexum.db"))
   await restoredRuntime.close()
 })
 

@@ -13,7 +13,11 @@ import {
   type PermissionPort,
   type ToolPort,
 } from "@nexum/core"
-import { createInMemoryMessageStore, createInMemoryPermissionPolicyStore, createInMemorySessionStore } from "@nexum/persistence"
+import {
+  createInMemoryMessageStore,
+  createInMemoryPermissionPolicyStore,
+  createInMemorySessionStore,
+} from "@nexum/persistence-memory"
 import { createNexumQuestionPort, createNexumSkillRegistry } from "@nexum/application"
 import { createNexumProjectContextPort } from "@nexum/integrations"
 import { createNexumEventHub } from "../../nexum-server/src/events.ts"

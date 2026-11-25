@@ -12,7 +12,7 @@ import {
 } from "../src/index.ts"
 import { createNexumCodingLoop, createNexumSessionService } from "./test-ports.ts"
 import { createNexumProjectContextPort } from "../../nexum-integrations/src/index.ts"
-import { createFileMessageStore, createInMemoryMessageStore } from "../../nexum-persistence/src/index.ts"
+import { createFileMessageStore, createInMemoryMessageStore } from "../../nexum-persistence/src/message-store.ts"
 import type { ContextCompactionPort } from "../src/context.ts"
 
 const temporaryDirectories: string[] = []

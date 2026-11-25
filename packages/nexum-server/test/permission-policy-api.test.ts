@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createFilePermissionPolicyStore } from "../../nexum-persistence/src/index.ts"
+import { createFilePermissionPolicyStore } from "@nexum/persistence-file"
 import { createNexumPermissionBroker, createNexumSessionService } from "./test-ports.ts"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
 

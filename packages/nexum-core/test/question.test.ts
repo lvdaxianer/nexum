@@ -10,7 +10,7 @@ import {
 } from "../src/index.ts"
 import { createNexumCodingLoop, createNexumSessionService } from "./test-ports.ts"
 import { createNexumQuestionPort } from "../../nexum-application/src/index.ts"
-import { createFileInteractionStore } from "../../nexum-persistence/src/index.ts"
+import { createFileInteractionStore } from "../../nexum-persistence/src/interaction-store.ts"
 
 const temporaryDirectories: string[] = []
 

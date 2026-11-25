@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { createNexumSessionService } from "./test-ports.ts"
 import { createLocalDirectoryValidator } from "../../nexum-integrations/src/index.ts"
-import { createInMemorySessionStore } from "../../nexum-persistence/src/index.ts"
+import { createInMemorySessionStore } from "../../nexum-persistence/src/session-store.ts"
 
 const temporaryDirectories: string[] = []
 

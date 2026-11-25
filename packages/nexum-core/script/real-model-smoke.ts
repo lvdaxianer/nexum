@@ -1,4 +1,4 @@
-import { createNexumModelConfigStore } from "../../nexum-persistence/src/index.ts"
+import { createNexumModelConfigStore } from "../../nexum-persistence/src/model-config.ts"
 import { createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
 import type { ModelChunk, NexumFetch } from "../src/index.ts"
 

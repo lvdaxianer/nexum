@@ -44,13 +44,14 @@ import {
   createFilePersistence,
   createFilePermissionPolicyStore,
   createFileRolePromptStore,
-  createMemoryPersistence,
   createFileMcpCredentialStore,
   createFileMcpServerConfigStore,
-  type NexumEventHub,
-  type FilePersistenceOptions,
-  type NexumPersistence,
-} from "@nexum/persistence"
+} from "@nexum/persistence-file"
+import { createMemoryPersistence } from "@nexum/persistence-memory"
+import { createSqlitePersistence } from "@nexum/persistence-sqlite"
+import type { FilePersistenceOptions } from "@nexum/persistence-file"
+import type { SqlitePersistenceOptions } from "@nexum/persistence-sqlite"
+import type { NexumEventHub, NexumPersistence } from "@nexum/persistence"
 import { join } from "node:path"
 import {
   createLocalDirectoryValidator,
@@ -65,13 +66,14 @@ export { createNexumQuestionPort } from "./context.ts"
 export type { NexumQuestionPortOptions } from "./context.ts"
 export { createNexumSkillRegistry } from "./skill-registry.ts"
 export type { NexumSkillRegistryOptions } from "./skill-registry.ts"
-export type { FilePersistenceOptions, NexumPersistence } from "@nexum/persistence"
+export type { FilePersistenceOptions } from "@nexum/persistence-file"
+export type { NexumPersistence } from "@nexum/persistence"
 export { createNexumToolRegistry } from "./local-tools.ts"
 export { createNexumConfiguredCodingLoop } from "./configured-loop.ts"
 export { createNexumEventHub, NexumEventStoreError } from "@nexum/persistence"
 export type { NexumEventHub, NexumEventHubOptions, NexumEventSubscriptionOptions } from "@nexum/persistence"
 
-export type NexumRuntimeStorageOptions = FilePersistenceOptions
+export type NexumRuntimeStorageOptions = FilePersistenceOptions & SqlitePersistenceOptions
 
 export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly toolTimeoutMs?: number
@@ -262,6 +264,21 @@ export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefa
           mcpConfigStore: localMcp.configStore,
         }
       : {}),
+  })
+}
+
+export async function createSqliteRuntime(options: NexumRuntimeOptions = {}): Promise<NexumDefaultRuntime> {
+  if (options.persistence) return createEmbeddedRuntime(options)
+  const persistence = await createSqlitePersistence({
+    databasePath: options.databasePath ?? join(options.dataDirectory ?? join(process.cwd(), ".nexum"), "nexum.db"),
+  })
+  const runtime = createEmbeddedRuntime({ ...options, persistence })
+  const closeRuntime = runtime.close
+  return Object.assign(runtime, {
+    close: async () => {
+      await closeRuntime()
+      persistence.close()
+    },
   })
 }
 
