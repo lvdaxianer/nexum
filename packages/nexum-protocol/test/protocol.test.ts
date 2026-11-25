@@ -10,6 +10,8 @@ import type {
   NexumMessage,
   NexumModelAttemptEventData,
   NexumModelRetryEventData,
+  NexumPermissionPolicyList,
+  NexumPermissionPolicyRule,
   NexumReasoningEventData,
   NexumRunSettledEventData,
   NexumMcpServer,
@@ -112,6 +114,28 @@ test("types canonical session messages and pagination metadata", () => {
 
   expect(page.messages[0]?.message).toEqual(message)
   expect(page.nextBefore).toBe(3)
+})
+
+test("types permission policy rules and list payloads", () => {
+  const rule: NexumPermissionPolicyRule = {
+    id: "policy_001",
+    action: "shell",
+    resource: "git *",
+    effect: "allow",
+    scope: "session",
+    sessionID: "session_001",
+    createdAt: "2026-11-25T03:00:00.000Z",
+    updatedAt: "2026-11-25T03:00:00.000Z",
+  }
+  const list: NexumPermissionPolicyList = {
+    rules: [rule],
+    defaultEffect: "ask",
+    sessionID: "session_001",
+  }
+
+  expect(list.rules[0]).toEqual(rule)
+  expect(list.defaultEffect).toBe("ask")
+  expect(rule.sessionID).toBe("session_001")
 })
 
 test("types MCP retry snapshots without exposing connection credentials", () => {

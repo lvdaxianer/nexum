@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { Nexum } from "../src/index.ts"
+import { Nexum, NexumClientError } from "../src/index.ts"
 
 test("uses the Nexum runtime protocol for capability requests", async () => {
   const requests: Request[] = []
@@ -124,4 +124,61 @@ test("manages the default role prompt through the Nexum client", async () => {
     ["DELETE", "http://nexum.test/api/nexum/role-prompt"],
   ])
   expect(await requests[1]?.json()).toEqual({ prompt: "使用中文回答。" })
+})
+
+test("manages permission policy rules through the stable policy endpoints", async () => {
+  const requests: Request[] = []
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      const request = new Request(typeof input === "string" ? input : input.toString(), init)
+      requests.push(request)
+      return Response.json({
+        data: { id: "policy_001", deleted: true },
+        meta: { protocolVersion: "nexum.runtime.v1", traceId: "trace_policy" },
+      })
+    },
+  })
+
+  await client.experimental.nexum.permissionPolicy.list()
+  await client.experimental.nexum.permissionPolicy.list({ sessionID: "session/001" })
+  await client.experimental.nexum.permissionPolicy.create({ action: "shell", resource: "git *", effect: "allow" })
+  await client.experimental.nexum.permissionPolicy.update({ ruleID: "policy/001", effect: "deny" })
+  await client.experimental.nexum.permissionPolicy.remove({ ruleID: "policy/001" })
+
+  expect(requests.map((request) => [request.method, request.url])).toEqual([
+    ["GET", "http://nexum.test/api/nexum/permission/policy"],
+    ["GET", "http://nexum.test/api/nexum/permission/policy?sessionID=session%2F001"],
+    ["POST", "http://nexum.test/api/nexum/permission/policy"],
+    ["PUT", "http://nexum.test/api/nexum/permission/policy/policy%2F001"],
+    ["DELETE", "http://nexum.test/api/nexum/permission/policy/policy%2F001"],
+  ])
+  expect(await requests[2]?.json()).toEqual({ action: "shell", resource: "git *", effect: "allow" })
+  expect(await requests[3]?.json()).toEqual({ effect: "deny" })
+  expect(await requests[4]?.text()).toBe("")
+})
+
+test("surfaces permission policy conflicts as NexumClientError with the stable code", async () => {
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async () =>
+      Response.json(
+        {
+          errorCode: "NEXUM_PERMISSION_POLICY_CONFLICT",
+          message: "相同作用域下已存在同规则",
+          traceId: "trace_conflict",
+          meta: { protocolVersion: "nexum.runtime.v1", traceId: "trace_conflict" },
+        },
+        { status: 409 },
+      ),
+  })
+
+  const failure = await client.experimental.nexum.permissionPolicy
+    .create({ action: "shell", resource: "git *", effect: "allow" })
+    .catch((error: unknown) => error)
+
+  expect(failure).toBeInstanceOf(NexumClientError)
+  expect((failure as NexumClientError).status).toBe(409)
+  expect((failure as NexumClientError).code).toBe("NEXUM_PERMISSION_POLICY_CONFLICT")
+  expect((failure as NexumClientError).traceId).toBe("trace_conflict")
 })

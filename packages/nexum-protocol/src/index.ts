@@ -180,6 +180,46 @@ export type NexumPermission = {
   readonly reason?: string
 }
 
+export type NexumPermissionPolicyEffect = "allow" | "ask" | "deny"
+
+export type NexumPermissionPolicyScope = "global" | "session"
+
+export type NexumPermissionPolicyRule = {
+  readonly id: string
+  readonly action: string
+  readonly resource: string
+  readonly effect: NexumPermissionPolicyEffect
+  readonly scope: NexumPermissionPolicyScope
+  readonly sessionID?: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+export type NexumPermissionPolicyList = {
+  readonly rules: readonly NexumPermissionPolicyRule[]
+  readonly defaultEffect: NexumPermissionPolicyEffect
+  readonly sessionID?: string
+}
+
+export type NexumPermissionPolicyRuleInput = {
+  readonly action: string
+  readonly resource: string
+  readonly effect: NexumPermissionPolicyEffect
+  readonly scope?: NexumPermissionPolicyScope
+  readonly sessionID?: string
+}
+
+export type NexumPermissionPolicyRuleUpdate = {
+  readonly action?: string
+  readonly resource?: string
+  readonly effect?: NexumPermissionPolicyEffect
+}
+
+export type NexumPermissionPolicyDeleteResult = {
+  readonly id: string
+  readonly deleted: true
+}
+
 export type NexumQuestion = {
   readonly id: string
   readonly sessionID: string

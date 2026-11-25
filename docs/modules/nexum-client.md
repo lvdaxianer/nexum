@@ -40,6 +40,7 @@ const session = await client.experimental.nexum.session.create({
 | 运行控制    | `session.prompt/continue/cancel()`                                 | 发送消息、恢复运行、取消当前运行                                           |
 | 事件        | `session.events()`                                                 | 订阅指定 Session 的 SSE 事件，可传 `AbortSignal`、`afterSequence` 和请求头 |
 | Permission  | `session.permission.list/reply()`                                  | 查询待处理权限并提交决定                                                   |
+| Permission Policy | `experimental.nexum.permissionPolicy.list/create/update/remove()` | 查询和管理全局或 Session 级权限策略规则                            |
 | Question    | `session.question.list/reply/cancel()`                             | 查询问题、提交答案或取消问题                                               |
 | Skill       | `session.skill.list/detail/register/refresh/validate/unregister()` | 发现、校验和管理 Skill                                                     |
 

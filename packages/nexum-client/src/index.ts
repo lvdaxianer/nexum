@@ -10,6 +10,11 @@ import {
   type NexumModelConfig,
   type NexumModelProbe,
   type NexumPermission,
+  type NexumPermissionPolicyDeleteResult,
+  type NexumPermissionPolicyList,
+  type NexumPermissionPolicyRule,
+  type NexumPermissionPolicyRuleInput,
+  type NexumPermissionPolicyRuleUpdate,
   type NexumQuestion,
   type NexumRolePrompt,
   type NexumRolePromptInput,
@@ -43,6 +48,13 @@ export type {
   NexumMessage,
   NexumMessageToolCall,
   NexumPermission,
+  NexumPermissionPolicyDeleteResult,
+  NexumPermissionPolicyEffect,
+  NexumPermissionPolicyList,
+  NexumPermissionPolicyRule,
+  NexumPermissionPolicyRuleInput,
+  NexumPermissionPolicyRuleUpdate,
+  NexumPermissionPolicyScope,
   NexumQuestion,
   NexumRolePrompt,
   NexumRolePromptInput,
@@ -114,6 +126,29 @@ export const Nexum = {
             update: (input: NexumRolePromptInput) =>
               request<NexumRolePrompt>("/role-prompt", { method: "PUT", body: JSON.stringify(input) }),
             reset: () => request<NexumRolePrompt>("/role-prompt", { method: "DELETE" }),
+          },
+          permissionPolicy: {
+            list: (input: { readonly sessionID?: string } = {}) => {
+              const query = new URLSearchParams()
+              if (input.sessionID !== undefined) query.set("sessionID", input.sessionID)
+              const suffix = query.size > 0 ? `?${query.toString()}` : ""
+              return request<NexumPermissionPolicyList>(`/permission/policy${suffix}`)
+            },
+            create: (input: NexumPermissionPolicyRuleInput) =>
+              request<NexumPermissionPolicyRule>("/permission/policy", { method: "POST", body: JSON.stringify(input) }),
+            update: (input: { readonly ruleID: string } & NexumPermissionPolicyRuleUpdate) =>
+              request<NexumPermissionPolicyRule>(`/permission/policy/${encodeURIComponent(input.ruleID)}`, {
+                method: "PUT",
+                body: JSON.stringify({
+                  ...(input.action !== undefined ? { action: input.action } : {}),
+                  ...(input.resource !== undefined ? { resource: input.resource } : {}),
+                  ...(input.effect !== undefined ? { effect: input.effect } : {}),
+                }),
+              }),
+            remove: (input: { readonly ruleID: string }) =>
+              request<NexumPermissionPolicyDeleteResult>(`/permission/policy/${encodeURIComponent(input.ruleID)}`, {
+                method: "DELETE",
+              }),
           },
           session: {
             create: (input: { readonly directory: string; readonly name?: string }) =>

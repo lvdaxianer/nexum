@@ -21,6 +21,7 @@
 - JSON/错误模型：`JsonObject`、`NexumEnvelope`、`NexumErrorPayload`。
 - 能力与模型：`NexumCapabilities`、`NexumCapability`、`NexumModelConfig`、`NexumRolePrompt`。
 - Session 与交互：`NexumSession`、`NexumSessionMessages`、`NexumSessionState`、`NexumPermission`、`NexumQuestion`、`NexumSkill`。
+- 权限策略：`NexumPermissionPolicyEffect`、`NexumPermissionPolicyScope`、`NexumPermissionPolicyRule`、`NexumPermissionPolicyList`、`NexumPermissionPolicyRuleInput`、`NexumPermissionPolicyRuleUpdate`、`NexumPermissionPolicyDeleteResult`。
 
 协议字段是公共契约。新增或修改字段时，应同时更新 Server、Client、ChatSurface、API 文档和对应测试。
 
@@ -53,6 +54,7 @@ function handleEvent(event: NexumEvent) {
 | `NexumSession`、`NexumSessionMessages`、`NexumSessionState` | Session 生命周期、历史和恢复   | Server、Client、ChatSurface      |
 | `NexumEvent`                                                | SSE 事件、流式文本、工具和终态 | Server、ChatSurface、Surfaces    |
 | `NexumPermission`、`NexumQuestion`                          | 人机交互请求与回复             | Application、Server、ChatSurface |
+| `NexumPermissionPolicyRule`、`NexumPermissionPolicyList`    | 权限策略规则查询与管理         | Server、Client、CLI              |
 | `NexumCapabilities`                                         | 能力发现和 UI 功能开关         | Server、Client、Surfaces         |
 | `NexumSkill`、`NexumModelConfig`、`NexumRolePrompt`         | Skill、模型和角色提示配置      | Server、Client、Surfaces         |
 
