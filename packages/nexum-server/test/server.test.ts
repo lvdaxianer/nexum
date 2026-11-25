@@ -64,6 +64,25 @@ test("nexum server starts independently and exposes liveness and readiness", asy
   })
 })
 
+test("requires an authentication token before binding a non-loopback host", async () => {
+  await expect(startNexumServer({ hostname: "0.0.0.0", port: 0 })).rejects.toThrow("authToken")
+})
+
+test("protects non-loopback API requests with a bearer token", async () => {
+  const server = await startNexumServer({ hostname: "0.0.0.0", port: 0, authToken: "test-auth-token" })
+  servers.push(server)
+  const apiUrl = new URL(`/api/nexum/capabilities`, `http://127.0.0.1:${server.url.port}`)
+
+  const unauthorized = await fetch(apiUrl)
+  const authorized = await fetch(apiUrl, { headers: { authorization: "Bearer test-auth-token" } })
+  const live = await fetch(new URL("/health/live", apiUrl))
+
+  expect(unauthorized.status).toBe(401)
+  expect(await unauthorized.json()).toMatchObject({ errorCode: "NEXUM_AUTH_REQUIRED" })
+  expect(authorized.status).toBe(200)
+  expect(live.status).toBe(200)
+})
+
 test("uses SQLite by default and restores sessions after a server restart", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-server-sqlite-workspace-"))
   const dataDirectory = await mkdtemp(join(tmpdir(), "nexum-server-sqlite-data-"))
@@ -487,7 +506,10 @@ test("probes the configured model without returning model content or credentials
     port: 0,
     modelProbe: {
       async probe(input) {
-        expect(input).toEqual({ mode: "both" })
+        if (!input) throw new Error("缺少 Probe 输入")
+        expect(input.mode).toBe("both")
+        expect(input.signal).toBeInstanceOf(AbortSignal)
+        expect(input.timeoutMs).toBe(30_000)
         return { text: "pass", functionCalling: "pass" }
       },
     },

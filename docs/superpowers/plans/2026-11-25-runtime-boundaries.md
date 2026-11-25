@@ -16,27 +16,27 @@
 - Modify: `packages/nexum-server/src/index.ts:90-250`
 - Test: `packages/nexum-server/test/server.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 增加测试：非回环 hostname 没有 token 时 `startNexumServer` 拒绝启动；配置 token 后，无 token 的业务请求返回 401，正确 Bearer token 可访问；回环服务仍可无 token 访问。
 
-- [ ] **Step 2: 运行 focused test 确认失败**
+- [x] **Step 2: 运行 focused test 确认失败**
 
 运行：`bun test test/server.test.ts -t "requires authentication"`
 
 预期：当前实现没有 `authToken` 选项，测试失败。
 
-- [ ] **Step 3: 实现最小认证边界**
+- [x] **Step 3: 实现最小认证边界**
 
 在 `NexumServerOptions` 增加 `authToken?: string`，对非回环 hostname 做启动校验；在 `Bun.serve.fetch` 中对健康检查以外的请求校验 `Authorization: Bearer`，错误使用现有稳定响应格式；CORS 增加 authorization 允许头。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 运行：`bun test test/server.test.ts -t "requires authentication|keeps loopback requests local"`
 
 预期：新增测试通过，原有 server 测试不回归。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 提交：`🐛 fix(server): 加固非回环服务认证边界`
 
