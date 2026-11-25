@@ -66,6 +66,15 @@ export { createNexumQuestionPort } from "./context.ts"
 export type { NexumQuestionPortOptions } from "./context.ts"
 export { createNexumSkillRegistry } from "./skill-registry.ts"
 export type { NexumSkillRegistryOptions } from "./skill-registry.ts"
+export { createLocalPluginSource, createNexumPluginRegistry, NexumPluginLoaderError } from "./plugin-registry.ts"
+export type {
+  NexumApplicationPluginPackage,
+  NexumApplicationPluginRegistry,
+  NexumPluginLoaderErrorCode,
+  NexumPluginRegistryOptions,
+  NexumPluginSource,
+  NexumPluginSourceCandidate,
+} from "./plugin-registry.ts"
 export type { FilePersistenceOptions } from "@nexum/persistence-file"
 export type { NexumPersistence } from "@nexum/persistence"
 export { createNexumToolRegistry } from "./local-tools.ts"
