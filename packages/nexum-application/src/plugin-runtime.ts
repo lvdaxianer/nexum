@@ -80,6 +80,7 @@ export interface NexumPluginRuntimeOptions {
 export interface NexumPluginRuntime extends NexumPluginActivationPort {
   readonly deactivate: (input: { readonly sessionID: string; readonly pluginID: string }) => Promise<void>
   readonly listActive: (sessionID: string) => Promise<readonly NexumActivePlugin[]>
+  readonly listActiveSessions: (pluginID: string) => Promise<readonly string[]>
   readonly listTools: (sessionID: string) => Promise<readonly NexumPluginActiveTool["definition"][]>
   readonly executeTool: (request: ToolRequest) => Promise<ToolResult | undefined>
   readonly listDiagnostics: () => Promise<readonly NexumPluginRuntimeDiagnostic[]>
@@ -108,6 +109,9 @@ export function createNexumPluginRuntime(options: NexumPluginRuntimeOptions): Ne
     activate,
     deactivate,
     listActive: async (sessionID) => [...(scopes.get(sessionID)?.values() ?? [])].map(copyActivePlugin),
+    listActiveSessions: async (pluginID) => [...scopes.entries()]
+      .filter(([, scope]) => scope.has(pluginID))
+      .map(([sessionID]) => sessionID),
     listTools: async (sessionID) => [...(scopes.get(sessionID)?.values() ?? [])]
       .flatMap((plugin) => plugin.tools.map((tool) => tool.definition)),
     executeTool: async (request) => executePluginTool(request),

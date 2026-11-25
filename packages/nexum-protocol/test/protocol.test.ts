@@ -15,6 +15,9 @@ import type {
   NexumReasoningEventData,
   NexumRunSettledEventData,
   NexumMcpServer,
+  NexumPlugin,
+  NexumPluginActivationResult,
+  NexumPluginLifecycleEventData,
   NexumSessionMessages,
   NexumTextEventData,
   NexumThinkingEventData,
@@ -44,6 +47,10 @@ test("publishes typed reasoning events in the protocol contract", () => {
     "skill.updated",
     "skill.activated",
     "skill.failed",
+    "plugin.updated",
+    "plugin.activated",
+    "plugin.failed",
+    "plugin.deactivated",
     "model.attempt",
     "model.retry",
     "coding-loop.limit.reached",
@@ -152,4 +159,33 @@ test("types MCP retry snapshots without exposing connection credentials", () => 
   expect(server.status).toBe("retrying")
   expect(server.retryAttempt).toBe(1)
   expect(JSON.stringify(server)).not.toContain("token")
+})
+
+test("types safe Plugin control snapshots and lifecycle events", () => {
+  const plugin: NexumPlugin = {
+    id: "crm",
+    version: "1.0.0",
+    description: "客户关系管理",
+    routing: { intents: ["查询订单"], examples: ["我的订单在哪里"], keywords: ["订单"] },
+    exports: [{ id: "order.query", kind: "function", description: "查询订单" }],
+    permissions: ["crm.read"],
+    status: "registered",
+    diagnostics: [],
+  }
+  const activation: NexumPluginActivationResult = {
+    pluginID: plugin.id,
+    sessionID: "session_001",
+    status: "active",
+    source: "explicit",
+  }
+  const lifecycle: NexumPluginLifecycleEventData = {
+    change: "activated",
+    pluginID: plugin.id,
+    status: "active",
+    source: activation.source,
+  }
+
+  expect(plugin.exports[0]?.kind).toBe("function")
+  expect(activation.sessionID).toBe("session_001")
+  expect(lifecycle.pluginID).toBe("crm")
 })

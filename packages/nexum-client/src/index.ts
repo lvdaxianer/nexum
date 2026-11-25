@@ -35,6 +35,11 @@ import {
   type NexumMcpOAuthAttempt,
   type NexumMcpOAuthStartInput,
   type NexumMcpOAuthCompleteInput,
+  type NexumPlugin,
+  type NexumPluginActivationInput,
+  type NexumPluginActivationResult,
+  type NexumPluginDeactivationResult,
+  type NexumPluginDetail,
 } from "@nexum/protocol"
 
 export type {
@@ -75,6 +80,11 @@ export type {
   NexumMcpOAuthAttempt,
   NexumMcpOAuthStartInput,
   NexumMcpOAuthCompleteInput,
+  NexumPlugin,
+  NexumPluginActivationInput,
+  NexumPluginActivationResult,
+  NexumPluginDeactivationResult,
+  NexumPluginDetail,
 } from "@nexum/protocol"
 
 export type NexumFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -234,6 +244,21 @@ export const Nexum = {
               }),
             unregister: (input: { readonly id: string }) =>
               request<NexumSkillDeleteResult>(`/skills/${encodeURIComponent(input.id)}`, { method: "DELETE" }),
+          },
+          plugin: {
+            list: () => request<readonly NexumPlugin[]>("/plugins"),
+            detail: (input: { readonly id: string }) =>
+              request<NexumPluginDetail>(`/plugins/${encodeURIComponent(input.id)}`),
+            activate: (input: NexumPluginActivationInput & { readonly id: string }) =>
+              request<NexumPluginActivationResult>(`/plugins/${encodeURIComponent(input.id)}/activate`, {
+                method: "POST",
+                body: JSON.stringify({ sessionID: input.sessionID, ...(input.source ? { source: input.source } : {}) }),
+              }),
+            deactivate: (input: { readonly id: string; readonly sessionID: string }) =>
+              request<NexumPluginDeactivationResult>(`/plugins/${encodeURIComponent(input.id)}/deactivate`, {
+                method: "POST",
+                body: JSON.stringify({ sessionID: input.sessionID }),
+              }),
           },
           mcp: {
             list: () => experimentalRequest<readonly NexumMcpServer[]>("/mcp"),

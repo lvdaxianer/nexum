@@ -126,6 +126,35 @@ test("manages the default role prompt through the Nexum client", async () => {
   expect(await requests[1]?.json()).toEqual({ prompt: "使用中文回答。" })
 })
 
+test("manages Plugin activation through the Nexum client", async () => {
+  const requests: Request[] = []
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      const request = new Request(typeof input === "string" ? input : input.toString(), init)
+      requests.push(request)
+      return Response.json({
+        data: { pluginID: "crm", sessionID: "session_001", status: "active", source: "explicit" },
+        meta: { protocolVersion: "nexum.runtime.v1", traceId: "trace_plugin" },
+      })
+    },
+  })
+
+  await client.experimental.nexum.plugin.list()
+  await client.experimental.nexum.plugin.detail({ id: "crm" })
+  await client.experimental.nexum.plugin.activate({ id: "crm", sessionID: "session_001" })
+  await client.experimental.nexum.plugin.deactivate({ id: "crm", sessionID: "session_001" })
+
+  expect(requests.map((request) => [request.method, request.url])).toEqual([
+    ["GET", "http://nexum.test/api/nexum/plugins"],
+    ["GET", "http://nexum.test/api/nexum/plugins/crm"],
+    ["POST", "http://nexum.test/api/nexum/plugins/crm/activate"],
+    ["POST", "http://nexum.test/api/nexum/plugins/crm/deactivate"],
+  ])
+  expect(await requests[2]?.json()).toEqual({ sessionID: "session_001" })
+  expect(await requests[3]?.json()).toEqual({ sessionID: "session_001" })
+})
+
 test("manages permission policy rules through the stable policy endpoints", async () => {
   const requests: Request[] = []
   const client = Nexum.make({

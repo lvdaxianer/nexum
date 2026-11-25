@@ -22,8 +22,8 @@
 
 ## 5. Protocol、Server 与 Client 控制面
 
-- [ ] 5.1 在 `packages/nexum-protocol/src/index.ts` 增加 Plugin 列表、详情、激活、停用和生命周期事件的稳定类型，并在 `packages/nexum-protocol/test/protocol.test.ts` 验证字段、错误码和能力声明。
-- [ ] 5.2 在 `packages/nexum-server/src/index.ts` 增加 Plugin 控制接口和事件映射，新增 `packages/nexum-server/test/plugin-api.test.ts` 覆盖成功、未找到、未就绪、权限拒绝、激活失败和停用；若公开 HttpApi 变更，执行仓库规定的客户端生成流程并验证 `packages/nexum-client/src/index.ts` 与协议一致。
+- [x] 5.1 在 `packages/nexum-protocol/src/index.ts` 增加 Plugin 列表、详情、激活、停用和生命周期事件的稳定类型，并在 `packages/nexum-protocol/test/protocol.test.ts` 验证字段、错误码和能力声明。
+- [x] 5.2 在 `packages/nexum-server/src/index.ts` 增加 Plugin 控制接口和事件映射，新增 `packages/nexum-server/test/plugin-api.test.ts` 覆盖成功、未找到、未就绪、权限拒绝、激活失败和停用；若公开 HttpApi 变更，执行仓库规定的客户端生成流程并验证 `packages/nexum-client/src/index.ts` 与协议一致。
 
 ## 6. 文档、示例与集成验证
 

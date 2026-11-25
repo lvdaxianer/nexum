@@ -5,7 +5,14 @@
  * @date 2026-11-19
  */
 
-import { createSqliteRuntime, type NexumDefaultRuntime, type NexumPersistence } from "@nexum/application"
+import {
+  createSqliteRuntime,
+  NexumPluginRuntimeError,
+  type NexumApplicationPluginRegistry,
+  type NexumDefaultRuntime,
+  type NexumPersistence,
+  type NexumPluginRuntime,
+} from "@nexum/application"
 import {
   NexumModelConfigError,
   NexumPermissionError,
@@ -17,6 +24,7 @@ import {
   NexumModelProbeError,
   NexumRolePromptError,
   NexumSkillInvocationError,
+  NexumPluginInvocationError,
   McpError,
   nexumAnyToolAction,
   redactNexumSensitiveValue,
@@ -70,6 +78,7 @@ const NEXUM_FEATURES = [
   "context_compaction",
   "project_context",
   "skill",
+  "plugin",
   "role_prompt",
   "mcp",
 ] as const
@@ -81,6 +90,7 @@ const NEXUM_CAPABILITIES = [
   { id: "session", version: "1", status: "enabled", operations: ["create", "list", "get", "update", "delete", "continue"] },
   { id: "context", version: "1", status: "enabled", operations: ["load", "compact"] },
   { id: "skill", version: "1", status: "enabled", operations: ["list", "detail", "register", "refresh", "validate", "unregister", "activate"] },
+  { id: "plugin", version: "1", status: "enabled", operations: ["list", "detail", "activate", "deactivate"] },
   { id: "role_prompt", version: "1", status: "enabled", operations: ["get", "update", "reset"] },
   { id: "memory", version: "1", status: "disabled", operations: ["search", "upsert", "remove"] },
   { id: "mcp", version: "1", status: "disabled", operations: ["listServers", "listTools", "listResources", "listPrompts", "callTool", "authorize", "authorizationStatus", "completeAuthorization", "cancelAuthorization"] },
@@ -115,6 +125,9 @@ export interface NexumServerOptions {
   readonly skillRegistryFile?: string
   readonly skillInvocation?: NexumSkillInvocationPort
   readonly skillRoots?: readonly string[]
+  readonly pluginRegistry?: NexumApplicationPluginRegistry
+  readonly pluginRuntime?: NexumPluginRuntime
+  readonly pluginRoots?: readonly string[]
   readonly mcp?: McpRegistry
   readonly mcpOAuth?: McpOAuthControlPort
   readonly mcpConfigStore?: McpServerConfigStore
@@ -165,12 +178,15 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
     ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
     ...(options.skillRegistryFile ? { skillRegistryFile: options.skillRegistryFile } : {}),
     ...(options.skillInvocation ? { skillInvocation: options.skillInvocation } : {}),
+    ...(options.pluginRegistry ? { pluginRegistry: options.pluginRegistry } : {}),
+    ...(options.pluginRuntime ? { pluginRuntime: options.pluginRuntime } : {}),
     ...(options.codingLoop ? { codingLoop: options.codingLoop } : {}),
     ...(options.mcp ? { mcp: options.mcp } : {}),
     ...(options.mcpOAuth ? { mcpOAuth: options.mcpOAuth } : {}),
     ...(options.persistence ? { persistence: options.persistence } : {}),
     ...(options.databasePath ? { databasePath: options.databasePath } : {}),
     skillRoots: options.skillRoots ?? [resolve(process.cwd(), "skills")],
+    pluginRoots: options.pluginRoots ?? [resolve(process.cwd(), "plugins")],
   })
   const ownsRuntime = options.runtime === undefined
   const sessionService = runtime.sessionService
@@ -186,6 +202,8 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   await skillRegistry.refresh()
   await runtime.mcpReady
   const skillInvocation = runtime.skillInvocation
+  const pluginRegistry = runtime.pluginRegistry
+  const pluginRuntime = runtime.pluginRuntime
   const corsOrigins = options.corsOrigins ?? DEFAULT_CORS_ORIGINS
   const codingLoop = runtime.codingLoop
   const mcp = options.mcp ?? runtime.mcp
@@ -219,6 +237,8 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
                 modelProbe,
                 skillRegistry,
                 skillInvocation,
+                pluginRegistry,
+                pluginRuntime,
                 mcp,
                 mcpOAuth,
                 mcpConfigStore,
@@ -336,6 +356,8 @@ async function handleRequest(
   modelProbe?: NexumModelProbePort,
   skillRegistry?: NexumSkillRegistry,
   skillInvocation?: NexumSkillInvocationPort,
+  pluginRegistry?: NexumApplicationPluginRegistry,
+  pluginRuntime?: NexumPluginRuntime,
   mcp?: McpPort,
   mcpOAuth?: McpOAuthControlPort,
   mcpConfigStore?: McpServerConfigStore,
@@ -528,6 +550,34 @@ async function handleRequest(
     if (request.method === "GET") return detailSkill(skillID, skillRegistry, traceId)
     if (request.method === "DELETE") return unregisterSkill(skillID, skillRegistry, traceId)
     return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 或 DELETE 请求", traceId)
+  }
+
+  if (url.pathname === "/api/nexum/plugins") {
+    if (request.method !== "GET") {
+      return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return listPlugins(pluginRegistry, traceId)
+  }
+
+  const pluginOperationMatch = url.pathname.match(/^\/api\/nexum\/plugins\/([^/]+)\/(activate|deactivate)$/)
+  if (pluginOperationMatch) {
+    const pluginID = decodeURIComponent(pluginOperationMatch[1]!)
+    const operation = pluginOperationMatch[2]
+    if (request.method !== "POST") {
+      return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
+    }
+    if (operation === "activate") {
+      return activatePlugin(request, pluginID, sessionService, pluginRuntime, eventHub, traceId)
+    }
+    return deactivatePlugin(request, pluginID, sessionService, pluginRegistry, pluginRuntime, eventHub, traceId)
+  }
+
+  const pluginDetailMatch = url.pathname.match(/^\/api\/nexum\/plugins\/([^/]+)$/)
+  if (pluginDetailMatch) {
+    if (request.method !== "GET") {
+      return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return detailPlugin(decodeURIComponent(pluginDetailMatch[1]!), pluginRegistry, pluginRuntime, traceId)
   }
 
   const promptMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)\/prompt$/)
@@ -872,6 +922,235 @@ function skillInvocationErrorResponse(error: unknown, traceId: string): Response
     return errorResponse(409, "NEXUM_SKILL_NOT_READY", "Skill 当前不可激活", traceId)
   }
   return errorResponse(409, "NEXUM_SKILL_PERMISSION_DENIED", "Skill 权限被拒绝", traceId)
+}
+
+/**
+ * 返回已发现的 Plugin 安全摘要。
+ *
+ * @param pluginRegistry - Application Plugin Registry
+ * @param traceId - 当前请求链路标识
+ * @returns Plugin 摘要响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+async function listPlugins(
+  pluginRegistry: NexumApplicationPluginRegistry | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!pluginRegistry) return pluginRuntimeUnavailable(traceId)
+  return jsonResponse({ data: await pluginRegistry.list() }, traceId)
+}
+
+/**
+ * 返回 Plugin 摘要和当前已挂载的 Session 列表。
+ *
+ * @param pluginID - Plugin ID
+ * @param pluginRegistry - Application Plugin Registry
+ * @param pluginRuntime - Plugin Session Runtime
+ * @param traceId - 当前请求链路标识
+ * @returns Plugin 详情或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+async function detailPlugin(
+  pluginID: string,
+  pluginRegistry: NexumApplicationPluginRegistry | undefined,
+  pluginRuntime: NexumPluginRuntime | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!pluginRegistry) return pluginRuntimeUnavailable(traceId)
+  const summary = (await pluginRegistry.list()).find((item) => item.id === pluginID)
+  if (!summary) return errorResponse(404, "NEXUM_PLUGIN_NOT_FOUND", "Plugin 不存在", traceId)
+  const activeSessions = pluginRuntime ? await pluginRuntime.listActiveSessions(pluginID) : []
+  return jsonResponse({ data: { ...summary, activeSessions } }, traceId)
+}
+
+/**
+ * 在当前 Session 激活 Plugin，并发布生命周期事件。
+ *
+ * @param request - 激活请求
+ * @param pluginID - Plugin ID
+ * @param sessionService - Session 查询服务
+ * @param pluginRuntime - Plugin Session Runtime
+ * @param eventHub - Session 事件 Hub
+ * @param traceId - 当前请求链路标识
+ * @returns 激活结果或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+async function activatePlugin(
+  request: Request,
+  pluginID: string,
+  sessionService: NexumSessionService,
+  pluginRuntime: NexumPluginRuntime | undefined,
+  eventHub: NexumEventHub,
+  traceId: string,
+): Promise<Response> {
+  if (!pluginRuntime) return pluginRuntimeUnavailable(traceId)
+  const payload = await readJsonRequest(request)
+  if (!isRecord(payload) || typeof payload.sessionID !== "string" || !isPluginSource(payload.source)) {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "sessionID 必须是字符串，source 必须是 explicit 或 automatic", traceId)
+  }
+  if (!(await sessionService.get(payload.sessionID))) {
+    return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  const source = payload.source ?? "explicit"
+  try {
+    const result = await pluginRuntime.activate({ sessionID: payload.sessionID, pluginID, source })
+    await publishPluginLifecycle(eventHub, payload.sessionID, "plugin.activated", {
+      change: "activated",
+      pluginID,
+      status: "active",
+      source,
+    })
+    return jsonResponse({ data: { ...result, sessionID: payload.sessionID } }, traceId)
+  } catch (error) {
+    const errorCode = pluginErrorCode(error)
+    await publishPluginLifecycle(eventHub, payload.sessionID, "plugin.failed", {
+      change: "failed",
+      pluginID,
+      status: "failed",
+      ...(errorCode ? { errorCode } : {}),
+    })
+    return pluginControlErrorResponse(error, traceId)
+  }
+}
+
+/**
+ * 在当前 Session 停用 Plugin，并在能力撤销后发布事件。
+ *
+ * @param request - 停用请求
+ * @param pluginID - Plugin ID
+ * @param sessionService - Session 查询服务
+ * @param pluginRegistry - Application Plugin Registry
+ * @param pluginRuntime - Plugin Session Runtime
+ * @param eventHub - Session 事件 Hub
+ * @param traceId - 当前请求链路标识
+ * @returns 停用结果或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+async function deactivatePlugin(
+  request: Request,
+  pluginID: string,
+  sessionService: NexumSessionService,
+  pluginRegistry: NexumApplicationPluginRegistry | undefined,
+  pluginRuntime: NexumPluginRuntime | undefined,
+  eventHub: NexumEventHub,
+  traceId: string,
+): Promise<Response> {
+  if (!pluginRegistry || !pluginRuntime) return pluginRuntimeUnavailable(traceId)
+  if (!(await pluginRegistry.get(pluginID))) {
+    return errorResponse(404, "NEXUM_PLUGIN_NOT_FOUND", "Plugin 不存在", traceId)
+  }
+  const payload = await readJsonRequest(request)
+  if (!isRecord(payload) || typeof payload.sessionID !== "string") {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "sessionID 必须是字符串", traceId)
+  }
+  if (!(await sessionService.get(payload.sessionID))) {
+    return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  }
+  try {
+    await pluginRuntime.deactivate({ sessionID: payload.sessionID, pluginID })
+    await publishPluginLifecycle(eventHub, payload.sessionID, "plugin.deactivated", {
+      change: "deactivated",
+      pluginID,
+      status: "registered",
+    })
+    return jsonResponse({ data: { pluginID, sessionID: payload.sessionID, status: "deactivated" } }, traceId)
+  } catch (error) {
+    return pluginControlErrorResponse(error, traceId)
+  }
+}
+
+/**
+ * 把 Plugin 生命周期事件写入当前 Session 的事件流。
+ *
+ * @param eventHub - Session 事件 Hub
+ * @param sessionID - Session ID
+ * @param type - 生命周期事件类型
+ * @param data - 事件数据
+ * @returns 事件发布完成 Promise
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+async function publishPluginLifecycle(
+  eventHub: NexumEventHub,
+  sessionID: string,
+  type: "plugin.activated" | "plugin.failed" | "plugin.deactivated",
+  data: Record<string, unknown>,
+): Promise<void> {
+  await eventHub.publish({
+    eventID: crypto.randomUUID(),
+    runID: `plugin:${data.pluginID ?? "unknown"}`,
+    type,
+    sessionID,
+    sequence: eventHub.lastSequence(sessionID) + 1,
+    occurredAt: new Date().toISOString(),
+    data,
+  })
+}
+
+/**
+ * 把 Plugin 控制错误映射为稳定的 HTTP 契约。
+ *
+ * @param error - Plugin 控制错误
+ * @param traceId - 当前请求链路标识
+ * @returns caller-safe HTTP 错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+function pluginControlErrorResponse(error: unknown, traceId: string): Response {
+  if (error instanceof NexumPluginRuntimeError) {
+    if (error.code === "plugin_unmount_failed") {
+      return errorResponse(409, "NEXUM_PLUGIN_DEACTIVATION_FAILED", "Plugin 停用失败", traceId)
+    }
+    return errorResponse(409, "NEXUM_PLUGIN_MOUNT_FAILED", "Plugin 挂载失败", traceId)
+  }
+  if (error instanceof NexumPluginInvocationError) {
+    if (error.code === "plugin_not_found") return errorResponse(404, "NEXUM_PLUGIN_NOT_FOUND", "Plugin 不存在", traceId)
+    if (error.code === "plugin_not_ready") return errorResponse(409, "NEXUM_PLUGIN_NOT_READY", "Plugin 当前不可激活", traceId)
+    if (error.code === "plugin_permission_denied") return errorResponse(403, "NEXUM_PLUGIN_PERMISSION_DENIED", "Plugin 权限被拒绝", traceId)
+  }
+  return errorResponse(500, "NEXUM_PLUGIN_ACTIVATION_FAILED", "Plugin 激活失败", traceId)
+}
+
+/**
+ * 返回 Plugin 生命周期错误码，供失败事件使用。
+ *
+ * @param error - 未知异常
+ * @returns 稳定错误码或 undefined
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+function pluginErrorCode(error: unknown): string | undefined {
+  if (error instanceof NexumPluginRuntimeError) return error.code
+  if (error instanceof NexumPluginInvocationError) return error.code
+  return undefined
+}
+
+/**
+ * 判断控制面传入的激活来源。
+ *
+ * @param input - 未知请求字段
+ * @returns 是否为合法激活来源
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+function isPluginSource(input: unknown): input is "explicit" | "automatic" | undefined {
+  return input === undefined || input === "explicit" || input === "automatic"
+}
+
+/**
+ * 统一返回 Plugin Registry 或 Runtime 未配置的服务错误。
+ *
+ * @param traceId - 当前请求链路标识
+ * @returns 服务不可用响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+function pluginRuntimeUnavailable(traceId: string): Response {
+  return errorResponse(503, "NEXUM_PLUGIN_RUNTIME_NOT_CONFIGURED", "Nexum Plugin Runtime 尚未配置", traceId)
 }
 
 function capabilitiesFor(mcp: McpPort | undefined) {
