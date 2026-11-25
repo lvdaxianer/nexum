@@ -49,7 +49,7 @@ import {
   type NexumSessionMessages,
 } from "@nexum/protocol"
 import { resolve } from "node:path"
-import { createHash } from "node:crypto"
+import { createHash, timingSafeEqual } from "node:crypto"
 import type { NexumEventHub } from "./events.ts"
 
 const DEFAULT_HOSTNAME = "127.0.0.1"
@@ -57,6 +57,7 @@ const DEFAULT_PORT = 4097
 const DEFAULT_CORS_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"] as const
 const TRACE_ID_HEADER = "x-trace-id"
 const TRACE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
+const MODEL_PROBE_TIMEOUT_MS = 30_000
 const NEXUM_PROTOCOL_VERSION = "nexum.runtime.v1"
 const NEXUM_FEATURES = [
   "model",
@@ -90,6 +91,7 @@ const NEXUM_CAPABILITIES = [
 export interface NexumServerOptions {
   readonly hostname?: string
   readonly port?: number
+  readonly authToken?: string
   readonly runtime?: NexumDefaultRuntime
   readonly sessionService?: NexumSessionService
   readonly sessionStore?: SessionStore
@@ -140,6 +142,9 @@ export interface NexumServer {
 export async function startNexumServer(options: NexumServerOptions = {}): Promise<NexumServer> {
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
   const port = options.port ?? DEFAULT_PORT
+  const authToken = options.authToken?.trim() || undefined
+  assertPort(port)
+  assertHostSecurity(hostname, authToken)
   const interactionStore = options.interactionStore
   const runtime = options.runtime ?? await createSqliteRuntime({
     ...(options.sessionService ? { sessions: options.sessionService } : {}),
@@ -183,7 +188,6 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const mcp = options.mcp ?? runtime.mcp
   const mcpOAuth = options.mcpOAuth ?? runtime.mcpOAuth
   const mcpConfigStore = options.mcpConfigStore ?? runtime.mcpConfigStore
-  assertPort(port)
   if (options.sessionStore) await options.sessionStore.list()
   if (runtimeInteractionStore) await runtimeInteractionStore.list()
 
@@ -198,25 +202,27 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
       const path = new URL(request.url).pathname
       console.info("nexum.request_started", { traceId, method: request.method, path, startedAt })
       try {
-        const response = await handleRequest(
-          request,
-          sessionService,
-          eventHub,
-          messageStore,
-          runtimeInteractionStore,
-          codingLoop,
-          permissionBroker,
-          questionPort,
-          modelConfigStore,
-          rolePromptStore,
-          modelProbe,
-          skillRegistry,
-          skillInvocation,
-          mcp,
-          mcpOAuth,
-          mcpConfigStore,
-          traceId,
-        )
+        const response = isPublicPath(path) || isAuthorizedRequest(request, authToken)
+          ? await handleRequest(
+              request,
+              sessionService,
+              eventHub,
+              messageStore,
+              runtimeInteractionStore,
+              codingLoop,
+              permissionBroker,
+              questionPort,
+              modelConfigStore,
+              rolePromptStore,
+              modelProbe,
+              skillRegistry,
+              skillInvocation,
+              mcp,
+              mcpOAuth,
+              mcpConfigStore,
+              traceId,
+            )
+          : errorResponse(401, "NEXUM_AUTH_REQUIRED", "请求需要有效的 Bearer token", traceId)
         const result = withCorsHeaders(response, request, corsOrigins)
         const endedAt = Date.now()
         console.info("nexum.request_completed", {
@@ -281,7 +287,7 @@ function withCorsHeaders(response: Response, request: Request, origins: readonly
   if (origin && isAllowedOrigin(origin, origins)) {
     headers.set("access-control-allow-origin", origin)
     headers.set("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS")
-    headers.set("access-control-allow-headers", "content-type, x-trace-id, last-event-id")
+    headers.set("access-control-allow-headers", "authorization, content-type, x-trace-id, last-event-id")
     headers.set("access-control-max-age", "300")
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
@@ -1269,14 +1275,17 @@ async function probeModel(
   }
 
   try {
-    const data = await modelProbe.probe({ mode: mode as NexumModelProbeMode })
+    const data = await modelProbe.probe({ mode: mode as NexumModelProbeMode, signal: request.signal, timeoutMs: MODEL_PROBE_TIMEOUT_MS })
     return jsonResponse({ data }, traceId)
   } catch (error) {
     if (error instanceof NexumModelError && error.code === "authentication_failed") {
       return errorResponse(401, "NEXUM_MODEL_AUTH_FAILED", "模型认证失败", traceId)
     }
+    if (error instanceof NexumModelProbeError && error.code === "timeout") {
+      return errorResponse(504, "NEXUM_MODEL_PROBE_TIMEOUT", "模型 Probe 超时", traceId)
+    }
     if (error instanceof NexumModelProbeError || error instanceof NexumModelError) {
-      return errorResponse(503, "NEXUM_MODEL_PROBE_FAILED", error.message, traceId)
+      return errorResponse(503, "NEXUM_MODEL_PROBE_FAILED", "模型 Probe 失败", traceId)
     }
     return errorResponse(503, "NEXUM_MODEL_PROBE_FAILED", "模型 Probe 失败", traceId)
   }
@@ -2304,6 +2313,60 @@ function assertPort(port: number): void {
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw new Error("Nexum Service 端口必须是 0 到 65535 的整数")
   }
+}
+
+/**
+ * 拒绝没有认证配置的非回环监听，避免服务意外暴露完整主机能力。
+ *
+ * @param hostname - 服务监听地址
+ * @param authToken - 可选的 Bearer token
+ * @throws 非回环监听缺少 token 时抛出配置错误
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+function assertHostSecurity(hostname: string, authToken: string | undefined): void {
+  if (isLoopbackHostname(hostname) || authToken) return
+  throw new Error("非回环 Nexum Service 必须配置 authToken")
+}
+
+/**
+ * 判断服务监听地址是否只在本机回环接口上可达。
+ *
+ * @param hostname - 服务监听地址
+ * @returns 是否为回环地址
+ */
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase()
+  return normalized === "localhost" || normalized === "::1" || normalized === "0:0:0:0:0:0:0:1" || normalized === "127.0.0.1" || normalized.startsWith("127.")
+}
+
+/**
+ * 判断路径是否属于允许匿名访问的健康检查。
+ *
+ * @param path - 请求路径
+ * @returns 是否允许匿名访问
+ */
+function isPublicPath(path: string): boolean {
+  return path === "/health/live" || path === "/health/ready"
+}
+
+/**
+ * 校验 Authorization Bearer token，比较时避免直接暴露 token 内容。
+ *
+ * @param request - 当前 HTTP 请求
+ * @param authToken - 服务端配置的 token
+ * @returns token 是否匹配
+ */
+function isAuthorizedRequest(request: Request, authToken: string | undefined): boolean {
+  if (!authToken) return true
+  const header = request.headers.get("authorization")?.trim()
+  if (!header?.startsWith("Bearer ")) return false
+  const candidate = header.slice("Bearer ".length).trim()
+  if (!candidate) return false
+  const expectedBytes = new TextEncoder().encode(authToken)
+  const candidateBytes = new TextEncoder().encode(candidate)
+  if (expectedBytes.byteLength !== candidateBytes.byteLength) return false
+  return timingSafeEqual(expectedBytes, candidateBytes)
 }
 
 /**

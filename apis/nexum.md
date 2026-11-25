@@ -76,7 +76,7 @@
 | `POST`                   | `/api/experimental/nexum/mcp/oauth/:attemptID/complete`     | [MCP OAuth](#mcp-oauth)                   | 已记录 redirect 提交和连接恢复                   | JSON      |
 | `POST`                   | `/api/experimental/nexum/mcp/oauth/:attemptID/cancel`       | [MCP OAuth](#mcp-oauth)                   | 已记录取消授权和凭据不落地                       | JSON      |
 
-未知信息明确标记为“当前认证约定待确认；服务实现未校验认证信息”。当前实现不读取 Cookie，相关章节均标注“不适用”；不要把这些说明解释成已实现的认证承诺。
+认证边界：回环监听默认只允许本机访问；非回环监听必须配置服务端 `authToken`。配置 token 后，除健康检查外的 HTTP 请求必须携带 `Authorization: Bearer <token>`，认证失败返回 `401 NEXUM_AUTH_REQUIRED`。`OPTIONS` 预检请求按 CORS 约定处理。服务不读取 Cookie。
 
 ## 协议约定
 
@@ -87,6 +87,16 @@
 | 健康检查  | `/health/live`、`/health/ready`                                           |
 | 响应格式  | JSON Envelope：`data` + `meta.protocolVersion` + `meta.traceId`           |
 | 事件传输  | SSE；事件包含 `eventID`、`runID`、`sessionID`、`sequence` 和 `occurredAt` |
+
+### 认证边界
+
+服务监听回环地址（`localhost`、`127.0.0.1` 或 `::1`）时不强制配置 token；监听非回环地址时，启动配置必须提供 `authToken`，否则服务不会启动。配置了 token 后，健康检查仍允许匿名访问，其他请求需要携带：
+
+```http
+Authorization: Bearer <authToken>
+```
+
+认证失败返回 `401 NEXUM_AUTH_REQUIRED`。认证 token 不通过 query、Cookie 或响应体传递。客户端应将 token 注入 API 请求和 SSE 请求；CORS 预检请求不要求 token，但实际请求仍然需要认证。
 
 ## 资源与操作
 
@@ -118,7 +128,7 @@
 | `GET` | `/health/live`  | `200`，`{"service":"nexum-server","status":"ok"}`    | 非 GET 返回 `405 NEXUM_METHOD_NOT_ALLOWED` |
 | `GET` | `/health/ready` | `200`，`{"service":"nexum-server","status":"ready"}` | 非 GET 返回 `405 NEXUM_METHOD_NOT_ALLOWED` |
 
-Health 响应是轻量 JSON，不包含 `meta`，但会带 `X-Trace-Id`；请求体、Cookie 和认证信息均不适用。
+Health 响应是轻量 JSON，不包含 `meta`，但会带 `X-Trace-Id`；健康检查允许匿名访问，请求体和 Cookie 不适用。
 
 ### Capabilities
 
@@ -186,9 +196,9 @@ curl --request GET 'http://127.0.0.1:4097/api/nexum/capabilities' \
 }
 ```
 
-错误：`400 NEXUM_INVALID_MODEL_PROBE` 表示 mode 非法；`401 NEXUM_MODEL_AUTH_FAILED` 表示上游认证失败；`503 NEXUM_MODEL_PROBE_NOT_CONFIGURED` 或 `NEXUM_MODEL_PROBE_FAILED` 表示 Probe 未配置或上游不可用。Probe 只返回能力状态，不返回模型内容或凭据。
+错误：`400 NEXUM_INVALID_MODEL_PROBE` 表示 mode 非法；`401 NEXUM_MODEL_AUTH_FAILED` 表示上游认证失败；`503 NEXUM_MODEL_PROBE_NOT_CONFIGURED` 或 `NEXUM_MODEL_PROBE_FAILED` 表示 Probe 未配置或上游不可用；`504 NEXUM_MODEL_PROBE_TIMEOUT` 表示上游在 30 秒预算内没有完成。Probe 只返回能力状态，不返回模型内容或凭据。
 
-请求 Header 仅使用可选 `X-Trace-Id`；Cookie 不适用。
+请求 Header 使用 `Authorization: Bearer <authToken>`（服务配置 token 时必填）和可选 `X-Trace-Id`；Cookie 不适用。
 
 ```bash
 curl --request PUT 'http://127.0.0.1:4097/api/nexum/model' \
@@ -196,6 +206,7 @@ curl --request PUT 'http://127.0.0.1:4097/api/nexum/model' \
   --data '{"baseUrl":"https://model.example.test/v1","model":"example-model","credentialRef":"env:MODEL_TOKEN"}'
 
 curl --request POST 'http://127.0.0.1:4097/api/nexum/model/probe' \
+  --header 'Authorization: Bearer <authToken>' \
   --header 'Content-Type: application/json' \
   --data '{"mode":"both"}'
 ```
@@ -368,7 +379,7 @@ Content-Type: application/json
 | 分页     | `limit` 为 1-100 的整数，默认 50；`before` 为非负消息索引，返回其之前的一页；继续翻页时带上上页的 `snapshot` |
 | 排序     | 按 canonical 消息写入顺序升序返回；`index` 是当前历史快照中的零基索引                                        |
 | 脱敏     | 文本和结构化工具输入在响应边界脱敏；内部模型历史不被修改                                                     |
-| 认证     | 当前认证约定待确认；服务实现未校验认证信息                                                                   |
+| 认证     | 服务配置 `authToken` 时必须携带 `Authorization: Bearer <authToken>`；回环监听且未配置 token 时可省略        |
 
 ### 请求定义
 
@@ -481,7 +492,7 @@ curl --get 'http://127.0.0.1:4097/api/experimental/nexum/session/session_001/mes
 | 接口用途 | 删除不再需要的 Nexum Session 及其消息、交互和事件记录                              |
 | 调用方   | 已确认 Session 不再需要的 Runtime 客户端                                           |
 | 前置条件 | `sessionID` 对应现存且当前不处于 `running` 状态的 Session                          |
-| 权限要求 | 当前认证约定待确认；服务实现未校验认证信息                                         |
+| 权限要求 | 服务配置 `authToken` 时必须携带 `Authorization: Bearer <authToken>`；回环监听且未配置 token 时可省略 |
 | 幂等性   | 重复删除不视为成功幂等：首次成功返回 `200`，之后返回 `404 NEXUM_SESSION_NOT_FOUND` |
 | 数据保留 | 工作目录和模型配置不受影响                                                         |
 
@@ -515,7 +526,7 @@ DELETE http://127.0.0.1:4097/api/nexum/session/{sessionID}
 | Header          | 必填   | 类型/格式                                | 示例               | 用途                                              | 缺失或非法时                             |
 | --------------- | ------ | ---------------------------------------- | ------------------ | ------------------------------------------------- | ---------------------------------------- |
 | `X-Trace-Id`    | 否     | 1-128 位字母、数字、`.`、`_`、`:` 或 `-` | `trace_delete_001` | 排障关联；响应 Header 和响应体会返回同一 trace ID | 缺失或非法时生成新的 trace ID            |
-| `Authorization` | 不适用 | —                                        | —                  | 当前接口未实现认证校验                            | 当前实现不会因缺失该 Header 返回认证错误 |
+| `Authorization` | 条件必填 | `Bearer <authToken>`                  | `Bearer <authToken>` | 访问受保护 API 的服务认证                         | 缺失或错误时返回 `401 NEXUM_AUTH_REQUIRED` |
 
 #### Request cookies
 
@@ -619,10 +630,11 @@ DELETE http://127.0.0.1:4097/api/nexum/session/{sessionID}
 
 ```bash
 curl --request DELETE 'http://127.0.0.1:4097/api/nexum/session/session_001' \
+  --header 'Authorization: Bearer <authToken>' \
   --header 'X-Trace-Id: trace_delete_001'
 ```
 
-请求不携带 body、认证 Header 或 Cookie。成功响应的 HTTP Header 为 `Content-Type: application/json;charset=utf-8`、`Cache-Control: no-store`、`Vary: origin` 和 `X-Trace-Id: trace_delete_001`，响应体如下：
+请求不携带 body 或 Cookie；服务配置 token 时必须携带认证 Header。成功响应的 HTTP Header 为 `Content-Type: application/json;charset=utf-8`、`Cache-Control: no-store`、`Vary: origin` 和 `X-Trace-Id: trace_delete_001`，响应体如下：
 
 ```json
 {
@@ -796,7 +808,7 @@ Session Agent 使用内置 `skill_registry` 工具管理 Nexum 注册表，操�
 
 | 项目           | 约定                                                                                               |
 | -------------- | -------------------------------------------------------------------------------------------------- |
-| 权限           | 当前服务认证约定待确认；注册/刷新/取消注册由调用方的 Nexum 管理权限边界负责，服务端不读取 Cookie。 |
+| 权限           | 服务配置 `authToken` 时需先通过服务认证；注册/刷新/取消注册还受调用方的 Nexum 管理权限边界约束，服务端不读取 Cookie。 |
 | `Content-Type` | 有 JSON body 的 POST 使用 `application/json`；GET/DELETE 请求体不适用。                            |
 | `Accept`       | 可选，推荐 `application/json`。                                                                    |
 | `X-Trace-Id`   | 可选，1-128 位安全字符；缺失或非法时服务生成新的 trace ID。                                        |
@@ -1012,7 +1024,7 @@ POST /api/experimental/nexum/session/{sessionID}/continue
 Content-Type: application/json
 ```
 
-请求体必须是 JSON 对象；当前没有业务字段，使用 `{}`。路径中的 `sessionID` 必填。可选请求头 `X-Trace-Id` 用于排障关联，格式为 1-128 位字母、数字、`.`、`_`、`:` 或 `-`；非法值会生成新的 trace ID。请求 Cookie 不适用；当前认证约定待确认。
+请求体必须是 JSON 对象；当前没有业务字段，使用 `{}`。路径中的 `sessionID` 必填。服务配置 `authToken` 时需携带 `Authorization: Bearer <authToken>`。可选请求头 `X-Trace-Id` 用于排障关联，格式为 1-128 位字母、数字、`.`、`_`、`:` 或 `-`；非法值会生成新的 trace ID。请求 Cookie 不适用。
 
 ### 成功响应
 

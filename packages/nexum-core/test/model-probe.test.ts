@@ -48,3 +48,18 @@ test("rejects a probe when the requested capability is absent", async () => {
 
   await expect(createNexumModelProbePort({ model }).probe({ mode: "text" })).rejects.toThrow("文本响应")
 })
+
+test("times out a probe that never produces a model chunk", async () => {
+  let aborted = false
+  const model: ModelPort = {
+    async *prompt(input) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      aborted = input.signal?.aborted ?? false
+      yield { type: "completed" }
+    },
+  }
+
+  await expect(createNexumModelProbePort({ model }).probe({ mode: "text", timeoutMs: 10 })).rejects.toMatchObject({ code: "timeout" })
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  expect(aborted).toBe(true)
+})
