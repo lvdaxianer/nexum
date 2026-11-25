@@ -38,6 +38,10 @@ import {
 } from "@nexum/core"
 import { createNexumQuestionPort } from "./context.ts"
 import { createNexumSkillRegistry } from "./skill-registry.ts"
+import { createNexumPluginRegistry } from "./plugin-registry.ts"
+import { createNexumPluginRuntime } from "./plugin-runtime.ts"
+import type { NexumApplicationPluginRegistry } from "./plugin-registry.ts"
+import type { NexumPluginRuntime } from "./plugin-runtime.ts"
 import { createNexumToolRegistry } from "./local-tools.ts"
 import { createNexumConfiguredCodingLoop } from "./configured-loop.ts"
 import {
@@ -75,6 +79,17 @@ export type {
   NexumPluginSource,
   NexumPluginSourceCandidate,
 } from "./plugin-registry.ts"
+export { createNexumPluginRuntime, NexumPluginRuntimeError } from "./plugin-runtime.ts"
+export type {
+  NexumActivePlugin,
+  NexumPluginEntrypoint,
+  NexumPluginMount,
+  NexumPluginMountContext,
+  NexumPluginRuntime,
+  NexumPluginRuntimeDiagnostic,
+  NexumPluginRuntimeDiagnosticCode,
+  NexumPluginRuntimeOptions,
+} from "./plugin-runtime.ts"
 export type { FilePersistenceOptions } from "@nexum/persistence-file"
 export type { NexumPersistence } from "@nexum/persistence"
 export { createNexumToolRegistry } from "./local-tools.ts"
@@ -111,6 +126,9 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly mcpConnector?: McpConnector
   readonly mcpReady?: Promise<void>
   readonly skillRoots?: readonly string[]
+  readonly pluginRoots?: readonly string[]
+  readonly pluginRegistry?: NexumApplicationPluginRegistry
+  readonly pluginRuntime?: NexumPluginRuntime
   readonly codingLoop?: NexumCodingLoop
   readonly capabilities?: readonly NexumCapability[]
   readonly persistence?: NexumPersistence
@@ -126,6 +144,8 @@ export interface NexumDefaultRuntime extends NexumRuntime {
   readonly interactionStore?: NexumInteractionStore
   readonly skillRegistry: NexumSkillRegistry
   readonly skillInvocation: NexumSkillInvocationPort
+  readonly pluginRegistry: NexumApplicationPluginRegistry
+  readonly pluginRuntime: NexumPluginRuntime
   readonly permissionBroker: NexumPermissionBroker
   readonly questionPort: NexumQuestionPort
   readonly modelProbe: NexumModelProbePort
@@ -167,6 +187,8 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
         ? { filePath: options.skillRegistryFile }
         : { registrationStore: persistence.skillRegistrationStore }),
   })
+  const plugins = options.pluginRegistry ?? createNexumPluginRegistry({ roots: options.pluginRoots ?? [] })
+  const pluginRuntime = options.pluginRuntime ?? createNexumPluginRuntime({ registry: plugins })
   const skillInvocation = options.skillInvocation ?? createNexumSkillInvocationPort({ registry: skills, permission })
   const host = options.host ?? createLocalHostAdapter()
   const tools = createNexumToolRegistry({
@@ -202,7 +224,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
       : tools.ready
     : undefined
   const runtimeLoop = mcpReady ? withMcpReady(loop, mcpReady) : loop
-  const runtime = createNexumRuntime({
+  const baseRuntime = createNexumRuntime({
     sessions,
     loop: runtimeLoop,
     events: eventHub,
@@ -211,6 +233,12 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     ...(options.mcp ? { mcp: options.mcp } : {}),
     ...(options.mcpOAuth ? { mcpOAuth: options.mcpOAuth } : {}),
     ...(options.capabilities ? { capabilities: options.capabilities } : {}),
+  })
+  const closeRuntime = baseRuntime.close
+  const runtime = Object.assign(baseRuntime, {
+    close: async () => {
+      await Promise.all([pluginRuntime.close(), closeRuntime()])
+    },
   })
   return Object.assign(runtime, {
     modelConfig,
@@ -221,6 +249,8 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     interactionStore,
     skillRegistry: skills,
     skillInvocation,
+    pluginRegistry: plugins,
+    pluginRuntime,
     permissionBroker: permission,
     questionPort: question,
     modelProbe,
