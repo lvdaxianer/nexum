@@ -110,11 +110,13 @@ packages/nexum-cli/src/
 
 ### 6. 思考（Reasoning）展示
 
-三种形态，对应 UI 的 ReasoningView 生命周期：
+三种模式，对应 UI 的 ReasoningView 生命周期，`/thinking live|summary|full` 切换：
 
-- 流式中：单行 spinner `⠋ 正在思考 · 已 N 字` + 暗色滚动摘要行（同一块原地刷新，不刷屏）。
-- 完成收敛：折叠为 `✓ 思考过程 · N 字 · 用时 Xs`，不占用滚动历史；`/expand` 重新完整打印最近一次思考。
-- `/thinking full` 切换后，新运行的思考全文以暗色直接输出；`/thinking summary` 恢复默认折叠。
+- live（默认）：思考中 spinner 行在底部动画（`⠋ 正在思考 · 已 N 字 · 用时` + 暗色短摘要尾，shimmer/呼吸标签），完成的推理行以暗色两空格缩进流式输出在其上方；思考结束整块擦除（上移光标 + 清到屏尾），收敛为 `✓ 思考过程 · N 字 · 用时 Xs(默认折叠,/expand 查看)`。
+- summary：单行 spinner `⠋ 正在思考 · 已 N 字` + 暗色滚动摘要行（同一块原地刷新，不刷屏），完成收敛为同一摘要行。
+- full：思考全文以暗色直接输出不折叠，完成后追加摘要行。
+- `/expand` 重新完整打印最近一次思考，三种模式通用。
+- 静态终端（非 TTY、`NO_COLOR`、`--no-anim`）：live 降级为 summary 行为，不流式、不擦除，只打印摘要行。
 
 ### 7. 管理面命令
 
@@ -189,7 +191,7 @@ REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status 
 - 终端样式与 `artifacts/nexum-cli-demo.png` / `nexum-cli-demo-light.png` 设计稿一致，思考动画与 `nexum-cli-thinking.gif`、酷炫效果与 `nexum-cli-cool.gif` 一致；所有视觉效果（样式、动画、渐变 Logo、进度条）必须在深色与浅色双主题下均成立，经确认后才进入实现。
 - CLI 与 UI 同层复用同一 `@nexum/surface-adapter` 契约；chat-surface 公开 API 不破坏，现有测试通过。
 - REPL 完成一轮包含 Permission 与 Question 的运行，`Ctrl+C` 取消生效，断线重连后事件不丢不重。
-- 思考展示覆盖流式、折叠、`/thinking full` 三形态。
+- 思考展示覆盖 live（默认，流式展开 + 完成收起）、summary、`/thinking full` 三模式。
 - 管理面命令覆盖 model / role-prompt / skill / mcp，状态文案与协议枚举一致，凭据不出的边界不破坏。
 - 基础命令齐备：`resume` / `-c` 恢复会话、`theme` 切换主题（配置持久化）、`status` 总览、`doctor` 诊断（✗ 时退出码 1）、`--version`；REPL 内 `/new` `/use` `/resume` 可直接切换会话。
 - 一次性命令可脚本化，退出码符合约定。

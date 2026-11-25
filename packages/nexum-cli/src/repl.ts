@@ -169,7 +169,7 @@ const HELP = `可用命令:
   /permissions 查看/切换权限    /events       最近事件
   /clear       清屏
   /cancel      取消当前运行      /continue     继续上次运行
-  /thinking    summary|full      /expand       展开最近思考
+  /thinking    live|summary|full /expand       展开最近思考
   /quit        退出`
 
 export type ReplOptions = {
@@ -385,7 +385,7 @@ export async function runRepl(options: ReplOptions): Promise<void> {
               if (recentEvents.length === 0) io.line(paint(io.caps, "dim", "本轮还没有事件"))
               for (const item of recentEvents.slice(-20)) io.line(paint(io.caps, "dim", item))
             } else if (command === "thinking") {
-              const mode = rest[0] === "full" ? "full" : "summary"
+              const mode = rest[0] === "summary" || rest[0] === "full" ? rest[0] : "live"
               renderer.setThinkingMode(mode)
               io.line(paint(io.caps, "dim", `思考展示:${mode}`))
             } else if (command === "expand") renderer.expandLastReasoning()

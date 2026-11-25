@@ -6,7 +6,7 @@ import { createLiveLine, type CliIO, type LiveLine } from "./io"
 import { createMarkdownStream, renderMarkdownText } from "./markdown"
 import { paint, style, type TermCaps } from "./term"
 
-export type ThinkingMode = "summary" | "full"
+export type ThinkingMode = "live" | "summary" | "full"
 export type RunResult = "completed" | "failed" | "cancelled"
 export type RenderStatus = "idle" | "running" | "retrying" | "awaiting permission" | "awaiting question" | RunResult
 
@@ -25,7 +25,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
   const io = options.io
   const caps = io.caps
   const md = createMarkdownStream(caps, (text) => io.write(text))
-  let mode = options.thinking ?? "summary"
+  let mode = options.thinking ?? "live"
   let status: RenderStatus = "idle"
   let live: LiveLine | undefined
   let liveKind: "thinking" | "tool" | "compaction" | undefined
@@ -36,6 +36,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
   let reasoningChars = 0
   let reasoningStartedAt = 0
   let reasoningTail = ""
+  let reasoningBuffer = ""
   let lastReasoning = ""
   let reasoningHeaderPrinted = false
   let assistantHeaderPrinted = false
@@ -61,13 +62,15 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
     if (runStartedAt === 0) runStartedAt = Date.now()
   }
 
-  /** 思考块收尾:summary 收敛活动行,full 补打总结行;lastReasoning 保留给 /expand。 */
+  /** 思考块收尾:live 擦除流式区收敛,summary 收敛活动行,full 补打总结行;lastReasoning 保留给 /expand。 */
   function closeReasoning() {
     if (reasoningStartedAt === 0) return
     const elapsed = formatElapsed(Date.now() - reasoningStartedAt)
     const summary = `${paint(caps, "green", "✓")} ${paint(caps, "dim", `思考过程 · ${reasoningChars} 字 · 用时 ${elapsed}`)}`
     if (liveKind === "thinking" && live) {
-      live.settle(`${summary}${paint(caps, "dim", "(默认折叠,/expand 查看)")}`)
+      const text = `${summary}${paint(caps, "dim", "(默认折叠,/expand 查看)")}`
+      if (mode === "live") live.collapse(text)
+      else live.settle(text)
       live = undefined
       liveKind = undefined
     } else if (mode === "full") {
@@ -77,6 +80,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
     reasoningChars = 0
     reasoningStartedAt = 0
     reasoningTail = ""
+    reasoningBuffer = ""
   }
 
   function settleLive(text: string) {
@@ -101,7 +105,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
   }
 
   function ensureThinkingLive() {
-    if (mode !== "summary" || liveKind !== undefined) return
+    if (mode === "full" || liveKind !== undefined) return
     liveKind = "thinking"
     live = createLiveLine(io, (tick) => {
       const elapsed = ((Date.now() - reasoningStartedAt) / 1000).toFixed(1)
@@ -144,6 +148,17 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
           streamChunk(content)
         } else {
           ensureThinkingLive()
+          if (mode === "live") {
+            // 按行缓冲:完整行暗色流入活动行上方,半行留在缓冲里(字符已计入 reasoningChars)
+            reasoningBuffer += content
+            let newline = reasoningBuffer.indexOf("\n")
+            while (newline >= 0) {
+              const line = reasoningBuffer.slice(0, newline)
+              reasoningBuffer = reasoningBuffer.slice(newline + 1)
+              if (liveKind === "thinking" && live) live.writeAbove(paint(caps, "dim", `  ${line}`))
+              newline = reasoningBuffer.indexOf("\n")
+            }
+          }
         }
         return
       }
@@ -246,6 +261,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
         runStartedAt = 0
         reasoningChars = 0
         reasoningStartedAt = 0
+        reasoningBuffer = ""
         lastReasoning = ""
         reasoningHeaderPrinted = false
         assistantHeaderPrinted = false

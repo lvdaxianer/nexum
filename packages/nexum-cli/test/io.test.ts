@@ -61,3 +61,43 @@ test("live line truncation keeps ANSI sequences intact and resets style", () => 
   expect(frame.endsWith("…\x1b[0m")).toBe(true)
   expect(displayWidth(frame.replace(/\x1b\[[0-9;]*m/g, ""))).toBeLessThanOrEqual(19)
 })
+
+test("writeAbove erases the live row, inserts the line and redraws the live row", () => {
+  const io = memoryIO({ color: "none", anim: true })
+  const live = createLiveLine(io, () => "⠋ 思考", 40)
+  live.writeAbove("  第一行")
+  const out = io.output()
+  expect(out).toContain("\r\x1b[2K  第一行\n")
+  // 插入后紧跟一次活动行重绘,光标回到活动行
+  expect(out.lastIndexOf("\r\x1b[2K⠋ 思考")).toBeGreaterThan(out.indexOf("  第一行\n"))
+  live.cancel()
+})
+
+test("collapse erases the live row plus wrap-aware writeAbove rows before printing", () => {
+  const io = memoryIO({ color: "ansi16", anim: true })
+  const live = createLiveLine(io, () => "⠋ 思考", 20)
+  live.writeAbove("短行") // 宽 4 → 1 行
+  live.writeAbove(paint(io.caps, "dim", "长".repeat(15))) // 宽 30(ANSI 序列不计) → columns=20 折算 2 行
+  live.collapse("✓ 思考过程")
+  const out = io.output()
+  expect(out).toContain("\x1b[3A\x1b[0J")
+  expect(out.endsWith("✓ 思考过程\n")).toBe(true)
+})
+
+test("collapse without writeAbove rows skips the cursor-up sequence", () => {
+  const io = memoryIO({ color: "none", anim: true })
+  const live = createLiveLine(io, () => "⠋ 思考", 20)
+  live.collapse("✓ 完成")
+  const out = io.output()
+  expect(out).not.toContain("\x1b[0J")
+  expect(out.endsWith("✓ 完成\n")).toBe(true)
+})
+
+test("writeAbove is a no-op and collapse prints a plain line in static mode", () => {
+  const io = memoryIO({ color: "none", anim: false })
+  const live = createLiveLine(io, () => "⠋ 思考", 20)
+  live.writeAbove("  第一行")
+  expect(io.output()).toBe("")
+  live.collapse("✓ 思考过程")
+  expect(io.plain()).toBe("✓ 思考过程\n")
+})

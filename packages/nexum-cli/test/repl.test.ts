@@ -629,3 +629,21 @@ test("readlineLineSource without status keeps the plain hint row", async () => {
   expect(hintLine).toBe(box.hint)
   source.close()
 })
+
+test("repl /thinking switches between live, summary and full modes", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  await runRepl({
+    adapter,
+    client: fakeClient(),
+    io,
+    sessionID: session.id,
+    lineSource: arrayLineSource(["/thinking full", "/thinking summary", "/thinking live", "/thinking", "/quit"]),
+    prompter: async () => "",
+  })
+  const out = io.plain()
+  expect(out).toContain("思考展示:full")
+  expect(out).toContain("思考展示:summary")
+  // 显式 live 与缺省参数都切到 live
+  expect(out.match(/思考展示:live/g)?.length).toBe(2)
+})

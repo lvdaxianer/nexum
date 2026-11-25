@@ -66,8 +66,18 @@ bun run --cwd packages/nexum-cli start -- --help
 | `/permissions` | 查看/切换权限（子命令同 `nexum permission`，与一次性命令共享实现） | | |
 | `/events` | 最近事件 | `/clear` | 清屏 |
 | `/cancel` | 取消当前运行 | `/continue` | 继续上次运行 |
-| `/thinking summary\|full` | 思考展示模式 | `/expand` | 展开最近思考 |
+| `/thinking live\|summary\|full` | 思考展示模式（默认 live） | `/expand` | 展开最近思考 |
 | `/quit` | 退出 | | |
+
+## 思考展示
+
+思考（reasoning）有三种展示模式，`/thinking live|summary|full` 切换，默认 `live`：
+
+- `live`（默认）：思考中 spinner 行在底部动画（⠋ + `正在思考` shimmer/呼吸 + `已 N 字` + 用时 + 短摘要尾），完成的推理行以暗色两空格缩进逐行流式输出在其上方（`LiveLine.writeAbove`）；思考结束整块擦除（光标上移 + `\x1b[0J` 清到屏尾，`LiveLine.collapse`），收敛为单行 `✓ 思考过程 · N 字 · 用时 Xs(默认折叠,/expand 查看)`。未完成的半行不进流式区，字符数照常累计。
+- `summary`：单行 spinner `⠋ 正在思考 · 已 N 字` + 暗色滚动摘要尾原地刷新，完成收敛为同一摘要行。
+- `full`：思考全文暗色直接输出不折叠，完成后追加摘要行。
+- `/expand` 重新完整打印最近一次思考，三种模式通用（`lastReasoning` 始终保留全文）。
+- 静态终端（非 TTY、`NO_COLOR`、`--no-anim`）：`live` 降级为 `summary` 行为——不流式、不擦除，只打印摘要行。
 
 ## 渲染约定
 

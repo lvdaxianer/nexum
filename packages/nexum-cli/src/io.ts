@@ -39,6 +39,10 @@ export type LiveLine = {
   settle(text: string): void
   /** 丢弃活动行,不留下任何输出。 */
   cancel(): void
+  /** 在活动行上方插入一行(仅动画模式;静态模式为 no-op)。 */
+  writeAbove(text: string): void
+  /** 擦除活动行及其上方由 writeAbove 写入的所有行,并打印最终行。 */
+  collapse(text: string): void
 }
 
 /**
@@ -48,10 +52,12 @@ export type LiveLine = {
  */
 export function createLiveLine(io: CliIO, render: (tick: number) => string, columns?: number): LiveLine {
   if (!io.caps.anim) {
-    return { settle: (text) => io.line(text), cancel: () => {} }
+    return { settle: (text) => io.line(text), cancel: () => {}, writeAbove: () => {}, collapse: (text) => io.line(text) }
   }
-  const width = Math.max(1, (columns ?? process.stdout.columns ?? 80) - 1)
+  const cols = columns ?? process.stdout.columns ?? 80
+  const width = Math.max(1, cols - 1)
   let tick = 0
+  let rowsAbove = 0
   const draw = () => io.write(`\r\x1b[2K${truncateFrame(render(tick), width)}`)
   const timer = setInterval(() => {
     tick += 1
@@ -68,6 +74,19 @@ export function createLiveLine(io: CliIO, render: (tick: number) => string, colu
       io.line(text)
     },
     cancel: stop,
+    writeAbove: (text) => {
+      // 插入行可能携带 ANSI 样式,行数统计按剥离样式后的显示宽度折算换行行数
+      rowsAbove += Math.max(1, Math.ceil(displayWidth(text.replace(/\x1b\[[0-9;]*m/g, "")) / cols))
+      io.write(`\r\x1b[2K${text}\n`)
+      draw()
+    },
+    collapse: (text) => {
+      clearInterval(timer)
+      io.write("\r\x1b[2K")
+      // \x1b[0J 清到屏尾,前提是活动行与其上方插入行是屏幕最后的输出(运行中没有输入框)
+      if (rowsAbove > 0) io.write(`\x1b[${rowsAbove}A\x1b[0J`)
+      io.line(text)
+    },
   }
 }
 
