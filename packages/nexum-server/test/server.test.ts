@@ -609,6 +609,48 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
   })
 })
 
+test("rejects an oversized JSON prompt before starting the coding loop", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-body-limit-"))
+  temporaryDirectories.push(directory)
+  let started = false
+  const server = await startNexumServer({
+    port: 0,
+    codingLoop: {
+      async run(input) {
+        started = true
+        return {
+          sessionID: input.sessionID,
+          name: "body-limit",
+          directory,
+          status: "completed" as const,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      },
+      async cancel() {
+        throw new Error("cancel is not used in this test")
+      },
+    },
+  })
+  servers.push(server)
+  const session = await fetch(new URL("/api/nexum/session", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ directory }),
+  })
+  const sessionBody = (await session.json()) as { data: { id: string } }
+
+  const response = await fetch(new URL(`/api/nexum/session/${sessionBody.data.id}/prompt`, server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "x".repeat(1_048_576) }),
+  })
+
+  expect(response.status).toBe(400)
+  expect(await response.json()).toMatchObject({ errorCode: "NEXUM_INVALID_REQUEST" })
+  expect(started).toBe(false)
+})
+
 test("reserves running before a legacy prompt adapter can race with deletion", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-server-prompt-legacy-race-"))
   temporaryDirectories.push(directory)

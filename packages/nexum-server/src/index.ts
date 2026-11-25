@@ -279,6 +279,41 @@ function isAllowedOrigin(origin: string, origins: readonly string[]): boolean {
   return origins.some((allowedOrigin) => allowedOrigin.trim() === origin)
 }
 
+const MAX_JSON_BODY_BYTES = 1_048_576
+
+/** 在 JSON 解析前限制请求体大小，避免无界 body 占用服务内存。 */
+async function readJsonRequest(request: Request): Promise<unknown | undefined> {
+  const contentLength = request.headers.get("content-length")
+  if (contentLength !== null && (!/^\d+$/.test(contentLength.trim()) || Number(contentLength) > MAX_JSON_BODY_BYTES)) return undefined
+  if (!request.body) return undefined
+
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+  while (true) {
+    const result = await reader.read()
+    if (result.done) break
+    totalBytes += result.value.byteLength
+    if (totalBytes > MAX_JSON_BODY_BYTES) {
+      await reader.cancel().catch(() => undefined)
+      return undefined
+    }
+    chunks.push(result.value)
+  }
+
+  const body = new Uint8Array(totalBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(body)) as unknown
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * 处理 Nexum Service 的健康检查与未知路径响应。
  *
@@ -681,7 +716,7 @@ async function registerSkill(
   traceId: string,
 ): Promise<Response> {
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload) || typeof payload.address !== "string" || payload.address.trim() === "") {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "address 必须是非空字符串", traceId)
   }
@@ -708,7 +743,7 @@ async function refreshSkills(
   traceId: string,
 ): Promise<Response> {
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
-  const payload = await request.json().catch(() => ({}))
+  const payload = (await readJsonRequest(request)) ?? {}
   if (!isRecord(payload) || (payload.id !== undefined && typeof payload.id !== "string")) {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "id 必须是字符串", traceId)
   }
@@ -755,7 +790,7 @@ async function validateSkills(
   traceId: string,
 ): Promise<Response> {
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
-  const payload = await request.json().catch(() => ({}))
+  const payload = (await readJsonRequest(request)) ?? {}
   if (!isRecord(payload) || (payload.id !== undefined && typeof payload.id !== "string")) {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "id 必须是字符串", traceId)
   }
@@ -788,7 +823,7 @@ async function activateSkill(
   traceId: string,
 ): Promise<Response> {
   if (!skillInvocation) return skillRegistryUnavailable(traceId)
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload) || typeof payload.sessionID !== "string" || typeof payload.text !== "string") {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "sessionID 和 text 必须是字符串", traceId)
   }
@@ -859,7 +894,7 @@ async function registerMcpServer(
 ): Promise<Response> {
   const registry = requireMcpRegistry(mcp)
   if (!registry) return mcpControlUnavailable(traceId)
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload)) return errorResponse(400, "NEXUM_INVALID_REQUEST", "请求体必须是 JSON 对象", traceId)
   const config = parseMcpServerConfig(payload)
   if (!config) return errorResponse(400, "NEXUM_MCP_INVALID_CONFIG", "MCP Server 配置无效", traceId)
@@ -956,7 +991,7 @@ async function startMcpOAuth(
   traceId: string,
 ): Promise<Response> {
   if (!oauth) return mcpOAuthUnavailable(traceId)
-  const payload = await request.json().catch(() => ({}))
+  const payload = (await readJsonRequest(request)) ?? {}
   if (!isRecord(payload) || (payload.url !== undefined && typeof payload.url !== "string")) {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "url 必须是字符串", traceId)
   }
@@ -992,7 +1027,7 @@ async function completeMcpOAuth(
   traceId: string,
 ): Promise<Response> {
   if (!oauth) return mcpOAuthUnavailable(traceId)
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload) || typeof payload.redirectUrl !== "string" || payload.redirectUrl.trim() === "") {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "redirectUrl 必须是非空字符串", traceId)
   }
@@ -1252,7 +1287,7 @@ async function probeModel(
   traceId: string,
 ): Promise<Response> {
   if (!modelProbe) return errorResponse(503, "NEXUM_MODEL_PROBE_NOT_CONFIGURED", "模型 Probe 尚未配置", traceId)
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   const mode = isRecord(payload) && payload.mode !== undefined ? payload.mode : "both"
   if (mode !== "text" && mode !== "function_calling" && mode !== "both") {
     return errorResponse(400, "NEXUM_INVALID_MODEL_PROBE", "模型 Probe 模式无效", traceId)
@@ -1306,7 +1341,7 @@ async function createPrompt(
     return errorResponse(503, "NEXUM_RUNTIME_NOT_CONFIGURED", "Nexum Runtime 尚未配置", traceId)
   }
 
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload) || typeof payload.text !== "string" || payload.text.trim() === "") {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "text 必须是非空字符串", traceId)
   }
@@ -1381,7 +1416,7 @@ async function continueSession(
   const admissionError = continueAdmissionError(await sessionService.get(sessionID), codingLoop, traceId)
   if (admissionError) return admissionError
 
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload)) {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "请求体必须是 JSON 对象", traceId)
   }
@@ -1665,7 +1700,7 @@ async function replyPermission(
   if (!(await sessionService.get(sessionID))) {
     return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
   }
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload) || typeof payload.decision !== "string") {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "decision 必须是有效的权限决策", traceId)
   }
@@ -1747,7 +1782,7 @@ async function createPermissionPolicyRule(
   traceId: string,
 ): Promise<Response> {
   if (!permissionBroker) return permissionUnavailable(traceId)
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (
     !isRecord(payload) ||
     typeof payload.action !== "string" ||
@@ -1805,7 +1840,7 @@ async function updatePermissionPolicyRule(
   traceId: string,
 ): Promise<Response> {
   if (!permissionBroker) return permissionUnavailable(traceId)
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload)) {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "请求体必须是 JSON 对象", traceId)
   }
@@ -1930,7 +1965,7 @@ async function replyQuestion(
   if (!(await sessionService.get(sessionID))) {
     return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
   }
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (
     !isRecord(payload) ||
     !Array.isArray(payload.answers) ||
@@ -1998,7 +2033,7 @@ async function createSession(
   sessionService: NexumSessionService,
   traceId: string,
 ): Promise<Response> {
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (
     !isRecord(payload) ||
     typeof payload.directory !== "string" ||
@@ -2049,7 +2084,7 @@ async function updateSession(
   sessionService: NexumSessionService,
   traceId: string,
 ): Promise<Response> {
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload) || typeof payload.name !== "string") {
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "name 必须是字符串", traceId)
   }
@@ -2143,7 +2178,7 @@ async function updateModelConfig(
   if (!modelConfigStore) {
     return errorResponse(503, "NEXUM_MODEL_CONFIG_NOT_CONFIGURED", "Nexum Model Config 尚未配置", traceId)
   }
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (
     !isRecord(payload) ||
     typeof payload.baseUrl !== "string" ||
@@ -2190,7 +2225,7 @@ async function updateRolePrompt(
   if (!rolePromptStore) {
     return errorResponse(503, "NEXUM_ROLE_PROMPT_NOT_CONFIGURED", "默认角色提示词尚未配置", traceId)
   }
-  const payload = await request.json().catch(() => undefined)
+  const payload = await readJsonRequest(request)
   if (!isRecord(payload) || typeof payload.prompt !== "string") {
     return errorResponse(400, "NEXUM_INVALID_ROLE_PROMPT", "prompt 必须是字符串", traceId)
   }
