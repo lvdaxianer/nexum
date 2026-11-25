@@ -737,6 +737,7 @@ test("rejects prompt admission failures before returning accepted", async () => 
 
     expect(response.status).toBe(current.status)
     expect(body).toMatchObject({ errorCode: current.errorCode, traceId: "prompt_admission_trace" })
+    expect(body.message).not.toContain("内部 Session 错误")
     expect(body.message).not.toContain("internal admission details")
   }
 })
