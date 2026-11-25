@@ -43,6 +43,7 @@ import type { MessageStore } from "./message-store.js"
 import { normalizeNexumToolRequest } from "./tools.js"
 import { NexumSkillInvocationError } from "./skill-invocation.js"
 import type { NexumSkillInvocationPort } from "./skill-invocation.js"
+import type { NexumPluginInvocationPort } from "./plugin-invocation.js"
 export {
   NEXUM_DEFAULT_ROLE_PROMPT,
   NexumRolePromptError,
@@ -410,6 +411,7 @@ export interface NexumCodingLoopOptions {
   readonly projectContext?: ProjectContextPort
   readonly question?: NexumQuestionPort
   readonly skills?: NexumSkillInvocationPort
+  readonly plugins?: NexumPluginInvocationPort
   /** 每次模型调用前临时注入的默认角色提示词，不写入 Session 历史。 */
   readonly rolePrompt?: NexumRolePromptStore
   readonly compactionThreshold?: number
@@ -583,6 +585,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
     try {
       // 用户输入先进入 canonical 历史并立即落盘，避免后续临时注入污染历史。
       if (!continuation) await persist()
+      if (!continuation) await options.plugins?.resolve({ sessionID: input.sessionID, text: promptText })
       const skillPrompt = options.skills
         ? await options.skills.resolve({ sessionID: input.sessionID, text: promptText })
         : { skills: [], systemMessages: [] }
@@ -1553,6 +1556,7 @@ export {
   NexumPluginInvocationError,
   parseNexumPluginMention,
   parseNexumPluginMentions,
+  routeNexumPluginRequest,
 } from "./plugin-invocation.js"
 export type {
   NexumPluginActivationInput,

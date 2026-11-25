@@ -143,6 +143,29 @@ export function parseNexumPluginMentions(
 }
 
 /**
+ * 根据安全路由摘要计算一条输入的 Plugin 路由结果。
+ *
+ * 只在一个 Plugin 命中意图、示例或关键词时返回 automatic；
+ * 多个候选和无候选都不触发激活。
+ * @param text - 用户原始输入
+ * @param summaries - 当前可见的 Plugin 摘要
+ * @returns 显式、唯一自动、歧义或无匹配结果
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+export function routeNexumPluginRequest(
+  text: string,
+  summaries: readonly NexumPluginSummary[],
+): NexumPluginRouteDecision {
+  const explicit = parseNexumPluginMentions(text, summaries)
+  if (explicit.length > 0) return explicit[0]!
+  const candidates = summaries.filter((summary) => matchesPluginRouting(text, summary)).map((summary) => summary.id)
+  if (candidates.length === 1) return { kind: "automatic", pluginID: candidates[0]!, candidates }
+  if (candidates.length > 1) return { kind: "ambiguous", candidates }
+  return { kind: "none", reason: "no_match" }
+}
+
+/**
  * 创建只负责显式 Plugin mention 的调用端口。
  *
  * 同一个 Plugin 在一条输入中只激活一次，激活顺序保持 mention 首次出现顺序；
@@ -156,14 +179,39 @@ export function createNexumPluginInvocationPort(options: NexumPluginInvocationOp
   return {
     resolve: async (input) => {
       const summaries = await options.registry.list()
-      const decisions = deduplicatePluginDecisions(parseNexumPluginMentions(input.text, summaries))
-      return Promise.all(decisions.map((decision) => options.activation.activate({
+      const explicit = deduplicatePluginDecisions(parseNexumPluginMentions(input.text, summaries))
+      if (explicit.length > 0) return Promise.all(explicit.map((decision) => options.activation.activate({
         sessionID: input.sessionID,
         pluginID: decision.pluginID,
         source: "explicit",
       })))
+      const route = routeNexumPluginRequest(input.text, summaries)
+      if (route.kind !== "automatic") return []
+      return [await options.activation.activate({
+        sessionID: input.sessionID,
+        pluginID: route.pluginID,
+        source: "automatic",
+      })]
     },
   }
+}
+
+/**
+ * 判断输入是否命中一个 Plugin 的安全路由字段。
+ *
+ * @param text - 用户原始输入
+ * @param summary - Plugin 公开摘要
+ * @returns 是否命中至少一个非空路由词
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+function matchesPluginRouting(text: string, summary: NexumPluginSummary): boolean {
+  const normalizedText = text.toLocaleLowerCase()
+  const terms = [...summary.routing.intents, ...summary.routing.examples, ...summary.routing.keywords]
+  return terms.some((term) => {
+    const normalizedTerm = term.trim().toLocaleLowerCase()
+    return normalizedTerm.length > 0 && normalizedText.includes(normalizedTerm)
+  })
 }
 
 /**

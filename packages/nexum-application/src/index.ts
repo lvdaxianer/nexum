@@ -217,6 +217,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     tools: tools.definitions,
     question,
     skills: skillInvocation,
+    plugins: pluginInvocation,
     rolePrompt,
     toolTimeoutMs: options.toolTimeoutMs,
   }

@@ -80,6 +80,33 @@ test("runs model text, tool request, tool result, continuation, and completion i
   expect(permissionRequests[0]).toMatchObject({ action: "read", resource: "README.md" })
 })
 
+test("resolves Plugin routing before the first model call", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-loop-plugin-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory })
+  const routed: string[] = []
+  const model: ModelPort = {
+    async *prompt() {
+      expect(routed).toEqual(["查询订单"])
+      yield { type: "text", content: "已路由" }
+      yield { type: "completed" }
+    },
+  }
+  const loop = createNexumCodingLoop({
+    model,
+    tool: { async execute() { return { ok: true, output: "unused" } } },
+    permission: { async evaluate() { return "allow" } },
+    sessions,
+    events: { async publish() {} },
+    plugins: { async resolve(input) { routed.push(input.text); return [] } },
+  })
+
+  await expect(loop.run({ sessionID: session.sessionID, text: "查询订单" })).resolves.toMatchObject({
+    status: "completed",
+  })
+})
+
 test("publishes streamed reasoning without persisting it as visible assistant text", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-loop-reasoning-"))
   temporaryDirectories.push(directory)
