@@ -445,6 +445,14 @@ function parseMcpUrl(value: string): URL {
   }
 }
 
+/**
+ * 判断 MCP 主机名是否落入禁止访问的本地或保留地址范围。
+ *
+ * @param hostname - URL 主机名或 DNS 解析地址
+ * @returns 是否属于禁止访问范围
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
 export function isUnsafeMcpHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "")
   if (normalized === "localhost" || normalized.endsWith(".localhost") || normalized === "metadata" || normalized === "metadata.google.internal") return true

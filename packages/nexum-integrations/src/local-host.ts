@@ -230,7 +230,13 @@ function captureOutput(stream: ReadableStream<Uint8Array>, maxBytes: number): Ca
   return { promise, value: () => formatCapturedOutput(chunks, truncated) }
 }
 
-/** 格式化有限输出，并明确告知调用方内容已经被裁剪。 */
+/**
+ * 格式化有限输出，并明确告知调用方内容已经被裁剪。
+ *
+ * @param chunks - 已保留的输出片段
+ * @param truncated - 是否发生裁剪
+ * @returns 有界的工具输出
+ */
 function formatCapturedOutput(chunks: readonly string[], truncated: boolean): string {
   return `${chunks.join("")}${truncated ? OUTPUT_TRUNCATED_SUFFIX : ""}`
 }
@@ -259,7 +265,12 @@ async function resourcePath(directory: string, value: unknown): Promise<string |
   return existingParent && isWithin(root, existingParent) ? candidate : undefined
 }
 
-/** 查找路径上最近的真实目录，用于校验尚未创建的写入目标。 */
+/**
+ * 查找路径上最近的真实目录，用于校验尚未创建的写入目标。
+ *
+ * @param path - 待检查路径
+ * @returns 最近的真实路径
+ */
 async function nearestExistingPath(path: string): Promise<string | undefined> {
   let current = path
   while (true) {
@@ -271,13 +282,25 @@ async function nearestExistingPath(path: string): Promise<string | undefined> {
   }
 }
 
-/** 判断路径是否位于真实工作目录内。 */
+/**
+ * 判断路径是否位于真实工作目录内。
+ *
+ * @param root - 真实工作目录
+ * @param path - 待检查路径
+ * @returns 是否在工作目录内
+ */
 function isWithin(root: string, path: string): boolean {
   const relativePath = relative(root, path)
   return !isAbsolute(relativePath) && relativePath !== ".." && !relativePath.startsWith("..")
 }
 
-/** 在读取过程中限制文件大小，避免一次性加载无界内容。 */
+/**
+ * 在读取过程中限制文件大小，避免一次性加载无界内容。
+ *
+ * @param path - 待读取文件
+ * @param maxBytes - 最大字节数
+ * @returns 文件内容，超限时返回 undefined
+ */
 async function readText(path: string, maxBytes: number): Promise<string | undefined> {
   const info = await stat(path)
   if (!info.isFile() || info.size > maxBytes) return undefined

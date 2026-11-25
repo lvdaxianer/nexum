@@ -143,6 +143,8 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
   const port = options.port ?? DEFAULT_PORT
   const authToken = options.authToken?.trim() || undefined
+  assertPort(port)
+  assertHostSecurity(hostname, authToken)
   const interactionStore = options.interactionStore
   const runtime = options.runtime ?? await createSqliteRuntime({
     ...(options.sessionService ? { sessions: options.sessionService } : {}),
@@ -186,8 +188,6 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const mcp = options.mcp ?? runtime.mcp
   const mcpOAuth = options.mcpOAuth ?? runtime.mcpOAuth
   const mcpConfigStore = options.mcpConfigStore ?? runtime.mcpConfigStore
-  assertPort(port)
-  assertHostSecurity(hostname, authToken)
   if (options.sessionStore) await options.sessionStore.list()
   if (runtimeInteractionStore) await runtimeInteractionStore.list()
 
@@ -2329,18 +2329,34 @@ function assertHostSecurity(hostname: string, authToken: string | undefined): vo
   throw new Error("非回环 Nexum Service 必须配置 authToken")
 }
 
-/** 判断服务监听地址是否只在本机回环接口上可达。 */
+/**
+ * 判断服务监听地址是否只在本机回环接口上可达。
+ *
+ * @param hostname - 服务监听地址
+ * @returns 是否为回环地址
+ */
 function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname.trim().toLowerCase()
   return normalized === "localhost" || normalized === "::1" || normalized === "0:0:0:0:0:0:0:1" || normalized === "127.0.0.1" || normalized.startsWith("127.")
 }
 
-/** 健康检查允许匿名访问，其余接口在配置 token 后均需认证。 */
+/**
+ * 判断路径是否属于允许匿名访问的健康检查。
+ *
+ * @param path - 请求路径
+ * @returns 是否允许匿名访问
+ */
 function isPublicPath(path: string): boolean {
   return path === "/health/live" || path === "/health/ready"
 }
 
-/** 校验 Authorization Bearer token，比较时避免直接暴露 token 内容。 */
+/**
+ * 校验 Authorization Bearer token，比较时避免直接暴露 token 内容。
+ *
+ * @param request - 当前 HTTP 请求
+ * @param authToken - 服务端配置的 token
+ * @returns token 是否匹配
+ */
 function isAuthorizedRequest(request: Request, authToken: string | undefined): boolean {
   if (!authToken) return true
   const header = request.headers.get("authorization")?.trim()
