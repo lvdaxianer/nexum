@@ -7,7 +7,7 @@
 
 ## 2. 迁移内存与文件适配器
 
-- [ ] 2.1 将现有内存 Store 和事件 Hub 迁移到 `packages/nexum-persistence-memory`，保持每个组合实例隔离且不触碰文件或数据库；先添加隔离测试使其在迁移前失败，再实现并运行内存包测试。
+- [x] 2.1 将现有内存 Store 和事件 Hub 迁移到 `packages/nexum-persistence-memory`，保持每个组合实例隔离且不触碰文件或数据库；先添加隔离测试使其在迁移前失败，再实现并运行内存包测试。
 - [ ] 2.2 将现有 JSON 文件 Store 和事件 Hub 迁移到 `packages/nexum-persistence-file`，保持数据目录、逐文件覆盖和文件错误语义；先添加文件恢复测试使其在迁移前失败，再实现并运行文件包测试。
 - [ ] 2.3 删除旧聚合包中的具体实现导出，更新 Application、Server 和现有测试的导入路径；通过 repository boundary 测试、受影响包测试和类型检查确认没有残留旧路径。
 
