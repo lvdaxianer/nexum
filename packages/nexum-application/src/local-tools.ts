@@ -5,8 +5,6 @@
  * @date 2026-11-19
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises"
-import { isAbsolute, relative, resolve, sep } from "node:path"
 import type {
   HostPort,
   McpPort,
@@ -17,6 +15,7 @@ import type {
   ToolRequest,
   ToolResult,
 } from "@nexum/core"
+import { createLocalHostAdapter } from "@nexum/integrations"
 
 /** POC 首期内置工具名称。 */
 export type NexumBuiltinToolName = "read" | "write" | "edit" | "shell" | "skill_registry"
@@ -25,6 +24,8 @@ export type NexumBuiltinToolName = "read" | "write" | "edit" | "shell" | "skill_
 export interface NexumToolRegistryOptions {
   readonly sessions: NexumSessionService
   readonly host?: HostPort
+  readonly shellTimeoutMs?: number
+  readonly shellCleanupTimeoutMs?: number
   readonly skillRegistry?: NexumSkillRegistry
   readonly mcp?: McpPort
 }
@@ -75,6 +76,7 @@ export function normalizeNexumToolRequest(
  * @date 2026-11-19
  */
 export function createNexumToolRegistry(options: NexumToolRegistryOptions): NexumToolRegistry {
+  const host = options.host ?? createLocalHostAdapter({ timeoutMs: options.shellTimeoutMs, cleanupTimeoutMs: options.shellCleanupTimeoutMs })
   const names: string[] = [
     "read",
     "write",
@@ -152,19 +154,13 @@ export function createNexumToolRegistry(options: NexumToolRegistryOptions): Nexu
         const session = await options.sessions.get(request.sessionID)
         if (!session) return { ok: false, output: "Session 不存在" }
         if (request.toolName === "read") {
-          return options.host
-            ? options.host.readText({ directory: session.directory, path: request.input.path })
-            : readTool(session.directory, request)
+          return host.readText({ directory: session.directory, path: request.input.path })
         }
         if (request.toolName === "write" || request.toolName === "edit") {
-          return options.host
-            ? options.host.writeText({ directory: session.directory, path: request.input.path, content: request.input.content })
-            : writeTool(session.directory, request)
+          return host.writeText({ directory: session.directory, path: request.input.path, content: request.input.content })
         }
         if (request.toolName === "shell") {
-          return options.host
-            ? options.host.runShell({ directory: session.directory, command: request.input.command, signal: request.signal })
-            : shellTool(session.directory, request)
+          return host.runShell({ directory: session.directory, command: request.input.command, signal: request.signal })
         }
         if (request.toolName === "skill_registry") {
           return options.skillRegistry
@@ -301,55 +297,4 @@ async function executeSkillRegistryTool(registry: NexumSkillRegistry, request: T
 
 function safeSkillRegistryResult(value: unknown): ToolResult {
   return { ok: true, output: JSON.stringify(value) }
-}
-
-async function readTool(directory: string, request: ToolRequest): Promise<ToolResult> {
-  const path = resourcePath(directory, request.input.path)
-  if (!path) return { ok: false, output: "工具资源必须位于 Session 工作目录内" }
-  if (typeof request.input.path !== "string") return { ok: false, output: "read 工具缺少 path" }
-  try {
-    return { ok: true, output: await readFile(path, "utf8") }
-  } catch {
-    return { ok: false, output: "read 工具执行失败" }
-  }
-}
-
-async function writeTool(directory: string, request: ToolRequest): Promise<ToolResult> {
-  const path = resourcePath(directory, request.input.path)
-  if (!path) return { ok: false, output: "工具资源必须位于 Session 工作目录内" }
-  if (typeof request.input.path !== "string") return { ok: false, output: "write 工具缺少 path" }
-  if (typeof request.input.content !== "string") return { ok: false, output: "write 工具缺少 content" }
-  try {
-    await mkdir(resolve(path, ".."), { recursive: true })
-    await writeFile(path, request.input.content, "utf8")
-    return { ok: true, output: "" }
-  } catch {
-    return { ok: false, output: "write 工具执行失败" }
-  }
-}
-
-async function shellTool(directory: string, request: ToolRequest): Promise<ToolResult> {
-  if (typeof request.input.command !== "string" || !request.input.command.trim()) {
-    return { ok: false, output: "shell 工具缺少 command" }
-  }
-  try {
-    const child = Bun.spawn(["sh", "-lc", request.input.command], {
-      cwd: directory,
-      stdout: "pipe",
-      stderr: "pipe",
-    })
-    const [stdout, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()])
-    const exitCode = await child.exited
-    return { ok: exitCode === 0, output: `${stdout}${stderr}`.trim() }
-  } catch {
-    return { ok: false, output: "shell 工具执行失败" }
-  }
-}
-
-function resourcePath(directory: string, value: unknown): string | undefined {
-  if (typeof value !== "string" || !value.trim()) return undefined
-  const candidate = resolve(directory, value)
-  const relativePath = relative(directory, candidate)
-  if (isAbsolute(relativePath) || relativePath === ".." || relativePath.startsWith(`..${sep}`)) return undefined
-  return candidate
 }

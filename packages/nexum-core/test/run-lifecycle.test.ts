@@ -271,7 +271,7 @@ test("times out a hanging tool without accepting its late result", async () => {
 
   await expect(loop.run({ sessionID: session.sessionID, text: "工具超时" })).rejects.toMatchObject({ code: "timeout" })
   expect(executed).toBe(1)
-  expect(events).toEqual(["model.attempt", "tool.request", "session.failed", "run.settled"])
+  expect(events).toEqual(["model.attempt", "tool.request", "tool.result", "session.failed", "run.settled"])
   await rm(directory, { recursive: true, force: true })
 })
 
@@ -422,5 +422,71 @@ test("rejects continue when the history ends with an assistant answer", async ()
   await expect(loop.canContinue!(session.sessionID)).resolves.toBe(false)
   await expect(loop.continue!(session.sessionID)).rejects.toBeInstanceOf(NexumRunError)
   expect(calls).toBe(1)
+  await rm(directory, { recursive: true, force: true })
+})
+
+test("publishes a stable tool result before settling a timed out tool", async () => {
+  const { directory, session, sessions } = await createSession()
+  const events: Array<{ type: string; data?: Record<string, unknown> }> = []
+  const model: ModelPort = {
+    async *prompt() {
+      yield { type: "tool-call", toolCallID: "call_timeout", toolName: "shell", toolInput: { command: "hang" } }
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      return new Promise(() => {})
+    },
+  }
+  const loop = createNexumCodingLoop({
+    model,
+    tool,
+    permission: { async evaluate() { return "allow" } },
+    sessions,
+    events: { async publish(event) { events.push({ type: event.type, data: event.data }) } },
+    toolTimeoutMs: 10,
+  })
+
+  await expect(loop.run({ sessionID: session.sessionID, text: "执行超时命令" })).rejects.toMatchObject({ code: "timeout" })
+
+  expect(events).toContainEqual({ type: "tool.result", data: { toolCallID: "call_timeout", ok: false, errorCode: "timeout", status: "timeout", output: "工具执行超时" } })
+  expect(events.at(-1)).toEqual({ type: "run.settled", data: { result: "failed" } })
+  expect((await sessions.get(session.sessionID))?.status).toBe("failed")
+  await rm(directory, { recursive: true, force: true })
+})
+
+test("publishes a cancelled tool result before settling a cancelled run", async () => {
+  const { directory, session, sessions } = await createSession()
+  const events: Array<{ type: string; data?: Record<string, unknown> }> = []
+  let toolStarted!: () => void
+  const started = new Promise<void>((resolve) => {
+    toolStarted = resolve
+  })
+  const model: ModelPort = {
+    async *prompt() {
+      yield { type: "tool-call", toolCallID: "call_cancelled", toolName: "shell", toolInput: { command: "hang" } }
+    },
+  }
+  const tool: ToolPort = {
+    async execute() {
+      toolStarted()
+      return new Promise(() => {})
+    },
+  }
+  const loop = createNexumCodingLoop({
+    model,
+    tool,
+    permission: { async evaluate() { return "allow" } },
+    sessions,
+    events: { async publish(event) { events.push({ type: event.type, data: event.data }) } },
+  })
+
+  const run = loop.run({ sessionID: session.sessionID, text: "执行取消命令" })
+  await started
+  await expect(loop.cancel(session.sessionID)).resolves.toMatchObject({ status: "cancelled" })
+  await expect(run).resolves.toMatchObject({ status: "cancelled" })
+
+  expect(events).toContainEqual({ type: "tool.result", data: { toolCallID: "call_cancelled", ok: false, errorCode: "cancelled", status: "cancelled", output: "工具执行已取消" } })
+  expect(events.at(-1)).toEqual({ type: "run.settled", data: { result: "cancelled" } })
   await rm(directory, { recursive: true, force: true })
 })

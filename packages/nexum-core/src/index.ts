@@ -111,6 +111,8 @@ export interface ToolResult {
   readonly ok: boolean
   readonly output: string
   readonly toolCallID?: string
+  readonly errorCode?: "timeout" | "cancelled" | "tool_failed"
+  readonly status?: "timeout" | "cancelled" | "failed"
 }
 
 /** 工具端口负责执行已经通过权限判断的工具调用。 */
@@ -401,7 +403,7 @@ export interface NexumCodingLoopOptions {
   readonly maxRetryDelayMs?: number
   /** 单次模型增量等待的最大毫秒数；0 或省略表示不启用该边界。 */
   readonly modelTimeoutMs?: number
-  /** 单次工具执行等待的最大毫秒数；0 或省略表示不启用该边界。 */
+  /** 单次工具执行等待的最大毫秒数；省略使用安全默认值，0 表示关闭该边界。 */
   readonly toolTimeoutMs?: number
   /** 一次 Coding Loop 运行的总最大毫秒数；0 或省略表示不启用该边界。 */
   readonly runTimeoutMs?: number
@@ -448,6 +450,7 @@ export type NexumCodingLoopContinueStart =
 export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCodingLoop {
   const maxSteps = options.maxSteps
   const maxOutputContinuations = Math.max(1, options.maxOutputContinuations ?? 8)
+  const toolTimeoutMs = options.toolTimeoutMs === 0 ? undefined : normalizeTimeout(options.toolTimeoutMs) ?? DEFAULT_TOOL_TIMEOUT_MS
   const messageStore = options.messageStore
   const activeRuns = new Map<string, ActiveRun>()
   const continuationAdmissions = new Set<string>()
@@ -725,20 +728,44 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 if (effect !== "allow") {
                   throw new Error(effect === "deny" ? "工具请求被拒绝" : "工具请求需要权限审批")
                 }
-                const result = await waitForAbortable(
-                  options.tool.execute(request),
-                  runState.controller.signal,
-                  options.toolTimeoutMs,
-                  new NexumRunError("timeout", "工具执行超时", input.sessionID),
-                )
+                const toolController = new AbortController()
+                const abortTool = () => toolController.abort()
+                runState.controller.signal.addEventListener("abort", abortTool, { once: true })
+                let result: ToolResult
+                try {
+                  result = await waitForAbortable(
+                    options.tool.execute({ ...request, signal: toolController.signal }),
+                    runState.controller.signal,
+                    toolTimeoutMs,
+                    new NexumRunError("timeout", "工具执行超时", input.sessionID),
+                    abortTool,
+                  )
+                } catch (error) {
+                  const timedOut = runState.timedOut || (error instanceof NexumRunError && error.code === "timeout")
+                  const cancelled = !timedOut && (error instanceof NexumCancellationError || runState.cancelled || runState.controller.signal.aborted)
+                  await publish("tool.result", {
+                    toolCallID,
+                    ok: false,
+                    errorCode: timedOut ? "timeout" : cancelled ? "cancelled" : "tool_failed",
+                    status: timedOut ? "timeout" : cancelled ? "cancelled" : "failed",
+                    output: cancelled ? "工具执行已取消" : timedOut ? "工具执行超时" : safeErrorMessage(error),
+                  })
+                  throw error
+                } finally {
+                  runState.controller.signal.removeEventListener("abort", abortTool)
+                }
                 const toolResult = { ...result, toolCallID }
                 toolResults.push(toolResult)
                 await publish("tool.result", {
                   toolCallID,
                   ok: result.ok,
                   output: redactNexumSensitiveValue(result.output) as string,
+                  ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+                  ...(result.status ? { status: result.status } : {}),
                 })
                 appendCanonical([{ role: "tool", toolCallID, content: result.output }])
+                if (result.status === "timeout") throw new NexumRunError("timeout", "工具执行超时", input.sessionID)
+                if (result.status === "cancelled") throw new NexumCancellationError()
               }
               await persist()
               prompt = {
@@ -917,6 +944,7 @@ function waitForAbortable<T>(
   signal: AbortSignal,
   timeoutMs: number | undefined,
   timeoutError?: Error,
+  onTimeout?: () => void,
 ): Promise<T> {
   if (signal.aborted) return Promise.reject(new NexumCancellationError())
   const timeout = normalizeTimeout(timeoutMs)
@@ -937,6 +965,7 @@ function waitForAbortable<T>(
     }
     if (timeout !== undefined) {
       timer = setTimeout(() => {
+        onTimeout?.()
         cleanup()
         reject(timeoutError ?? new NexumRunError("timeout", "运行超时"))
       }, timeout)
@@ -982,6 +1011,7 @@ const MAX_STEPS_PROMPT =
   "工具步骤预算已用尽。请基于当前上下文直接给出清晰、完整的阶段性结果和下一步建议，不要再调用工具。"
 const OUTPUT_CONTINUATION_PROMPT = "上一条回答因输出长度限制被截断，请从中断处继续，不要重复已经输出的内容。"
 const DEFAULT_MAX_RETRY_DELAY_MS = 4_000
+const DEFAULT_TOOL_TIMEOUT_MS = 120_000
 const RETRYABLE_MODEL_ERROR_CODES = new Set([
   "network_error",
   "timeout",

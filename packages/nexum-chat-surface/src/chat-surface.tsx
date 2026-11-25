@@ -701,7 +701,12 @@ export function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem
   const timestamp = formatLocalTime(event.occurredAt)
   const detail = JSON.stringify(data, null, 2)
   const value = (key: string) => stringValue(data[key])
-  if (event.type === "assistant.thinking") return upsertChatItem(items, { id: `thinking:${event.runID}`, kind: "status", title: "Agent 思考", content: value("message") || "正在思考", thinking: true, thinkingStatus: value("message") || "模型正在思考", status: "streaming", localTime: timestamp, eventType: event.type })
+  if (event.type === "assistant.thinking") {
+    const hasActiveTool = items.some((item) => item.eventType === "tool.request" && (item.status === "running" || item.status === "waiting"))
+    const hasSettledRun = items.some((item) => item.id === `run:${event.runID}:settled` || item.id.startsWith(`session:${event.runID}:`))
+    if (hasActiveTool || hasSettledRun) return items
+    return upsertChatItem(items, { id: `thinking:${event.runID}`, kind: "status", title: "Agent 思考", content: value("message") || "正在思考", thinking: true, thinkingStatus: value("message") || "模型正在思考", status: "streaming", localTime: timestamp, eventType: event.type })
+  }
   if (event.type === "assistant.reasoning") {
     const active = items.filter((item) => !item.thinking)
     const last = active.at(-1)
@@ -714,7 +719,19 @@ export function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem
     if (last?.kind === "assistant" && last.id.startsWith(`assistant:${event.runID}:`)) return updateChatItem(active, last.id, { content: `${last.content ?? ""}${value("content")}`, status: "streaming", localTime: timestamp, eventType: event.type })
     return [...active, { id: `assistant:${event.runID}:${event.sequence}`, kind: "assistant", title: "Agent", content: value("content"), status: "streaming", localTime: timestamp, eventType: event.type }]
   }
-  if (event.type === "tool.request" || event.type === "tool.result") return upsertChatItem(closeReasoning(items.filter((item) => !item.thinking), event.runID, event.occurredAt), { id: `tool:${value("toolCallID")}`, kind: "execution", title: `${event.type === "tool.request" ? "工具调用" : "工具结果"} · ${value("toolName") || value("toolCallID") || "工具"}`, content: event.type === "tool.request" ? "Core 正在执行工具" : data.ok === false ? "工具执行失败" : compactSummary(value("output")) || "工具执行完成", detail, status: event.type === "tool.request" ? "running" : data.ok === false ? "failed" : "completed", localTime: timestamp, eventType: event.type })
+  if (event.type === "tool.request" || event.type === "tool.result") {
+    const errorCode = value("errorCode")
+    const content = event.type === "tool.request"
+      ? "Core 正在执行工具"
+      : errorCode === "timeout"
+        ? "工具执行超时，可继续运行"
+        : errorCode === "cancelled"
+          ? "工具执行已取消"
+          : data.ok === false
+            ? "工具执行失败"
+            : compactSummary(value("output")) || "工具执行完成"
+    return upsertChatItem(closeReasoning(items.filter((item) => !item.thinking), event.runID, event.occurredAt), { id: `tool:${value("toolCallID")}`, kind: "execution", title: `${event.type === "tool.request" ? "工具调用" : "工具结果"} · ${value("toolName") || value("toolCallID") || "工具"}`, content, detail, status: event.type === "tool.request" ? "running" : data.ok === false ? "failed" : "completed", localTime: timestamp, eventType: event.type })
+  }
   if (event.type === "permission.requested") return upsertChatItem(items, { id: `permission:${value("requestID")}`, kind: "execution", title: `权限请求 · ${value("action") || "操作"}`, content: value("reason") || "等待权限处理", detail, status: "waiting", localTime: timestamp, eventType: event.type })
   if (event.type === "question.request") return upsertChatItem(items, { id: `question:${value("requestID")}`, kind: "execution", title: "补充信息 · 等待回答", content: "Core 正在等待你的补充信息", detail, status: "waiting", localTime: timestamp, eventType: event.type })
   if (event.type === "question.result" || event.type === "question.cancelled") return updateChatItem(items, `question:${value("requestID")}`, { status: event.type === "question.result" ? "completed" : "cancelled", content: event.type === "question.result" ? "补充信息已提交" : "补充信息已取消", localTime: timestamp })

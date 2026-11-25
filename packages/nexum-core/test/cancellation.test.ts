@@ -191,6 +191,6 @@ test("marks tool failures as terminal failed sessions", async () => {
   await expect(loop.run({ sessionID: session.sessionID, text: "执行命令" })).rejects.toThrow("工具执行失败")
 
   expect((await sessions.get(session.sessionID))?.status).toBe("failed")
-  expect(events).toEqual(["model.attempt", "tool.request", "session.failed", "run.settled"])
+  expect(events).toEqual(["model.attempt", "tool.request", "tool.result", "session.failed", "run.settled"])
   await rm(directory, { recursive: true, force: true })
 })

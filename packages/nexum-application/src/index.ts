@@ -93,6 +93,9 @@ export interface NexumRuntimeStorageOptions {
 }
 
 export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
+  readonly toolTimeoutMs?: number
+  readonly shellTimeoutMs?: number
+  readonly shellCleanupTimeoutMs?: number
   readonly model?: ModelPort
   readonly modelConfig?: NexumModelConfigStore
   readonly rolePrompt?: NexumRolePromptStore
@@ -165,7 +168,14 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   })
   const skillInvocation = options.skillInvocation ?? createNexumSkillInvocationPort({ registry: skills, permission })
   const host = options.host ?? createLocalHostAdapter()
-  const tools = createNexumToolRegistry({ sessions, host, skillRegistry: skills, ...(options.mcp ? { mcp: options.mcp } : {}) })
+  const tools = createNexumToolRegistry({
+    sessions,
+    host,
+    shellTimeoutMs: options.shellTimeoutMs ?? options.toolTimeoutMs,
+    shellCleanupTimeoutMs: options.shellCleanupTimeoutMs,
+    skillRegistry: skills,
+    ...(options.mcp ? { mcp: options.mcp } : {}),
+  })
   const memory = options.memory ?? createInMemoryMemory()
   const loopOptions = {
     tool: tools.port,
@@ -177,6 +187,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     question,
     skills: skillInvocation,
     rolePrompt,
+    toolTimeoutMs: options.toolTimeoutMs,
   }
   const model = options.model ?? createOpenAICompatibleModelPort({ config: modelConfig })
   const modelProbe = options.modelProbe ?? createNexumModelProbePort({ model })

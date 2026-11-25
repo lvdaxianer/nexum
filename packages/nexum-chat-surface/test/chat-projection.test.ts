@@ -80,6 +80,31 @@ test.each([
   expect(settled.find((item) => item.kind === "assistant")?.status).toBe(expectedStatus)
 })
 
+test("ChatSurface keeps a running tool above later thinking heartbeats", () => {
+  const tool = projectChatEvent([], event("tool.request", { toolCallID: "tool_001", toolName: "shell" }, 1))
+  const heartbeat = projectChatEvent(tool, event("assistant.thinking", { message: "模型正在思考" }, 2))
+
+  expect(heartbeat.find((item) => item.id === "tool:tool_001")?.status).toBe("running")
+  expect(heartbeat.some((item) => item.thinking)).toBe(false)
+})
+
+test("ChatSurface projects a tool timeout with a recovery-oriented message", () => {
+  const tool = projectChatEvent([], event("tool.request", { toolCallID: "tool_002", toolName: "shell" }, 1))
+  const timedOut = projectChatEvent(tool, event("tool.result", {
+    toolCallID: "tool_002",
+    toolName: "shell",
+    ok: false,
+    errorCode: "timeout",
+    status: "timeout",
+    output: "工具执行超时",
+  }, 2))
+
+  expect(timedOut.find((item) => item.id === "tool:tool_002")).toMatchObject({
+    status: "failed",
+    content: "工具执行超时，可继续运行",
+  })
+})
+
 function event(type: NexumEvent["type"], data: Record<string, unknown>, sequence: number, occurredAt = "2026-11-24T00:00:00.000Z"): NexumEvent {
   return {
     eventID: `event_${sequence}`,

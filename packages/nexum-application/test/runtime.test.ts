@@ -5,15 +5,17 @@ import { tmpdir } from "node:os"
 import {
   createEmbeddedRuntime,
   createLocalRuntime,
+  createNexumToolRegistry,
 } from "../src/index.ts"
 import {
   createFileMemory,
   createFileRolePromptStore,
   createInMemoryMcpServerConfigStore,
+  createInMemorySessionStore,
   createNexumModelConfigStore,
 } from "../../nexum-persistence/src/index.ts"
 import { createHttpMcpAdapter, createLocalHostAdapter, createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
-import type { McpConnection, McpServerConfigStore, ModelPort } from "@nexum/core"
+import { createNexumSessionService, type McpConnection, type McpServerConfigStore, type ModelPort } from "@nexum/core"
 
 const directories: string[] = []
 
@@ -43,6 +45,24 @@ test("local host refuses paths outside the session directory", async () => {
   const host = createLocalHostAdapter()
   const result = await host.readText({ directory: "/tmp/nexum", path: "../outside.txt" })
   expect(result).toEqual({ ok: false, output: "工具资源必须位于 Session 工作目录内" })
+})
+
+test("tool registry fallback shell settles a hanging command", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-registry-shell-"))
+  directories.push(directory)
+  const sessions = createNexumSessionService({ store: createInMemorySessionStore() })
+  const session = await sessions.create({ directory })
+  const registry = createNexumToolRegistry({ sessions, shellTimeoutMs: 20, shellCleanupTimeoutMs: 20 })
+
+  const result = await registry.port.execute({
+    sessionID: session.sessionID,
+    toolName: "shell",
+    action: "shell",
+    resource: "sleep 30 & wait",
+    input: { command: "sleep 30 & wait" },
+  })
+
+  expect(result).toMatchObject({ ok: false, errorCode: "timeout", status: "timeout" })
 })
 
 test("creates a file-backed local runtime", async () => {
