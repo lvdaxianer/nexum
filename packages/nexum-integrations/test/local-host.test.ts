@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createLocalHostAdapter } from "../src/local-host.ts"
@@ -42,4 +42,40 @@ test("returns output and exit status for a completed shell command", async () =>
 
   expect(result).toEqual({ ok: false, output: "output" })
   await rm(workingDirectory, { recursive: true, force: true })
+})
+
+test("bounds shell output and file reads and writes", async () => {
+  const workingDirectory = await directory()
+  const host = createLocalHostAdapter({ maxOutputBytes: 4, maxReadBytes: 4, maxWriteBytes: 4 })
+  await writeFile(join(workingDirectory, "large.txt"), "12345", "utf8")
+
+  const shell = await host.runShell({ directory: workingDirectory, command: "printf 123456" })
+  const read = await host.readText({ directory: workingDirectory, path: "large.txt" })
+  const write = await host.writeText({ directory: workingDirectory, path: "too-large.txt", content: "12345" })
+
+  expect(shell).toMatchObject({ ok: true })
+  expect(shell.output).toContain("1234")
+  expect(shell.output).toContain("输出已截断")
+  expect(read).toEqual({ ok: false, output: "read 工具输出超过大小限制" })
+  expect(write).toEqual({ ok: false, output: "write 工具输入超过大小限制" })
+  await rm(workingDirectory, { recursive: true, force: true })
+})
+
+test("rejects symlinks that resolve outside the session directory", async () => {
+  const workingDirectory = await directory()
+  const outsideDirectory = await directory()
+  const outsideFile = join(outsideDirectory, "secret.txt")
+  const linkedFile = join(workingDirectory, "linked.txt")
+  await writeFile(outsideFile, "secret", "utf8")
+  await symlink(outsideFile, linkedFile)
+  const host = createLocalHostAdapter()
+
+  const read = await host.readText({ directory: workingDirectory, path: "linked.txt" })
+  const write = await host.writeText({ directory: workingDirectory, path: "linked.txt", content: "changed" })
+
+  expect(read).toEqual({ ok: false, output: "工具资源必须位于 Session 工作目录内" })
+  expect(write).toEqual({ ok: false, output: "工具资源必须位于 Session 工作目录内" })
+  expect(await readFile(outsideFile, "utf8")).toBe("secret")
+  await rm(workingDirectory, { recursive: true, force: true })
+  await rm(outsideDirectory, { recursive: true, force: true })
 })

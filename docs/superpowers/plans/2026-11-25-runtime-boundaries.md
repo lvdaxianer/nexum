@@ -46,27 +46,27 @@
 - Modify: `packages/nexum-integrations/src/local-host.ts`
 - Test: `packages/nexum-integrations/test/local-host.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 覆盖最大输出、最大读取大小、最大写入大小以及工作目录内符号链接指向外部文件时拒绝 read/write。
 
-- [ ] **Step 2: 运行 focused test 确认失败**
+- [x] **Step 2: 运行 focused test 确认失败**
 
 运行：`bun test test/local-host.test.ts -t "bounds|symlink|output"`
 
 预期：当前实现会返回完整输出并允许符号链接路径。
 
-- [ ] **Step 3: 实现最小边界**
+- [x] **Step 3: 实现最小边界**
 
 增加 `maxReadBytes`、`maxWriteBytes`、`maxOutputBytes` 配置；使用真实路径检查读写边界；输出捕获使用有界 chunk 缓冲，超限后继续 drain 并追加截断标记。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 运行：`bun test test/local-host.test.ts`
 
 预期：新增和已有 Shell 生命周期测试全部通过。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 提交：`🐛 fix(integrations): 限制本地 Host 资源和路径`
 
