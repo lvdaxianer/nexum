@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createFileSessionStore } from "../src/index.ts"
+import { createFileSessionStore } from "../src/session-store.ts"
 
 const temporaryDirectories: string[] = []
 

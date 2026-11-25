@@ -19,6 +19,9 @@
         "@nexum/core": "workspace:*",
         "@nexum/integrations": "workspace:*",
         "@nexum/persistence": "workspace:*",
+        "@nexum/persistence-file": "workspace:*",
+        "@nexum/persistence-memory": "workspace:*",
+        "@nexum/persistence-sqlite": "workspace:*",
       },
       "devDependencies": {
         "@tsconfig/bun": "catalog:",
@@ -154,6 +157,8 @@
         "@nexum/protocol": "workspace:*",
       },
       "devDependencies": {
+        "@nexum/persistence-file": "workspace:*",
+        "@nexum/persistence-memory": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
       },
@@ -180,6 +185,7 @@
         "@nexum/client": "workspace:*",
         "@nexum/integrations": "workspace:*",
         "@nexum/persistence": "workspace:*",
+        "@nexum/persistence-memory": "workspace:*",
         "dompurify": "catalog:",
         "marked": "catalog:",
         "solid-js": "catalog:",

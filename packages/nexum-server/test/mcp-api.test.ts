@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import { createMcpRegistry, type McpConnection, type McpOAuthAttempt, type McpOAuthControlPort, type McpServerConfigStore } from "@nexum/core"
-import { createInMemoryMcpServerConfigStore } from "../../nexum-persistence/src/index.ts"
+import { createInMemoryMcpServerConfigStore } from "@nexum/persistence-memory"
 import { createLocalRuntime } from "@nexum/application"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
 import { mkdtemp, rm } from "node:fs/promises"

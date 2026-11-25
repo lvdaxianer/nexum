@@ -1,35 +1,5 @@
-/** Nexum Core 端口的持久化实现。 */
-export { createFileInteractionStore, createInMemoryInteractionStore } from "./interaction-store.ts"
-export type { FileInteractionStoreOptions } from "./interaction-store.ts"
-export { createFilePersistence, createMemoryPersistence } from "./composition.ts"
-export type { FilePersistenceOptions, NexumPersistence } from "./composition.ts"
-export { createFileMessageStore, createInMemoryMessageStore } from "./message-store.ts"
-export type { FileMessageStoreOptions } from "./message-store.ts"
-export { createFileModelConfigStore, createNexumModelConfigStore } from "./model-config.ts"
-export type { FileModelConfigStoreOptions } from "./model-config.ts"
-export { createFileMemory } from "./memory.ts"
-export type { FileMemoryOptions } from "./memory.ts"
-export { createInMemoryMemory } from "./in-memory-memory.ts"
-export type { InMemoryMemoryOptions } from "./in-memory-memory.ts"
+/** Nexum 持久化适配器的公共组合契约。 */
+
+export type { NexumPersistence } from "./composition.ts"
 export { createNexumEventHub, NexumEventStoreError } from "./events.ts"
 export type { NexumEventHub, NexumEventHubOptions, NexumEventSubscriptionOptions } from "./events.ts"
-export { createFileRolePromptStore, createNexumRolePromptStore } from "./role-prompt.ts"
-export type { FileRolePromptStoreOptions } from "./role-prompt.ts"
-export { createFileSessionStore, createInMemorySessionStore } from "./session-store.ts"
-export type { FileSessionStoreOptions } from "./session-store.ts"
-export { createFilePermissionPolicyStore, createInMemoryPermissionPolicyStore } from "./permission-policy-store.ts"
-export type { FilePermissionPolicyStoreOptions } from "./permission-policy-store.ts"
-export { createFileSkillRegistrationStore, createInMemorySkillRegistrationStore } from "./skill-registration-store.ts"
-export type { FileSkillRegistrationStoreOptions } from "./skill-registration-store.ts"
-export {
-  createFileMcpCredentialStore,
-  createFileMcpServerConfigStore,
-  createInMemoryMcpCredentialStore,
-  createInMemoryMcpServerConfigStore,
-  McpStoreError,
-} from "./mcp-store.ts"
-export type {
-  FileMcpCredentialStoreOptions,
-  FileMcpServerConfigStoreOptions,
-  McpStoreErrorCode,
-} from "./mcp-store.ts"

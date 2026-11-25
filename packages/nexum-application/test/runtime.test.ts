@@ -1,20 +1,23 @@
 import { afterEach, expect, test } from "bun:test"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
   createEmbeddedRuntime,
   createLocalRuntime,
+  createSqliteRuntime,
   createNexumToolRegistry,
 } from "../src/index.ts"
 import {
   createFileMemory,
   createFileRolePromptStore,
+} from "@nexum/persistence-file"
+import {
   createInMemoryMcpServerConfigStore,
   createMemoryPersistence,
   createInMemorySessionStore,
   createNexumModelConfigStore,
-} from "../../nexum-persistence/src/index.ts"
+} from "@nexum/persistence-memory"
 import { createHttpMcpAdapter, createLocalHostAdapter, createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
 import { createNexumSessionService, type McpConnection, type McpServerConfigStore, type ModelPort } from "@nexum/core"
 
@@ -85,6 +88,16 @@ test("creates a file-backed local runtime", async () => {
   expect(runtime.eventHub).toBeDefined()
   expect(runtime.sessionService).toBeDefined()
   await runtime.close()
+})
+
+test("creates a SQLite-backed runtime that closes its database", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-sqlite-runtime-"))
+  directories.push(directory)
+  const databasePath = join(directory, "nexum.db")
+  const runtime = await createSqliteRuntime({ databasePath })
+  await access(databasePath)
+  await runtime.close()
+  expect(runtime.status()).toBe("closed")
 })
 
 test("restores MCP configurations and starts enabled connections in the background", async () => {

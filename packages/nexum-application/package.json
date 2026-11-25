@@ -16,7 +16,10 @@
   "dependencies": {
     "@nexum/core": "workspace:*",
     "@nexum/integrations": "workspace:*",
-    "@nexum/persistence": "workspace:*"
+    "@nexum/persistence": "workspace:*",
+    "@nexum/persistence-file": "workspace:*",
+    "@nexum/persistence-memory": "workspace:*",
+    "@nexum/persistence-sqlite": "workspace:*"
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",

@@ -1,10 +1,10 @@
-import { createLocalRuntime } from "@nexum/application"
+import { createSqliteRuntime } from "@nexum/application"
 import { startNexumServer } from "@nexum/server"
 import { resolve } from "node:path"
 
 const dataDirectory = process.env.NEXUM_TEST_DATA_DIR ?? resolve(import.meta.dir, "../.nexum-test")
 const surfacesDirectory = resolve(import.meta.dir, "../../nexum-surfaces")
-const runtime = createLocalRuntime({ dataDirectory })
+const runtime = await createSqliteRuntime({ databasePath: resolve(dataDirectory, "nexum.db") })
 const server = await startNexumServer({
   port: 4097,
   runtime,

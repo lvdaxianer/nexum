@@ -5,27 +5,21 @@
 ## 它验证什么
 
 - Core 的 Coding Loop、Session、工具、权限、Question、Skill 和上下文语义；
-- Adapter 的模型、Host、文件 Store、Event、Memory 和 Runtime 组合；
+- Adapter 的模型、Host、SQLite Store、Event、Memory 和 Runtime 组合；
 - Protocol Envelope、能力发现、HTTP/SSE 事件和错误边界；
 - Client 的请求、响应和 SSE 消费；
 - Surface 对聊天、事件、权限、反问、运行状态和 Session 恢复的展示。
 
 ## 持久化约束
 
-Test Workbench 使用 `createLocalRuntime`，默认数据目录为当前包下的 `.nexum-test/`。真实 POC 不使用内存 Store：
+Test Workbench 使用 `createSqliteRuntime`，默认数据库为当前包下的 `.nexum-test/nexum.db`。真实 POC 不使用内存 Store：
 
 ```text
 .nexum-test/
-├── sessions.json
-├── messages.json
-├── interactions.json
-├── model-config.json
-├── permission-policies.json
-├── events.json
-└── memory.json
+└── nexum.db
 ```
 
-这些文件属于本地运行数据，已经加入 Git 忽略规则，不应提交到仓库。重启服务后，Session、消息、事件和交互状态仍然可以从同一目录恢复。内存实现只用于 Core 单元测试或显式的嵌入式组合。
+这个数据库属于本地运行数据，已经加入 Git 忽略规则，不应提交到仓库。重启服务后，Session、消息、事件和交互状态仍然可以从同一数据库恢复。内存实现只用于 Core 单元测试或显式的嵌入式组合。
 
 ## 启动 Workbench
 
@@ -50,4 +44,4 @@ bun test
 bun run typecheck:tsc
 ```
 
-其中 `test/persistent-poc.test.ts` 会使用临时 `.nexum-test` 数据目录，执行一次 Protocol/Client/Runtime 链路，关闭 Runtime，再用相同目录重新打开并验证 Session、模型配置、权限策略、Memory、Interaction、消息和事件的恢复。
+其中 `test/persistent-poc.test.ts` 会使用临时 `.nexum-test` 数据目录，执行一次 Protocol/Client/Runtime 链路，关闭 Runtime，再用相同数据库重新打开并验证 Session、模型配置、权限策略、Memory、Interaction、消息和事件的恢复。

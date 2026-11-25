@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { createLocalRuntime } from "@nexum/application"
-import { createFileRolePromptStore } from "../../nexum-persistence/src/index.ts"
+import { createFileRolePromptStore } from "@nexum/persistence-file"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
 
 const servers: NexumServer[] = []

@@ -7,7 +7,7 @@ import {
   createFileMcpServerConfigStore,
   createInMemoryMcpCredentialStore,
   createInMemoryMcpServerConfigStore,
-} from "../src/index.ts"
+} from "../src/mcp-store.ts"
 import type { McpOAuthCredential, McpServerConfig } from "@nexum/core"
 
 const config: McpServerConfig = {

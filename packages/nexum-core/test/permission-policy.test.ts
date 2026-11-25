@@ -9,7 +9,10 @@ import {
   type ToolRequest,
 } from "../src/index.ts"
 import { createNexumPermissionBroker } from "./test-ports.ts"
-import { createFilePermissionPolicyStore, createInMemoryPermissionPolicyStore } from "../../nexum-persistence/src/index.ts"
+import {
+  createFilePermissionPolicyStore,
+  createInMemoryPermissionPolicyStore,
+} from "../../nexum-persistence/src/permission-policy-store.ts"
 
 function request(action: string, resource: string, sessionID = "session-a"): ToolRequest {
   return { sessionID, toolName: action === "shell" ? "shell" : action, action, resource, input: {} }

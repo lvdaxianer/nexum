@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { createNexumModelConfigStore } from "../../nexum-persistence/src/index.ts"
+import { createNexumModelConfigStore } from "../../nexum-persistence/src/model-config.ts"
 import { createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
 
 async function collect(model: ReturnType<typeof createOpenAICompatibleModelPort>) {

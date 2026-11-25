@@ -5,7 +5,9 @@ import type {
   NexumSessionServiceOptions,
   SessionStore,
 } from "../src/index.ts"
-import { createInMemoryMessageStore, createInMemoryPermissionPolicyStore, createInMemorySessionStore } from "../../nexum-persistence/src/index.ts"
+import { createInMemoryMessageStore } from "../../nexum-persistence/src/message-store.ts"
+import { createInMemoryPermissionPolicyStore } from "../../nexum-persistence/src/permission-policy-store.ts"
+import { createInMemorySessionStore } from "../../nexum-persistence/src/session-store.ts"
 
 const core = await import("../src/index.ts")
 

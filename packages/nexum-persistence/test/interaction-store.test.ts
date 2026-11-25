@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { NexumInteractionRecord } from "@nexum/core"
-import { createFileInteractionStore } from "../src/index.ts"
+import { createFileInteractionStore } from "../src/interaction-store.ts"
 
 test("serializes concurrent interaction writes and redacts sensitive text", async () => {
   const root = await mkdtemp(join(tmpdir(), "nexum-interaction-store-"))

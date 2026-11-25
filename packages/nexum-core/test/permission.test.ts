@@ -9,7 +9,7 @@ import {
   type ToolPort,
 } from "../src/index.ts"
 import { createNexumCodingLoop, createNexumPermissionBroker, createNexumSessionService } from "./test-ports.ts"
-import { createFileInteractionStore } from "../../nexum-persistence/src/index.ts"
+import { createFileInteractionStore } from "../../nexum-persistence/src/interaction-store.ts"
 
 async function makeSession() {
   const directory = await mkdtemp(join(tmpdir(), "nexum-permission-"))

@@ -9,7 +9,8 @@ import {
   type NexumSkillSource,
   type NexumSkillSummary,
 } from "@nexum/core"
-import { createFileSkillRegistrationStore, createInMemorySkillRegistrationStore } from "@nexum/persistence"
+import { createFileSkillRegistrationStore } from "@nexum/persistence-file"
+import { createInMemorySkillRegistrationStore } from "@nexum/persistence-memory"
 import { createLocalSkillSource } from "@nexum/integrations"
 
 /** Skill Registry 的可替换来源和注册存储配置。 */

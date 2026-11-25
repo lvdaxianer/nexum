@@ -7,7 +7,7 @@ import {
   type ModelMessage,
   type ModelToolCall,
 } from "@nexum/core"
-import { createFileMessageStore, createInMemoryMessageStore } from "../src/index.ts"
+import { createFileMessageStore, createInMemoryMessageStore } from "../src/message-store.ts"
 
 const temporaryDirectories: string[] = []
 
