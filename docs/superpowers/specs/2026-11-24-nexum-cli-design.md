@@ -72,6 +72,7 @@ packages/nexum-cli/src/
 - 状态机完全复用协议事实：`idle / running / retrying / awaiting permission / awaiting question / completed / failed / cancelled`；终态只认 `run.settled` 与 `session.*` 事件，不从文本猜测。
 - 运行中输入锁定；`Ctrl+C` 在运行中触发 `cancelRun`，空闲时退出 REPL。
 - 输入框仅空闲时绘制（框内提示行 + `›` 输入行，提交后闭合；运行中不显示，非 TTY 降级为普通 `nexum ▸ ` 提示符）。
+- 输入框提示行右侧常驻当前权限模式（`权限:ask/allow/deny · N 规则`，由 `* *` 通配规则推导，无通配规则即 ask）；`/permissions` 可查看与切换，切换与权限卡片回复后即时刷新。
 - Permission：事件到达即打印 `action / resource / reason`，提示 `允许一次 / 始终允许 / 拒绝` 三选一，调用 `replyPermission`。
 - Question：按题号渲染编号选项，单选输入序号、多选逗号分隔，按问题顺序提交二维字符串数组；支持取消，取消不伪造答案——与 UI 的 `questionAnswers` 语义一致。
 - REPL slash 命令：`/help`、`/new [名称]`、`/use <sessionID>`、`/sessions`、`/resume`、`/cancel`、`/continue`、`/skills`、`/mcp`、`/model`、`/status`、`/theme [dark|light|auto]`、`/clear`、`/events`、`/thinking [summary|full]`、`/expand`、`/quit`。其中 `/new`、`/use`、`/resume` 直接切换会话（重建事件订阅并回放历史），`/skills`、`/mcp`、`/model`、`/status` 与同名一次性命令输出一致。
@@ -137,6 +138,7 @@ packages/nexum-cli/src/
 | `mcp connect <id>` | `mcp.connect` + `mcp.authorize` 系列 | needs_auth 时进入 OAuth：打印授权地址并尝试打开浏览器，支持粘贴回调 URL（`completeAuthorization`），轮询 `authorizationStatus` 直到 authorized/failed/expired |
 | `mcp disconnect <id>` / `mcp remove <id>` | `mcp.disconnect` / `mcp.remove` | 断开与移除 |
 | `mcp tools/resources/prompts <id>` | `mcp.tools` 等 | 名称 + 描述列表 |
+| `permission list` / `allow <动作> [范围]` / `deny <动作> [范围]` / `remove <id>` / `mode ask\|allow` | `permissionPolicy.list` / `create` / `remove` | 规则表效果着色（allow 绿、ask 黄、deny 红），通配规则标注 `← 当前模式`，session 规则标注来源会话；`mode allow` 写 `* *` 通配规则（危险操作仍受协议约束逐次询问），`mode ask` 移除它；REPL `/permissions` 共享实现 |
 
 REPL 内 `/skills` 列出 ready Skill 供 `@` 引用；`@` 补全只列 `status === "ready"` 的 Skill，与 UI 一致。
 

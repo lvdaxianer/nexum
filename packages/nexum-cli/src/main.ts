@@ -35,6 +35,7 @@ import { logoLines } from "./anim"
 import { loadCliConfig, resolveTheme } from "./config"
 import type { Prompter } from "./interact"
 import { createIO } from "./io"
+import { cmdPermission } from "./permission"
 import { inputBoxLines, readlineLineSource, runRepl } from "./repl"
 import { detectCaps, paint } from "./term"
 
@@ -55,6 +56,7 @@ export const USAGE = `Nexum CLI — 与 Web UI 同级的终端 Surface
   role-prompt get | role-prompt set <文件> | role-prompt reset
   skill list | skill detail <id> | skill validate [id] | skill refresh [id] | skill register <地址> | skill unregister <id>
   mcp list | mcp add | mcp connect <id> | mcp disconnect <id> | mcp remove <id> | mcp tools <id> | mcp resources <id> | mcp prompts <id>
+  permission list | allow <动作> [范围] | deny <动作> [范围] | remove <id> | mode ask|allow
 
 选项:
   --server    Server 地址(默认 $NEXUM_API_URL 或 http://127.0.0.1:4097)
@@ -188,6 +190,7 @@ export async function run(argv: string[]): Promise<number> {
         if (rest[0] === "resources" && rest[1]) return await cmdMcpResources(client, io, rest[1]).then(() => 0)
         if (rest[0] === "prompts" && rest[1]) return await cmdMcpPrompts(client, io, rest[1]).then(() => 0)
       }
+      if (command === "permission") return await cmdPermission(client, io, rest)
       io.line(`未知命令:${positionals.join(" ")}\n`)
       io.line(USAGE)
       return 2

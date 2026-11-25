@@ -4,6 +4,7 @@ import { Nexum, type NexumEvent, type NexumSession } from "@nexum/client"
 import type { ChatProtocolAdapter } from "@nexum/surface-adapter"
 import { arrayLineSource, inputBoxLines, readlineLineSource, runRepl } from "../src/repl.ts"
 import { createIO, memoryIO } from "../src/io.ts"
+import { displayWidth } from "../src/term.ts"
 
 const session: NexumSession = {
   id: "session_001",
@@ -503,4 +504,128 @@ test("repl redraws the input box after an empty line submit", async () => {
   expect(text.match(/╰/g)?.length).toBe(2)
   expect(text.match(/╭/g)?.length).toBe(2)
   expect(text.lastIndexOf("\x1b[2A")).toBeGreaterThan(text.lastIndexOf("╰"))
+})
+
+/** 带权限策略内存状态的 fake client:GET 列表 / POST 创建 / DELETE 删除。 */
+function policyClient() {
+  const rules: { id: string; action: string; resource: string; effect: string; scope: string; createdAt: string; updatedAt: string }[] = []
+  const lists: number[] = []
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      const request = new Request(typeof input === "string" ? input : input.toString(), init)
+      if (request.method === "GET") {
+        lists.push(1)
+        return Response.json({ data: { rules, defaultEffect: "ask" }, meta })
+      }
+      if (request.method === "POST") {
+        const body = JSON.parse(await request.text()) as { action: string; resource: string; effect: string; scope: string }
+        const created = { id: `rule_${String(rules.length + 1).padStart(3, "0")}`, createdAt: "", updatedAt: "", ...body }
+        rules.push(created)
+        return Response.json({ data: created, meta })
+      }
+      return Response.json({ data: {}, meta })
+    },
+  })
+  return { client, rules, lists }
+}
+
+function statusLineSource(lines: readonly string[]) {
+  const queue = [...lines]
+  const statuses: string[] = []
+  return {
+    statuses,
+    next: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      return queue.length > 0 ? queue.shift()! : null
+    },
+    close: () => {},
+    setStatus: (text: string) => statuses.push(text),
+  }
+}
+
+test("repl /permissions lists rules, switches mode and refreshes the box status", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  const { client, rules } = policyClient()
+  const lineSource = statusLineSource(["/permissions", "/permissions mode allow", "/permissions", "/quit"])
+  await runRepl({ adapter, client, io, sessionID: session.id, lineSource, prompter: async () => "" })
+  // 初始 ask,mode allow 后刷新为 allow · 1 规则
+  expect(lineSource.statuses[0]).toBe("权限:ask")
+  expect(lineSource.statuses.at(-1)).toBe("权限:allow · 1 规则")
+  expect(rules[0]).toMatchObject({ action: "*", resource: "*", effect: "allow", scope: "global" })
+  const out = io.plain()
+  expect(out).toContain("暂无规则,全部操作逐次询问")
+  expect(out).toContain("✓ 权限模式已切换 ask → allow(危险操作仍会询问)")
+  expect(out).toContain("← 当前模式")
+})
+
+test("repl refreshes the permission status after a permission-card reply", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({
+    onSend: () => [
+      makeEvent("permission.requested", { requestID: "p1", action: "edit", resource: "a.ts" }, 1),
+      makeEvent("run.settled", { result: "completed" }, 2),
+    ],
+  })
+  const { client, lists } = policyClient()
+  const lineSource = statusLineSource(["改文件", "/quit"])
+  // 始终允许:服务器端会写入规则,回复成功后必须重新拉取状态
+  await runRepl({ adapter, client, io, sessionID: session.id, lineSource, prompter: async () => "2" })
+  expect(io.plain()).toContain("权限已通过")
+  expect(lists.length).toBeGreaterThanOrEqual(2)
+  expect(lineSource.statuses.length).toBeGreaterThanOrEqual(2)
+})
+
+test("readlineLineSource right-aligns the status segment on the hint row", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 120)!
+  const source = readlineLineSource(() => [], { input, output, box })
+  source.setStatus?.("权限:allow · 1 规则")
+  source.showPrompt?.()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const hintLine = rendered.split("\n").find((line) => line.includes("输入任务"))!
+  const plainHint = hintLine.replace(/\x1b\[[0-9;]*m/g, "")
+  expect(plainHint.endsWith("权限:allow · 1 规则")).toBe(true)
+  // 提示行显示宽度与顶边一致(状态段右对齐到框宽)
+  expect(displayWidth(plainHint)).toBe(displayWidth(box.top.replace(/\x1b\[[0-9;]*m/g, "")))
+  source.close()
+})
+
+test("readlineLineSource drops the status segment when the box is too narrow to fit it", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 60)!
+  const source = readlineLineSource(() => [], { input, output, box })
+  source.setStatus?.("权限:allow · 1 规则")
+  source.showPrompt?.()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const hintLine = rendered.split("\n").find((line) => line.includes("输入任务"))!
+  expect(hintLine).toBe(box.hint)
+  source.close()
+})
+
+test("readlineLineSource without status keeps the plain hint row", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 80)!
+  const source = readlineLineSource(() => [], { input, output, box })
+  source.showPrompt?.()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const hintLine = rendered.split("\n").find((line) => line.includes("输入任务"))!
+  expect(hintLine).toBe(box.hint)
+  source.close()
 })

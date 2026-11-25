@@ -46,6 +46,7 @@ bun run --cwd packages/nexum-cli start -- --help
 | `nexum role-prompt get \| set <文件> \| reset` | 读取、更新和重置角色提示 |
 | `nexum skill list \| detail <id> \| validate [id] \| refresh [id] \| register <地址> \| unregister <id>` | Skill 发现、校验和管理 |
 | `nexum mcp list \| add \| connect <id> \| disconnect <id> \| remove <id> \| tools <id> \| resources <id> \| prompts <id>` | MCP 服务器与能力管理 |
+| `nexum permission list \| allow <动作> [范围] \| deny <动作> [范围] \| remove <id> \| mode ask\|allow` | 权限规则与模式管理：规则表效果着色（allow 绿 / ask 黄 / deny 红），通配规则标注 `← 当前模式`；`mode allow` 写通配规则（危险操作仍会询问），`mode ask` 移除它 |
 
 全局选项：`--server`、`--session`、`-c`/`--continue`、`--theme`、`--no-anim`、`--version`、`--help`。
 
@@ -53,7 +54,7 @@ bun run --cwd packages/nexum-cli start -- --help
 
 每次启动默认进入新会话的待创建状态：不恢复任何会话，首条非 slash 消息到达时才创建会话（空启动零垃圾）；`resume`、`-c`/`--continue`、`--session <id>` 为显式恢复入口，`/new [名称]` 随时回到待创建状态（名称留给创建时使用）。打开会话时回放最近 50 条历史，随后从 `lastSequence` 起订阅事件并按 `eventID` 去重。运行期间输入锁定（`/cancel` 可取消）；Permission/Question 请求进入顺序交互队列逐个询问。输入 `@` 触发 Skill 自动补全，只列出 `ready` 状态的 Skill。运行进入终态（completed/failed/cancelled）后事件流结束属正常关闭，静默续订；仅非终态掉线才打印重连提示。
 
-输入框仅在空闲时绘制，为五行闭合框（顶边 / 提示行 `输入任务,Enter 发送 · @ 引用 Skill · /help 命令 · Ctrl+C 取消/退出` / `›` 输入行 / 留白行 / 底边），宽度随终端（上限 110 列），光标归位框内输入行；提交后光标移至框外，运行中不显示提示符，事件输出不与输入行粘连；运行结束输入框自动重画。非 TTY 或无色终端降级为普通 `nexum ▸ ` 提示符。视觉参照 `artifacts/nexum-cli-input-box.png`（`artifacts/` 不入库，仅作视觉参照）。slash 命令以 `src/repl.ts` 的 `HELP` 为准：
+输入框仅在空闲时绘制，为五行闭合框（顶边 / 提示行 `输入任务,Enter 发送 · @ 引用 Skill · /help 命令 · Ctrl+C 取消/退出` / `›` 输入行 / 留白行 / 底边），宽度随终端（上限 110 列），光标归位框内输入行；提交后光标移至框外，运行中不显示提示符，事件输出不与输入行粘连；运行结束输入框自动重画。提示行右侧常驻当前权限模式段（`权限:ask/allow/deny`，有规则时追加 `· N 规则`；存在 `* *` 通配规则时取它的效果，否则为 ask），启动时拉取，`/permissions` 变更与权限卡片回复（allow_always 会写规则）后即时刷新，拉取失败静默留空；框宽放不下状态段时退回纯提示行。非 TTY 或无色终端降级为普通 `nexum ▸ ` 提示符（无状态段）。视觉参照 `artifacts/nexum-cli-input-box.png`（`artifacts/` 不入库，仅作视觉参照）。slash 命令以 `src/repl.ts` 的 `HELP` 为准：
 
 | 命令 | 作用 | 命令 | 作用 |
 | ---- | ---- | ---- | ---- |
@@ -62,6 +63,7 @@ bun run --cwd packages/nexum-cli start -- --help
 | `/resume` | 交互式恢复会话 | `/status` | 连接与配置总览 |
 | `/skills` | 列出可用 Skill | `/mcp` | MCP 列表 |
 | `/model` | 当前模型 | `/theme` | 查看/切换主题 |
+| `/permissions` | 查看/切换权限（子命令同 `nexum permission`，与一次性命令共享实现） | | |
 | `/events` | 最近事件 | `/clear` | 清屏 |
 | `/cancel` | 取消当前运行 | `/continue` | 继续上次运行 |
 | `/thinking summary\|full` | 思考展示模式 | `/expand` | 展开最近思考 |

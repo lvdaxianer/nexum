@@ -6,8 +6,9 @@ import type { ChatProtocolAdapter } from "@nexum/surface-adapter"
 import { cmdMcpList, cmdModelGet, cmdStatus, cmdTheme } from "./admin"
 import { cmdResume, cmdSessionList, type NexumClient } from "./commands"
 import { askPermission, askQuestion, permissionFromEvent, questionFromEvent, type Prompter } from "./interact"
+import { cmdPermission, permissionStatusText } from "./permission"
 import { createRenderer, historyLines } from "./render"
-import { paint, type TermCaps } from "./term"
+import { displayWidth, paint, type TermCaps } from "./term"
 import type { CliIO } from "./io"
 
 export type LineSource = {
@@ -16,6 +17,8 @@ export type LineSource = {
   setSigintHandler?(handler: () => void): void
   /** 绘制输入提示(有输入框时画框);运行中不调用,输出保持干净。 */
   showPrompt?(): void
+  /** 更新输入框提示行右侧的状态段(已着色;空串表示无状态段),下次画框生效。 */
+  setStatus?(text: string): void
 }
 
 export function arrayLineSource(lines: readonly string[]): LineSource {
@@ -26,7 +29,17 @@ export function arrayLineSource(lines: readonly string[]): LineSource {
   }
 }
 
-export type InputBox = { readonly top: string; readonly hint: string; readonly inputPrefix: string; readonly spacer: string; readonly bottom: string }
+export type InputBox = {
+  readonly top: string
+  readonly hint: string
+  readonly inputPrefix: string
+  readonly spacer: string
+  readonly bottom: string
+  /** 未着色的提示文本与框宽,供状态段右对齐时重新计算留白。 */
+  readonly hintText: string
+  readonly width: number
+  readonly caps: TermCaps
+}
 
 /** 行式近似的输入框:非 TTY 或无颜色时降级为 undefined(调用方退回普通提示符)。 */
 export function inputBoxLines(caps: TermCaps, columns: number): InputBox | undefined {
@@ -39,6 +52,9 @@ export function inputBoxLines(caps: TermCaps, columns: number): InputBox | undef
     inputPrefix: `${paint(caps, "cyan", "│")} ${paint(caps, "cyan", "›")} `,
     spacer: `${paint(caps, "cyan", "│")} `,
     bottom: paint(caps, "cyan", `╰${"─".repeat(width - 2)}╯`),
+    hintText,
+    width,
+    caps,
   }
 }
 
@@ -75,6 +91,14 @@ export function readlineLineSource(
   let closed = false
   let promptActive = false
   let sigintHandler: (() => void) | undefined
+  let status = ""
+  // 提示行右侧状态段:按显示宽度右对齐到框宽(与顶/底边同宽);无状态或宽度放不下时退回纯提示行。
+  const hintRow = (box: InputBox) => {
+    if (status === "") return box.hint
+    const pad = box.width - 2 - displayWidth(box.hintText) - displayWidth(status.replace(/\x1b\[[0-9;]*m/g, ""))
+    if (pad < 1) return box.hint
+    return `${paint(box.caps, "cyan", "│")} ${paint(box.caps, "dim", box.hintText)}${" ".repeat(pad)}${status}`
+  }
   rl.on("SIGINT", () => {
     if (sigintHandler) sigintHandler()
     else rl.close()
@@ -113,11 +137,14 @@ export function readlineLineSource(
     setSigintHandler: (handler) => {
       sigintHandler = handler
     },
+    setStatus: (text) => {
+      status = text
+    },
     showPrompt: () => {
       if (closed || promptActive) return
       promptActive = true
       if (box) {
-        output.write(`${box.top}\n${box.hint}\n`)
+        output.write(`${box.top}\n${hintRow(box)}\n`)
         rl.setPrompt(box.inputPrefix)
         rl.prompt()
         // 画留白行与底边形成五行闭合框,再上移两行归位:光标回到输入行 inputPrefix 之后,
@@ -139,7 +166,8 @@ const HELP = `可用命令:
   /resume      交互式恢复会话    /status       连接与配置总览
   /skills      列出可用 Skill    /mcp          MCP 列表
   /model       当前模型          /theme        查看/切换主题
-  /events      最近事件          /clear        清屏
+  /permissions 查看/切换权限    /events       最近事件
+  /clear       清屏
   /cancel      取消当前运行      /continue     继续上次运行
   /thinking    summary|full      /expand       展开最近思考
   /quit        退出`
@@ -161,6 +189,17 @@ export async function runRepl(options: ReplOptions): Promise<void> {
   let sessionID = options.sessionID
   let pendingName: string | undefined
   const recentEvents: string[] = []
+
+  // 权限状态段:启动时获取,/permissions 变更与权限回复(allow_always 会写规则)后刷新;失败静默置空。
+  const refreshPermission = async () => {
+    if (!options.lineSource.setStatus) return
+    const status = await client.experimental.nexum.permissionPolicy
+      .list()
+      .then((list) => permissionStatusText(io.caps, list.data))
+      .catch(() => "")
+    options.lineSource.setStatus?.(status)
+  }
+  await refreshPermission()
 
   try {
     while (true) {
@@ -195,6 +234,7 @@ export async function runRepl(options: ReplOptions): Promise<void> {
                 io.line(paint(io.caps, "red", `权限回复失败:${error instanceof Error ? error.message : "未知错误"}`))
                 return
               }
+              await refreshPermission()
               // 拒绝后服务器会失败本次运行,由 run.settled 收敛,不恢复执行行
               if (decision !== "deny") renderer.resumeTool()
               return
@@ -334,6 +374,10 @@ export async function runRepl(options: ReplOptions): Promise<void> {
             else if (command === "theme") await cmdTheme(io, rest)
             else if (command === "mcp") await cmdMcpList(client, io)
             else if (command === "model") await cmdModelGet(client, io)
+            else if (command === "permissions") {
+              await cmdPermission(client, io, rest)
+              await refreshPermission()
+            }
             else if (command === "clear") {
               io.write("\x1b[2J\x1b[H")
               io.line(paint(io.caps, "dim", sessionID ? `会话 ${sessionID} · 已清屏` : "已清屏"))
