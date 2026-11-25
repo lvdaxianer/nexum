@@ -32,7 +32,7 @@ export function detectCaps(options: CapsOptions = {}): TermCaps {
   return { isTTY, color, anim: !options.noAnim && env.NEXUM_NO_ANIM === undefined, theme }
 }
 
-export type SemanticColor = "green" | "yellow" | "cyan" | "red" | "magenta" | "blue" | "dim" | "bold"
+export type SemanticColor = "green" | "yellow" | "cyan" | "red" | "magenta" | "blue" | "dim" | "bold" | "italic" | "underline"
 
 const CODES: Record<SemanticColor, number> = {
   green: 32,
@@ -43,6 +43,8 @@ const CODES: Record<SemanticColor, number> = {
   blue: 34,
   dim: 2,
   bold: 1,
+  italic: 3,
+  underline: 4,
 }
 
 export function style(caps: TermCaps, colors: readonly SemanticColor[], text: string): string {

@@ -4,7 +4,7 @@
 
 权威来源：[`packages/nexum-cli/src/main.ts`](../../packages/nexum-cli/src/main.ts)、[`packages/nexum-cli/src/repl.ts`](../../packages/nexum-cli/src/repl.ts)
 
-最后核对：2026-11-24
+最后核对：2026-11-25
 
 ## 职责
 
@@ -67,6 +67,16 @@ bun run --cwd packages/nexum-cli start -- --help
 | `/thinking summary\|full` | 思考展示模式 | `/expand` | 展开最近思考 |
 | `/quit` | 退出 | | |
 
+## 渲染约定
+
+assistant 文本与历史回放经流式 markdown 渲染（[`src/markdown.ts`](../../packages/nexum-cli/src/markdown.ts)）：
+
+- 标题 `#`/`##`/`###` 去掉 `#`，h1 洋红加粗、h2/h3 青色加粗；`**粗体**` 加粗、`*斜体*` 斜体、`` `行内代码` `` 黄色、`[文字](url)` 青色下划线且隐藏 url；表格行原样透传（行内样式仍生效）。
+- 围栏代码块：truecolor/256 色下淡底色（深色 `#1e2230`/256 色 234，浅色 `#eef1f6`/256 色 254）+ 青色 `▎` 左边线，16 色降级为暗色文字 + 青色 `▎`；``` 标记行不输出。
+- `-`/`*`/`+` 列表保留缩进并替换为青色 `•`；`>` 引用为暗色文字 + 暗色 `▎` 前缀。
+- 流式按行缓冲：完整行即时渲染；未完成的半行先原样显示（带暗色 `▍`），行完成或其他事件到达时擦除重渲（`\r\x1b[2K`），工具/权限/终态等行不会与半行交织。
+- 非 TTY、`NO_COLOR` 或 `TERM=dumb` 时完全原样透传，不做任何渲染。
+
 ## 终端能力分层
 
 语义内容恒为 ANSI 16 色（`green`/`yellow`/`cyan`/`red`/`magenta`/`blue`/`dim`/`bold`），装饰元素（渐变色板、动画）按终端能力沿 `truecolor → ansi256 → ansi16 → 静态` 降级：
@@ -95,7 +105,7 @@ bun test
 bun run typecheck:tsc
 ```
 
-测试位于 [`packages/nexum-cli/test/`](../../packages/nexum-cli/test/)，按模块拆分（`term`/`anim`/`io`/`render`/`interact`/`commands`/`admin`/`repl`/`config`/`main`），通过注入内存 IO、数组行源和假适配器覆盖真实交互路径。
+测试位于 [`packages/nexum-cli/test/`](../../packages/nexum-cli/test/)，按模块拆分（`term`/`anim`/`io`/`markdown`/`render`/`interact`/`commands`/`admin`/`repl`/`config`/`main`），通过注入内存 IO、数组行源和假适配器覆盖真实交互路径。
 
 ## 修改同步清单
 

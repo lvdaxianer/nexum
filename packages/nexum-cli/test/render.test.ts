@@ -83,6 +83,39 @@ test("thinking live never overwrites an active tool live line", async () => {
   expect(out.split("✓ 工具结果 read · 完成\n")[1]).toBe("")
 })
 
+test("assistant text renders markdown with ansi16 caps and hides raw markers", () => {
+  const io = memoryIO({ color: "ansi16" })
+  const renderer = createRenderer({ io })
+  renderer.event(event("assistant.text", { content: "我是 **Nexum**\n" }, 1))
+  const out = io.output()
+  expect(out).toContain("\x1b[1mNexum\x1b[0m")
+  expect(out).not.toContain("**")
+})
+
+test("pending markdown line flushes before tool lines without interleaving", () => {
+  const io = memoryIO({ color: "ansi16" })
+  const renderer = createRenderer({ io })
+  renderer.event(event("assistant.text", { content: "半行 **加粗** 收尾" }, 1))
+  renderer.event(event("tool.request", { toolCallID: "t1", toolName: "read" }, 2))
+  renderer.event(event("tool.result", { toolCallID: "t1", toolName: "read", ok: true, output: "完成" }, 3))
+  const out = io.output()
+  const renderedAt = out.indexOf("半行 \x1b[1m加粗\x1b[0m 收尾\n")
+  expect(renderedAt).toBeGreaterThan(-1)
+  expect(renderedAt).toBeLessThan(out.indexOf("工具结果"))
+  expect(out.indexOf("半行 **加粗** 收尾")).toBeLessThan(out.indexOf("\r\x1b[2K"))
+  expect(out.indexOf("\r\x1b[2K")).toBeLessThan(renderedAt)
+})
+
+test("historyLines renders assistant markdown content", () => {
+  const caps = { isTTY: true, color: "ansi16", anim: false, theme: "dark" } as const
+  const lines = historyLines(caps, [
+    { index: 1, message: { role: "assistant", content: "已修复 **超时** 问题" } },
+  ])
+  const text = lines.join("\n")
+  expect(text).toContain("\x1b[1m超时\x1b[0m")
+  expect(text).not.toContain("**")
+})
+
 test("historyLines compacts canonical history", () => {
   const io = memoryIO()
   const lines = historyLines(io.caps, [

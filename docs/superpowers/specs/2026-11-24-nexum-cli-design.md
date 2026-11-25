@@ -82,7 +82,8 @@ packages/nexum-cli/src/
 
 - 高保真 demo：深色 [`artifacts/nexum-cli-demo.png`](../../../artifacts/nexum-cli-demo.png)、浅色 [`artifacts/nexum-cli-demo-light.png`](../../../artifacts/nexum-cli-demo-light.png)（源文件 `artifacts/nexum-cli-demo.html`，URL 参数 `?theme=light` 切换，Playwright 截图，可直接改 HTML 重新出图）。
 - 主题策略：CLI 只使用 ANSI 语义色（green/yellow/cyan/red/magenta/bright-black 等 16 色），不写死 RGB，由用户终端自身的配色方案决定深浅表现；深浅两套 demo 仅用于评审视觉语言。
-- 视觉语言：用户输入用 `nexum ▸` 提示符；assistant 洋红 `Agent` 标签 + 流式原文直出（终端不做 HTML/Markdown 渲染）；reasoning 暗色单行摘要（默认折叠）；工具调用 `●` / 结果 `✓` 单行状态。
+- 视觉语言：用户输入用 `nexum ▸` 提示符；assistant 洋红 `Agent` 标签 + 流式文本经 markdown 渲染（见下条）；reasoning 暗色单行摘要（默认折叠）；工具调用 `●` / 结果 `✓` 单行状态。
+- assistant 文本与历史回放经流式 markdown 渲染（标题/粗体/斜体/行内代码/围栏代码块/列表/引用/链接，表格透传；规则表见[模块文档](../../modules/nexum-cli.md)渲染约定），非 TTY/`NO_COLOR` 原样透传。
 - Permission 用黄色左边线卡片：`action · resource · reason` + `[1] 允许一次 [2] 始终允许 [3] 拒绝`；Question 用青色左边线卡片：按题号编号选项，回答按题序、多选逗号分隔。
 - 底部状态栏：左段 `sessionID · 状态 · 上下文`，右段键位提示（`Enter 发送 · @ 引用 Skill · Ctrl+C 取消 · /help 命令`）。
 - 颜色遵循语义：绿=成功/完成，黄=等待权限，青=信息/提问，红=失败/取消，暗灰=历史与次要信息；尊重 `NO_COLOR`。

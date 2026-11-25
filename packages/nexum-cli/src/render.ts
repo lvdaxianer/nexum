@@ -3,6 +3,7 @@
 import type { NexumEvent, NexumSessionMessages } from "@nexum/client"
 import { barberPole, breathing, shimmer, spinnerFrame } from "./anim"
 import { createLiveLine, type CliIO, type LiveLine } from "./io"
+import { createMarkdownStream, renderMarkdownText } from "./markdown"
 import { paint, style, type TermCaps } from "./term"
 
 export type ThinkingMode = "summary" | "full"
@@ -21,6 +22,7 @@ export type Renderer = {
 export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }): Renderer {
   const io = options.io
   const caps = io.caps
+  const md = createMarkdownStream(caps, (text) => io.write(text))
   let mode = options.thinking ?? "summary"
   let status: RenderStatus = "idle"
   let live: LiveLine | undefined
@@ -45,9 +47,9 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
     cursorOut = false
   }
 
-  function streamChunk(content: string, dimmed: boolean) {
+  function streamChunk(content: string) {
     eraseCursor()
-    io.write(dimmed ? paint(caps, "dim", content) : content)
+    io.write(paint(caps, "dim", content))
     io.write(paint(caps, "dim", "▍"))
     cursorOut = true
   }
@@ -106,6 +108,8 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
   }
 
   function event(event: NexumEvent): void {
+    // 非 assistant 文本事件到达前先收敛 markdown 半行,避免工具/权限等行与未渲染尾巴交织
+    if (event.type !== "assistant.text") md.flush()
     const record = data(event)
     switch (event.type) {
       case "assistant.thinking":
@@ -127,7 +131,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
             reasoningHeaderPrinted = true
             io.line(paint(caps, "dim", "思考全文:"))
           }
-          streamChunk(content, true)
+          streamChunk(content)
         } else {
           ensureThinkingLive()
         }
@@ -138,7 +142,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
         markRunStarted()
         closeReasoning()
         printAgentHeader()
-        streamChunk(str(record, "content"), false)
+        md.push(str(record, "content"))
         return
       }
       case "tool.request": {
@@ -252,6 +256,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
       mode = next
     },
     expandLastReasoning: () => {
+      md.flush()
       if (!lastReasoning) {
         io.line(paint(caps, "dim", "暂无可展开的思考过程"))
         return
@@ -261,6 +266,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
       io.line(paint(caps, "dim", lastReasoning))
     },
     close: () => {
+      md.flush()
       closeReasoning()
       eraseCursor()
       cancelLive()
@@ -291,7 +297,7 @@ export function historyLines(caps: TermCaps, messages: NexumSessionMessages["mes
       if (message.reasoningContent !== undefined) lines.push(paint(caps, "dim", `  思考过程 · ${[...message.reasoningContent].length} 字(历史)`))
       if (message.content !== undefined) {
         lines.push(`${style(caps, ["magenta", "bold"], "Agent")} ${paint(caps, "dim", "历史")}`)
-        lines.push(`  ${message.content}`)
+        lines.push(...renderMarkdownText(caps, message.content))
       }
       for (const toolCall of message.toolCalls ?? []) lines.push(paint(caps, "dim", `  ● 工具调用 ${toolCall.name}(历史)`))
       continue
