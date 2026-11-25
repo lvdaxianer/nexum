@@ -51,6 +51,7 @@ import {
 import { resolve } from "node:path"
 import { createHash, timingSafeEqual } from "node:crypto"
 import type { NexumEventHub } from "./events.ts"
+import { createNexumLogger, withNexumLogContext, type NexumLogger } from "./logger.ts"
 
 const DEFAULT_HOSTNAME = "127.0.0.1"
 const DEFAULT_PORT = 4097
@@ -122,6 +123,7 @@ export interface NexumServerOptions {
   readonly idleTimeout?: number
   readonly persistence?: NexumPersistence
   readonly databasePath?: string
+  readonly logger?: NexumLogger
 }
 
 /** 已启动的 Nexum Service 控制句柄。 */
@@ -143,6 +145,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
   const port = options.port ?? DEFAULT_PORT
   const authToken = options.authToken?.trim() || undefined
+  const logger = options.logger ?? createNexumLogger()
   assertPort(port)
   assertHostSecurity(hostname, authToken)
   const interactionStore = options.interactionStore
@@ -198,62 +201,41 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
     fetch: async (request) => {
       if (request.method === "OPTIONS") return corsPreflight(request, corsOrigins)
       const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
-      const startedAt = Date.now()
       const path = new URL(request.url).pathname
-      console.info("nexum.request_started", { traceId, method: request.method, path, startedAt })
-      try {
-        const response = isPublicPath(path) || isAuthorizedRequest(request, authToken)
-          ? await handleRequest(
-              request,
-              sessionService,
-              eventHub,
-              messageStore,
-              runtimeInteractionStore,
-              codingLoop,
-              permissionBroker,
-              questionPort,
-              modelConfigStore,
-              rolePromptStore,
-              modelProbe,
-              skillRegistry,
-              skillInvocation,
-              mcp,
-              mcpOAuth,
-              mcpConfigStore,
-              traceId,
-            )
-          : errorResponse(401, "NEXUM_AUTH_REQUIRED", "请求需要有效的 Bearer token", traceId)
-        const result = withCorsHeaders(response, request, corsOrigins)
-        const endedAt = Date.now()
-        console.info("nexum.request_completed", {
-          traceId,
-          method: request.method,
-          path,
-          status: result.status,
-          startedAt,
-          endedAt,
-          durationMs: endedAt - startedAt,
-        })
-        return result
-      } catch (error) {
-        logRequestFailure(request, traceId, error)
-        const result = withCorsHeaders(
-          errorResponse(500, "NEXUM_INTERNAL_ERROR", "Nexum Service 暂时不可用", traceId),
-          request,
-          corsOrigins,
-        )
-        const endedAt = Date.now()
-        console.info("nexum.request_completed", {
-          traceId,
-          method: request.method,
-          path,
-          status: result.status,
-          startedAt,
-          endedAt,
-          durationMs: endedAt - startedAt,
-        })
-        return result
-      }
+      return withNexumLogContext(traceId, async () => {
+        try {
+          const response = isPublicPath(path) || isAuthorizedRequest(request, authToken)
+            ? await handleRequest(
+                request,
+                sessionService,
+                eventHub,
+                messageStore,
+                runtimeInteractionStore,
+                codingLoop,
+                permissionBroker,
+                questionPort,
+                modelConfigStore,
+                rolePromptStore,
+                modelProbe,
+                skillRegistry,
+                skillInvocation,
+                mcp,
+                mcpOAuth,
+                mcpConfigStore,
+                traceId,
+                logger,
+              )
+            : errorResponse(401, "NEXUM_AUTH_REQUIRED", "请求需要有效的 Bearer token", traceId)
+          return withCorsHeaders(response, request, corsOrigins)
+        } catch (error) {
+          logRequestFailure(logger, request, traceId, error)
+          return withCorsHeaders(
+            errorResponse(500, "NEXUM_INTERNAL_ERROR", "Nexum Service 暂时不可用", traceId),
+            request,
+            corsOrigins,
+          )
+        }
+      })
     },
   })
 
@@ -323,6 +305,7 @@ async function handleRequest(
   mcpOAuth?: McpOAuthControlPort,
   mcpConfigStore?: McpServerConfigStore,
   requestTraceId?: string,
+  logger?: NexumLogger,
 ): Promise<Response> {
   const traceId = requestTraceId ?? traceIdFrom(request.headers.get(TRACE_ID_HEADER))
   const url = new URL(request.url)
@@ -418,6 +401,7 @@ async function handleRequest(
       sessionService,
       codingLoop,
       traceId,
+      logger,
     )
   }
 
@@ -442,7 +426,7 @@ async function handleRequest(
     const sessionID = decodeURIComponent(updateSessionMatch[1]!)
     if (request.method === "PUT") return updateSession(request, sessionID, sessionService, traceId)
     if (request.method === "DELETE") {
-      return deleteSession(request, { sessionID, messageStore, interactionStore, eventHub, sessionService }, traceId)
+      return deleteSession(request, { sessionID, messageStore, interactionStore, eventHub, sessionService }, traceId, logger)
     }
     return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 PUT 或 DELETE 请求", traceId)
   }
@@ -516,7 +500,7 @@ async function handleRequest(
     if (request.method !== "POST") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
-    return createPrompt(request, decodeURIComponent(promptMatch[1]!), sessionService, codingLoop, traceId)
+    return createPrompt(request, decodeURIComponent(promptMatch[1]!), sessionService, codingLoop, traceId, logger)
   }
 
   const stateMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)\/state$/)
@@ -1309,6 +1293,7 @@ async function createPrompt(
   sessionService: NexumSessionService,
   codingLoop: NexumCodingLoop | undefined,
   traceId: string,
+  logger?: NexumLogger,
 ): Promise<Response> {
   const session = await sessionService.get(sessionID)
   if (!session) {
@@ -1338,7 +1323,7 @@ async function createPrompt(
       await started.admission
     } catch (error) {
       void started.promise.catch(() => undefined)
-      if (!(error instanceof NexumSessionError)) logRequestFailure(request, traceId, error)
+      if (!(error instanceof NexumSessionError)) logRequestFailure(logger, request, traceId, error)
       return promptAdmissionError(error, traceId)
     }
     void started.promise.catch(() => undefined)
@@ -1348,7 +1333,7 @@ async function createPrompt(
   try {
     await sessionService.setStatus(sessionID, "running")
   } catch (error) {
-    if (!(error instanceof NexumSessionError)) logRequestFailure(request, traceId, error)
+    if (!(error instanceof NexumSessionError)) logRequestFailure(logger, request, traceId, error)
     return promptAdmissionError(error, traceId)
   }
   void codingLoop.run({ sessionID, text: payload.text }).catch(() => {
@@ -1391,6 +1376,7 @@ async function continueSession(
   sessionService: NexumSessionService,
   codingLoop: NexumCodingLoop | undefined,
   traceId: string,
+  logger?: NexumLogger,
 ): Promise<Response> {
   const admissionError = continueAdmissionError(await sessionService.get(sessionID), codingLoop, traceId)
   if (admissionError) return admissionError
@@ -1403,7 +1389,7 @@ async function continueSession(
     return errorResponse(409, "NEXUM_SESSION_NOT_CONTINUABLE", "Session 没有可继续的上下文", traceId)
   }
 
-  return startContinue(request, codingLoop!, sessionID, traceId)
+  return startContinue(request, codingLoop!, sessionID, traceId, logger)
 }
 
 /**
@@ -1439,7 +1425,7 @@ function continueAdmissionError(
  * @returns accepted 响应或同步启动错误响应
  * @author lvdaxianer@yeah.net
  */
-async function startContinue(request: Request, codingLoop: NexumCodingLoop, sessionID: string, traceId: string): Promise<Response> {
+async function startContinue(request: Request, codingLoop: NexumCodingLoop, sessionID: string, traceId: string, logger?: NexumLogger): Promise<Response> {
   try {
     const started = await codingLoop.continueStart!(sessionID)
     if (!started.accepted) return continueAdmissionResponse(started.reason, traceId)
@@ -1448,13 +1434,13 @@ async function startContinue(request: Request, codingLoop: NexumCodingLoop, sess
       await started.admission
     } catch (error) {
       void started.promise.catch(() => undefined)
-      if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError)) logRequestFailure(request, traceId, error)
+      if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError)) logRequestFailure(logger, request, traceId, error)
       return continueErrorResponse(error, traceId)
     }
     void started.promise.catch(() => undefined)
     return jsonResponse({ data: { status: "accepted" } }, traceId)
   } catch (error) {
-    if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError)) logRequestFailure(request, traceId, error)
+    if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError)) logRequestFailure(logger, request, traceId, error)
     return continueErrorResponse(error, traceId)
   }
 }
@@ -2112,7 +2098,7 @@ type NexumSessionDeleteInput = {
  * @author lvdaxianer@yeah.net
  * @date 2026-11-23
  */
-async function deleteSession(request: Request, input: NexumSessionDeleteInput, traceId: string): Promise<Response> {
+async function deleteSession(request: Request, input: NexumSessionDeleteInput, traceId: string, logger?: NexumLogger): Promise<Response> {
   try {
     await input.sessionService.delete(input.sessionID, async () => {
       await input.messageStore.delete(input.sessionID)
@@ -2121,7 +2107,7 @@ async function deleteSession(request: Request, input: NexumSessionDeleteInput, t
     })
     return jsonResponse({ data: { id: input.sessionID, deleted: true } }, traceId)
   } catch (error) {
-    if (!(error instanceof NexumSessionError)) logRequestFailure(request, traceId, error)
+    if (!(error instanceof NexumSessionError)) logRequestFailure(logger, request, traceId, error)
     return deleteSessionError(error, traceId)
   }
 }
@@ -2383,13 +2369,11 @@ function traceIdFrom(value: string | null): string {
 }
 
 /** 记录统一 HTTP 异常边界的安全诊断上下文，同时保持响应 caller-safe。 */
-function logRequestFailure(request: Request, traceId: string, error: unknown): void {
-  const details =
-    error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { value: String(error) }
-  console.error("nexum.request_failed", {
+function logRequestFailure(logger: NexumLogger | undefined, request: Request, traceId: string, error: unknown): void {
+  const requestLogger = logger ?? createNexumLogger()
+  requestLogger.error("nexum.request_failed", {
     traceId,
     method: request.method,
     path: new URL(request.url).pathname,
-    error: details,
-  })
+  }, error)
 }
