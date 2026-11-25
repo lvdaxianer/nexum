@@ -33,6 +33,7 @@ target
 
 # Local dev files
 .headless/
+.nexum/
 packages/nexum-test/.nexum-test/
 RELEASE_REVIEW.md
 logs/
