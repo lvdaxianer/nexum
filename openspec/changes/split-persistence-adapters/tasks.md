@@ -2,7 +2,7 @@
 
 ## 1. 拆分公共契约与 workspace 包
 
-- [ ] 1.1 将 `@nexum/persistence` 收敛为三种适配器共用的 `NexumPersistence`、事件端口、选项类型和共享工具，并新增 `@nexum/persistence-memory`、`@nexum/persistence-file`、`@nexum/persistence-sqlite` 的 package.json、tsconfig 和 workspace 依赖；通过 `bun run check` 验证 workspace 解析和依赖方向。
+- [x] 1.1 建立 `@nexum/persistence-memory`、`@nexum/persistence-file`、`@nexum/persistence-sqlite` 的 package.json、tsconfig 和 workspace 依赖，并用边界测试固定依赖方向；通过 `bun run check` 验证 workspace 解析和依赖方向。
 - [ ] 1.2 为新包建立独立测试入口和 README，明确各包职责、默认使用场景与不暴露凭据明文的约束；通过 `bun --cwd packages/<package> test` 与文档命令核对验证。
 
 ## 2. 迁移内存与文件适配器
