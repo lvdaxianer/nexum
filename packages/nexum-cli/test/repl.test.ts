@@ -130,6 +130,29 @@ test("repl prints the permission outcome before replying and resumes the tool li
   expect(out.indexOf("执行中")).toBeLessThan(out.indexOf("✓ 工具结果 read"))
 })
 
+test("repl does not resume the tool line when permission is denied", async () => {
+  const io = memoryIO({ anim: true })
+  const { adapter, calls, queued } = fakeAdapter({
+    onSend: () => [
+      makeEvent("tool.request", { toolCallID: "t1", toolName: "read" }, 1),
+      makeEvent("permission.requested", { requestID: "p1", action: "edit", resource: "a.ts" }, 2),
+    ],
+  })
+  adapter.replyPermission = async () => {
+    calls.push("replyPermission")
+    // 拒绝后服务器失败本次运行:tool.result(ok:false) 随后 run.settled(failed)
+    queued.push(makeEvent("tool.result", { toolCallID: "t1", toolName: "read", ok: false, output: "权限被拒" }, 3), makeEvent("run.settled", { result: "failed" }, 4))
+  }
+  await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: slowLineSource(["改文件", "/quit"]), prompter: async () => "3" })
+  expect(calls).toContain("replyPermission")
+  const out = io.plain()
+  expect(out).toContain("权限已拒绝")
+  // 拒绝后不恢复执行行,避免闪现误导性的"执行中"
+  expect(out).not.toContain("执行中")
+  expect(out).toContain("✗ 工具结果 read")
+  expect(out).toContain("✗ 运行失败")
+})
+
 test("repl slash commands: /skills lists ready skills, /cancel calls cancelRun, unknown command warns", async () => {
   const io = memoryIO()
   const { adapter, calls } = fakeAdapter({})

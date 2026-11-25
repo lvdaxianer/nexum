@@ -114,7 +114,6 @@ export async function cmdPrompt(options: PromptOptions): Promise<number> {
         if (!io.caps.isTTY) {
           await adapter.replyPermission({ sessionID, requestID: request.id, decision: "deny" })
           io.line(paint(io.caps, "yellow", "非交互环境,权限已自动拒绝"))
-          renderer.resumeTool()
           continue
         }
         const decision = await askPermission(io, prompter, request)
@@ -126,7 +125,8 @@ export async function cmdPrompt(options: PromptOptions): Promise<number> {
           io.line(paint(io.caps, "red", `权限回复失败:${error instanceof Error ? error.message : "未知错误"}`))
           continue
         }
-        renderer.resumeTool()
+        // 拒绝后服务器会失败本次运行,由 run.settled 收敛,不恢复执行行
+        if (decision !== "deny") renderer.resumeTool()
         continue
       }
       if (event.type === "question.request") {
@@ -135,26 +135,25 @@ export async function cmdPrompt(options: PromptOptions): Promise<number> {
         if (!io.caps.isTTY) {
           await adapter.cancelQuestion({ sessionID, requestID: request.id })
           io.line(paint(io.caps, "yellow", "非交互环境,补充信息已取消"))
-          renderer.resumeTool()
           continue
         }
         const answers = await askQuestion(io, prompter, request)
         if (answers === "cancel") {
           io.line(paint(io.caps, "dim", "已取消补充信息"))
+          // 取消后运行由后续事件收敛,不恢复执行行
           try {
             await adapter.cancelQuestion({ sessionID, requestID: request.id })
           } catch (error) {
             io.line(paint(io.caps, "red", `取消提交失败:${error instanceof Error ? error.message : "未知错误"}`))
-            continue
           }
-        } else {
-          io.line(paint(io.caps, "green", "补充信息已提交,运行继续"))
-          try {
-            await adapter.replyQuestion({ sessionID, requestID: request.id, answers })
-          } catch (error) {
-            io.line(paint(io.caps, "red", `回答提交失败:${error instanceof Error ? error.message : "未知错误"}`))
-            continue
-          }
+          continue
+        }
+        io.line(paint(io.caps, "green", "补充信息已提交,运行继续"))
+        try {
+          await adapter.replyQuestion({ sessionID, requestID: request.id, answers })
+        } catch (error) {
+          io.line(paint(io.caps, "red", `回答提交失败:${error instanceof Error ? error.message : "未知错误"}`))
+          continue
         }
         renderer.resumeTool()
         continue

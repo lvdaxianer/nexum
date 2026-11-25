@@ -195,7 +195,8 @@ export async function runRepl(options: ReplOptions): Promise<void> {
                 io.line(paint(io.caps, "red", `权限回复失败:${error instanceof Error ? error.message : "未知错误"}`))
                 return
               }
-              renderer.resumeTool()
+              // 拒绝后服务器会失败本次运行,由 run.settled 收敛,不恢复执行行
+              if (decision !== "deny") renderer.resumeTool()
               return
             }
             const request = questionFromEvent(data, id)
@@ -203,13 +204,12 @@ export async function runRepl(options: ReplOptions): Promise<void> {
             const answers = await askQuestion(io, options.prompter, request)
             if (answers === "cancel") {
               io.line(paint(io.caps, "dim", "已取消补充信息"))
+              // 取消后运行由后续事件收敛,不恢复执行行
               try {
                 await adapter.cancelQuestion({ sessionID: id, requestID: request.id })
               } catch (error) {
                 io.line(paint(io.caps, "red", `取消提交失败:${error instanceof Error ? error.message : "未知错误"}`))
-                return
               }
-              renderer.resumeTool()
               return
             }
             io.line(paint(io.caps, "green", "补充信息已提交,运行继续"))
