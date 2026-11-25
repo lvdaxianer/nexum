@@ -126,6 +126,25 @@ test("deletes a settled session while preserving other sessions and rejecting ru
   expect(await service.get(second.sessionID)).toMatchObject({ sessionID: second.sessionID, status: "running" })
 })
 
+test("delegates a configured atomic delete after validating session state", async () => {
+  const directory = await makeDirectory()
+  const store = createInMemorySessionStore()
+  const service = createNexumSessionService({
+    store,
+    atomicDelete: async (sessionID) => {
+      expect(sessionID).toBe((await store.list())[0]?.sessionID)
+      await store.delete(sessionID)
+    },
+  })
+  const session = await service.create({ directory })
+
+  await service.delete(session.sessionID, async () => {
+    throw new Error("fallback cleanup must not run")
+  })
+
+  expect(await service.get(session.sessionID)).toBeUndefined()
+})
+
 test("serializes concurrent deletion and status changes for one session", async () => {
   const firstDirectory = await makeDirectory()
   const secondDirectory = await makeDirectory()

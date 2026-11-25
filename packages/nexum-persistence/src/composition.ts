@@ -43,6 +43,7 @@ export interface NexumPersistence {
   readonly skillRegistrationStore: NexumSkillRegistrationStore
   readonly mcpConfigStore: McpServerConfigStore
   readonly mcpCredentialStore: McpCredentialStore
+  readonly atomicDelete?: (sessionID: string) => Promise<void>
 }
 
 /** 文件持久化组合的路径配置。 */

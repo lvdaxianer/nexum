@@ -204,6 +204,7 @@ export interface NexumSessionService {
 export interface NexumSessionServiceOptions {
   readonly store: SessionStore
   readonly directoryValidator?: NexumDirectoryValidator
+  readonly atomicDelete?: (sessionID: string) => Promise<void>
 }
 
 /** Session 领域错误，包含稳定的机器可读错误码。 */
@@ -344,6 +345,10 @@ export function createNexumSessionService(options: NexumSessionServiceOptions): 
         }
         if (current.status === "running") {
           throw new NexumSessionError("session_busy", "Session 当前正在运行", sessionID)
+        }
+        if (options.atomicDelete) {
+          await options.atomicDelete(sessionID)
+          return
         }
         await beforeDelete?.()
         await store.delete(sessionID)
