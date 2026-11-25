@@ -502,6 +502,10 @@
   overflow: auto;
 }
 
+.nexum-chat-reasoning .reasoning-empty-copy {
+  font-style: italic;
+}
+
 .nexum-chat-reasoning.is-live summary {
   color: var(--nexum-chat-accent);
 }
@@ -554,6 +558,11 @@
 .nexum-chat-status-item.thinking-status::before,
 .nexum-chat-status-item.thinking-status::after {
   content: none;
+}
+
+.nexum-chat-status-item.thinking-status small {
+  color: var(--nexum-chat-muted);
+  font-size: 11px;
 }
 
 .thinking-dot {

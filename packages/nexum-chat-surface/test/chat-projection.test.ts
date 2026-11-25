@@ -88,6 +88,14 @@ test("ChatSurface keeps a running tool above later thinking heartbeats", () => {
   expect(heartbeat.some((item) => item.thinking)).toBe(false)
 })
 
+test("ChatSurface keeps the thinking status until reasoning content arrives", () => {
+  const thinking = projectChatEvent([], event("assistant.thinking", { message: "模型正在思考" }, 1))
+  const emptyReasoning = projectChatEvent(thinking, event("assistant.reasoning", {}, 2))
+
+  expect(emptyReasoning).toEqual(thinking)
+  expect(emptyReasoning.find((item) => item.thinking)?.thinkingStatus).toContain("若模型提供思考内容")
+})
+
 test("ChatSurface projects a tool timeout with a recovery-oriented message", () => {
   const tool = projectChatEvent([], event("tool.request", { toolCallID: "tool_002", toolName: "shell" }, 1))
   const timedOut = projectChatEvent(tool, event("tool.result", {

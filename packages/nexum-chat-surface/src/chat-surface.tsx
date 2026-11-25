@@ -643,7 +643,10 @@ function ChatItemView(props: { readonly item: ChatItem }) {
       >
         <div class="nexum-chat-status-item thinking-status">
           <span class="thinking-dot" aria-hidden="true" />
-          <span>{props.item.content || props.item.thinkingStatus || props.item.title}</span>
+          <span>{props.item.content || props.item.title}</span>
+          <Show when={props.item.thinkingStatus && props.item.thinkingStatus !== props.item.content}>
+            <small>{props.item.thinkingStatus}</small>
+          </Show>
         </div>
       </Show>
     </Match>
@@ -675,7 +678,9 @@ function ReasoningView(props: { readonly item: ChatItem }) {
           <span>正在思考 · 已 {chars()} 字</span>
         </Show>
       </summary>
-      <div class="reasoning-copy">{props.item.content}</div>
+      <Show when={chars() > 0} fallback={<div class="reasoning-copy reasoning-empty-copy">模型未返回可展示的思考内容</div>}>
+        <div class="reasoning-copy">{props.item.content}</div>
+      </Show>
     </details>
   )
 }
@@ -705,13 +710,16 @@ export function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem
     const hasActiveTool = items.some((item) => item.eventType === "tool.request" && (item.status === "running" || item.status === "waiting"))
     const hasSettledRun = items.some((item) => item.id === `run:${event.runID}:settled` || item.id.startsWith(`session:${event.runID}:`))
     if (hasActiveTool || hasSettledRun) return items
-    return upsertChatItem(items, { id: `thinking:${event.runID}`, kind: "status", title: "Agent 思考", content: value("message") || "正在思考", thinking: true, thinkingStatus: value("message") || "模型正在思考", status: "streaming", localTime: timestamp, eventType: event.type })
+    const message = value("message") || "模型正在思考"
+    return upsertChatItem(items, { id: `thinking:${event.runID}`, kind: "status", title: "Agent 思考", content: message, thinking: true, thinkingStatus: `${message} · 若模型提供思考内容会显示在这里`, status: "streaming", localTime: timestamp, eventType: event.type })
   }
   if (event.type === "assistant.reasoning") {
+    const content = value("content")
+    if (!content) return items
     const active = items.filter((item) => !item.thinking)
     const last = active.at(-1)
-    if (last?.kind === "reasoning" && last.id.startsWith(`reasoning:${event.runID}:`)) return updateChatItem(active, last.id, { content: `${last.content ?? ""}${value("content")}`, status: "streaming", localTime: timestamp, eventType: event.type })
-    return [...active, { id: `reasoning:${event.runID}:${event.sequence}`, kind: "reasoning", title: "模型思考", content: value("content"), status: "streaming", startedAt: event.occurredAt, localTime: timestamp, eventType: event.type }]
+    if (last?.kind === "reasoning" && last.id.startsWith(`reasoning:${event.runID}:`)) return updateChatItem(active, last.id, { content: `${last.content ?? ""}${content}`, status: "streaming", localTime: timestamp, eventType: event.type })
+    return [...active, { id: `reasoning:${event.runID}:${event.sequence}`, kind: "reasoning", title: "模型思考", content, status: "streaming", startedAt: event.occurredAt, localTime: timestamp, eventType: event.type }]
   }
   if (event.type === "assistant.text") {
     const active = closeReasoning(items.filter((item) => !item.thinking), event.runID, event.occurredAt)
@@ -783,7 +791,7 @@ function skillIDsFromText(text: string): string[] {
 }
 
 function thinkingChatItem(id: string): ChatItem {
-  return { id, kind: "status", title: "Agent 思考", content: "正在思考", thinking: true, status: "running", localTime: formatLocalTime() }
+  return { id, kind: "status", title: "Agent 思考", content: "正在思考", thinkingStatus: "模型正在处理，若模型提供思考内容会显示在这里", thinking: true, status: "running", localTime: formatLocalTime() }
 }
 
 function failureChatItem(content: string): ChatItem {
