@@ -75,7 +75,7 @@ packages/nexum-cli/src/
 - 输入框提示行右侧常驻当前权限模式（`权限:ask/allow/deny · N 规则`，由 `* *` 通配规则推导，无通配规则即 ask）；`/permissions` 可查看与切换，切换与权限卡片回复后即时刷新。
 - Permission：事件到达即打印 `action / resource / reason`，提示 `允许一次 / 始终允许 / 拒绝` 三选一，调用 `replyPermission`。
 - Question：按题号渲染编号选项，单选输入序号、多选逗号分隔，按问题顺序提交二维字符串数组；支持取消，取消不伪造答案——与 UI 的 `questionAnswers` 语义一致。
-- REPL slash 命令：`/help`、`/new [名称]`、`/use <sessionID>`、`/sessions`、`/resume`、`/cancel`、`/continue`、`/skills`、`/mcp`、`/model`、`/status`、`/theme [dark|light|auto]`、`/clear`、`/events`、`/thinking [summary|full]`、`/expand`、`/quit`。其中 `/new`、`/use`、`/resume` 直接切换会话（重建事件订阅并回放历史），`/skills`、`/mcp`、`/model`、`/status` 与同名一次性命令输出一致。
+- REPL slash 命令：`/help`、`/new [名称]`、`/use <sessionID>`、`/sessions`、`/resume`、`/cancel`、`/continue`、`/skills`、`/mcp`、`/model`、`/status`、`/theme [dark|light|auto]`、`/permissions`、`/clear`、`/events`、`/thinking [summary|full]`、`/expand`、`/quit`。其中 `/new`、`/use`、`/resume` 直接切换会话（重建事件订阅并回放历史），`/skills`、`/mcp`、`/model`、`/status` 与同名一次性命令输出一致。
 
 ### 5. 渲染约定与终端样式
 

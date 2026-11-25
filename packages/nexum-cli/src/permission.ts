@@ -13,8 +13,9 @@ function effectColor(effect: string): "green" | "yellow" | "red" {
   return "yellow"
 }
 
+/** 当前模式只认 global 作用域的通配规则:session 通配是单会话例外,不代表全局模式。 */
 function wildcardOf(list: NexumPermissionPolicyList): NexumPermissionPolicyRule | undefined {
-  return list.rules.find((rule) => rule.action === "*" && rule.resource === "*")
+  return list.rules.find((rule) => rule.action === "*" && rule.resource === "*" && rule.scope === "global")
 }
 
 /** 输入框右侧状态段:通配规则决定当前模式,缺失即 ask;规则数非零时追加计数。 */
@@ -36,7 +37,7 @@ export async function cmdPermissionList(client: NexumClient, io: CliIO): Promise
   const idWidth = Math.max(10, ...list.rules.map((rule) => rule.id.length + 2))
   for (const rule of list.rules) {
     const scope = rule.scope === "session" && rule.sessionID ? `session (${rule.sessionID.slice(0, 8)})` : rule.scope
-    const marker = rule.action === "*" && rule.resource === "*" ? ` ${paint(io.caps, "dim", "← 当前模式")}` : ""
+    const marker = rule.action === "*" && rule.resource === "*" && rule.scope === "global" ? ` ${paint(io.caps, "dim", "← 当前模式")}` : ""
     const effect = paint(io.caps, effectColor(rule.effect), rule.effect.padEnd(8))
     io.line(`${rule.id.padEnd(idWidth)}${rule.action.padEnd(8)}${rule.resource.padEnd(14)}${effect}${scope.padEnd(9)}${rule.updatedAt.slice(0, 16).replace("T", " ")}${marker}`)
   }
@@ -75,20 +76,27 @@ export async function cmdPermissionMode(client: NexumClient, io: CliIO, mode: st
   const list = (await client.experimental.nexum.permissionPolicy.list()).data
   const wildcard = wildcardOf(list)
   if (mode === "allow") {
-    if (wildcard?.effect === "allow") {
-      io.line(paint(io.caps, "dim", "已是 allow 模式"))
+    if (wildcard) {
+      if (wildcard.effect === "allow") {
+        io.line(paint(io.caps, "dim", "已是 allow 模式"))
+        return 0
+      }
+      // 服务器重复判定含 effect:已有 deny/ask 通配时 create 会落第二条冲突通配且 deny 优先,必须原地更新
+      await client.experimental.nexum.permissionPolicy.update({ ruleID: wildcard.id, effect: "allow" })
+      io.line(`${paint(io.caps, "green", "✓")} 权限模式已切换 ${wildcard.effect} → allow(危险操作仍会询问)`)
       return 0
     }
     try {
       await client.experimental.nexum.permissionPolicy.create({ action: "*", resource: "*", effect: "allow", scope: "global" })
     } catch (error) {
+      // 仅兜并发竞态:预查与创建之间另一条通配已落库
       if (error instanceof NexumClientError && error.status === 409) {
         io.line(paint(io.caps, "dim", "已是 allow 模式"))
         return 0
       }
       throw error
     }
-    io.line(`${paint(io.caps, "green", "✓")} 权限模式已切换 ${wildcard?.effect ?? "ask"} → allow(危险操作仍会询问)`)
+    io.line(`${paint(io.caps, "green", "✓")} 权限模式已切换 ask → allow(危险操作仍会询问)`)
     return 0
   }
   if (!wildcard) {

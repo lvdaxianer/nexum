@@ -21,12 +21,21 @@ function policyClient(initial: NexumPermissionPolicyRule[] = []) {
       calls.push({ method: request.method, body })
       if (request.method === "GET") return Response.json({ data: { rules, defaultEffect: "ask" }, meta })
       if (request.method === "POST") {
-        if (rules.some((existing) => existing.action === body!.action && existing.resource === body!.resource)) {
+        // 与服务器一致:重复判定含 effect 与 scope(permission-policy-store.ts assertNoDuplicateRule)
+        if (rules.some((existing) => existing.action === body!.action && existing.resource === body!.resource && existing.effect === body!.effect && existing.scope === (body!.scope ?? "global"))) {
           return Response.json({ errorCode: "NEXUM_PERMISSION_POLICY_DUPLICATE", message: "规则已存在", traceId: "trace_test" }, { status: 409 })
         }
         const created = rule({ id: `rule_${String(rules.length + 1).padStart(3, "0")}`, action: body!.action!, resource: body!.resource!, effect: body!.effect as NexumPermissionPolicyRule["effect"] })
         rules.push(created)
         return Response.json({ data: created, meta })
+      }
+      if (request.method === "PUT") {
+        const id = decodeURIComponent(request.url.split("/").pop()!)
+        const existing = rules.find((candidate) => candidate.id === id)
+        if (!existing) return Response.json({ errorCode: "NEXUM_PERMISSION_POLICY_NOT_FOUND", message: "规则不存在", traceId: "trace_test" }, { status: 404 })
+        const updated = { ...existing, ...(body as Partial<NexumPermissionPolicyRule>) }
+        rules[rules.indexOf(existing)] = updated
+        return Response.json({ data: updated, meta })
       }
       if (request.method === "DELETE") {
         const id = decodeURIComponent(request.url.split("/").pop()!)
@@ -110,6 +119,40 @@ test("permission mode allow creates the wildcard rule and is idempotent", async 
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(1)
 })
 
+test("permission mode allow updates an existing deny wildcard instead of creating a conflicting one", async () => {
+  const io = memoryIO()
+  const { client, calls, rules } = policyClient([rule({ id: "rule_009", action: "*", resource: "*", effect: "deny" })])
+  expect(await cmdPermissionMode(client, io, "allow")).toBe(0)
+  // 服务器重复判定含 effect:直接 create 会落第二条 * * allow 且 deny 优先,必须走 update
+  expect(calls.filter((call) => call.method === "POST")).toHaveLength(0)
+  expect(calls.filter((call) => call.method === "PUT")).toEqual([{ method: "PUT", body: { effect: "allow" } }])
+  expect(rules).toHaveLength(1)
+  expect(rules[0]).toMatchObject({ id: "rule_009", effect: "allow" })
+  expect(io.plain()).toContain("✓ 权限模式已切换 deny → allow(危险操作仍会询问)")
+})
+
+test("permission mode allow is a no-op when the allow wildcard already exists", async () => {
+  const io = memoryIO()
+  const { client, calls } = policyClient([rule({ id: "rule_009", action: "*", resource: "*", effect: "allow" })])
+  expect(await cmdPermissionMode(client, io, "allow")).toBe(0)
+  expect(io.plain()).toContain("已是 allow 模式")
+  expect(calls.filter((call) => call.method !== "GET")).toHaveLength(0)
+})
+
+test("session-scoped wildcards are not read as the current mode and survive mode ask", async () => {
+  const io = memoryIO()
+  const sessionWildcard = rule({ id: "rule_007", action: "*", resource: "*", effect: "allow", scope: "session", sessionID: "session_ab12cd34ef" })
+  const { client, calls, rules } = policyClient([sessionWildcard])
+  expect(await cmdPermissionMode(client, io, "ask")).toBe(0)
+  expect(io.plain()).toContain("已是 ask 模式")
+  expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(0)
+  expect(rules).toHaveLength(1)
+  // session 通配不标注当前模式
+  const listIO = memoryIO()
+  await cmdPermissionList(client, listIO)
+  expect(listIO.plain()).not.toContain("← 当前模式")
+})
+
 test("permission mode ask removes the wildcard rule and reports when already ask", async () => {
   const io = memoryIO()
   const { client, rules } = policyClient([rule({ id: "rule_009", action: "*", resource: "*", effect: "allow" })])
@@ -130,11 +173,13 @@ test("permission dispatcher routes subcommands and rejects unknown ones", async 
   expect(io.plain()).toContain("未知权限命令:bogus")
 })
 
-test("permissionStatusText derives the mode from the wildcard rule", async () => {
+test("permissionStatusText derives the mode from the global wildcard rule only", async () => {
   const caps = { isTTY: true, color: "none", anim: false, theme: "dark" } as const
   expect(permissionStatusText(caps, { rules: [], defaultEffect: "ask" })).toBe("权限:ask")
   expect(permissionStatusText(caps, { rules: [rule({ id: "r1", action: "*", resource: "*", effect: "allow" })], defaultEffect: "ask" })).toBe("权限:allow · 1 规则")
   expect(permissionStatusText(caps, { rules: [rule({ id: "r1", action: "*", resource: "*", effect: "deny" }), rule({ id: "r2", action: "read", resource: "*", effect: "allow" })], defaultEffect: "ask" })).toBe("权限:deny · 2 规则")
+  // session 作用域的通配不代表当前模式
+  expect(permissionStatusText(caps, { rules: [rule({ id: "r3", action: "*", resource: "*", effect: "allow", scope: "session", sessionID: "s1" })], defaultEffect: "ask" })).toBe("权限:ask · 1 规则")
   const colored = permissionStatusText({ ...caps, color: "ansi16" }, { rules: [], defaultEffect: "ask" })
   expect(colored).toContain("\x1b[33mask")
 })
