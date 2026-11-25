@@ -87,6 +87,7 @@ export type {
   NexumPluginEntrypoint,
   NexumPluginMount,
   NexumPluginMountContext,
+  NexumPluginTool,
   NexumPluginRuntime,
   NexumPluginRuntimeDiagnostic,
   NexumPluginRuntimeDiagnosticCode,
@@ -206,6 +207,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     shellCleanupTimeoutMs: options.shellCleanupTimeoutMs,
     skillRegistry: skills,
     ...(options.mcp ? { mcp: options.mcp } : {}),
+    pluginRuntime,
   })
   const memory = options.memory ?? persistence.memory
   const loopOptions = {
@@ -215,6 +217,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     events: eventHub,
     messageStore,
     tools: tools.definitions,
+    toolDefinitions: (sessionID: string) => tools.definitionsFor(sessionID),
     question,
     skills: skillInvocation,
     plugins: pluginInvocation,

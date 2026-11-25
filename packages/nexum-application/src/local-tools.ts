@@ -15,6 +15,7 @@ import type {
   ToolRequest,
   ToolResult,
 } from "@nexum/core"
+import type { NexumPluginRuntime } from "./plugin-runtime.ts"
 import { createLocalHostAdapter } from "@nexum/integrations"
 
 /** POC 首期内置工具名称。 */
@@ -28,6 +29,7 @@ export interface NexumToolRegistryOptions {
   readonly shellCleanupTimeoutMs?: number
   readonly skillRegistry?: NexumSkillRegistry
   readonly mcp?: McpPort
+  readonly pluginRuntime?: NexumPluginRuntime
 }
 
 /** 内置工具注册表和统一执行端口。 */
@@ -37,6 +39,7 @@ export interface NexumToolRegistry {
   readonly port: ToolPort
   readonly ready: Promise<void>
   readonly refresh: () => Promise<void>
+  readonly definitionsFor: (sessionID: string) => Promise<readonly ModelToolDefinition[]>
 }
 
 /**
@@ -167,6 +170,8 @@ export function createNexumToolRegistry(options: NexumToolRegistryOptions): Nexu
             ? executeSkillRegistryTool(options.skillRegistry, request)
             : { ok: false, output: "Skill 注册表未配置" }
         }
+        const pluginResult = await options.pluginRuntime?.executeTool(request)
+        if (pluginResult) return pluginResult
         const binding = mcpBindings.get(request.toolName)
         if (binding && options.mcp) {
           return options.mcp.callTool({
@@ -182,6 +187,10 @@ export function createNexumToolRegistry(options: NexumToolRegistryOptions): Nexu
     },
     ready,
     refresh: refreshMcpTools,
+    definitionsFor: async (sessionID) => [
+      ...definitions,
+      ...(options.pluginRuntime ? await options.pluginRuntime.listTools(sessionID) : []),
+    ],
   }
 
   async function refreshMcpTools(): Promise<void> {
