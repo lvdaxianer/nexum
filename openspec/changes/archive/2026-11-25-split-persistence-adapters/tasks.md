@@ -29,7 +29,7 @@
 
 - [x] 5.1 更新 README、运行配置和架构说明，记录三种包、默认矩阵、SQLite 数据路径、文件数据边界和迁移限制；通过文档中的命令逐条执行核对。
 - [x] 5.2 运行受影响包的单测、`bun run check`、必要的 `typecheck:tsc` 和 `openspec validate --change split-persistence-adapters --strict`，修复全部失败后记录输出。
-- [ ] 5.3 进行需求-实现一致性审计、代码审查和项目卫生检查，确认未修改 `packages/nexum-cli/review-demo.ts`，再完成每个任务的提交与集成分支合并。
+- [x] 5.3 进行需求-实现一致性审计、代码审查和项目卫生检查，确认未修改 `packages/nexum-cli/review-demo.ts`，再完成每个任务的提交与集成分支合并。
 
 ## Workflow follow-up
 
