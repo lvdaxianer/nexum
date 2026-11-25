@@ -63,7 +63,7 @@ function fakeAdapter(script: { events?: NexumEvent[]; onSend?: (text: string) =>
       calls.push("continueRun")
     },
   }
-  return { adapter, sent, calls }
+  return { adapter, sent, calls, queued }
 }
 
 /** 每次取行前等待 30ms,给事件泵留出消费时间,避免测试竞态。 */
@@ -102,6 +102,32 @@ test("repl answers permission requests through the prompter", async () => {
   await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: slowLineSource(["改文件", "/quit"]), prompter: async () => "1" })
   expect(calls).toContain("replyPermission")
   expect(io.plain()).toContain("权限已通过")
+})
+
+test("repl prints the permission outcome before replying and resumes the tool line", async () => {
+  const io = memoryIO({ anim: true })
+  const { adapter, calls, queued } = fakeAdapter({
+    onSend: () => [
+      makeEvent("tool.request", { toolCallID: "t1", toolName: "read" }, 1),
+      makeEvent("permission.requested", { requestID: "p1", action: "edit", resource: "a.ts" }, 2),
+    ],
+  })
+  let outputAtReply = ""
+  adapter.replyPermission = async () => {
+    calls.push("replyPermission")
+    outputAtReply = io.plain()
+    // 服务器在收到回复后才执行工具:tool.result 只可能在回复之后到达
+    queued.push(makeEvent("tool.result", { toolCallID: "t1", toolName: "read", ok: true, output: "完成" }, 3), makeEvent("run.settled", { result: "completed" }, 4))
+  }
+  await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: slowLineSource(["改文件", "/quit"]), prompter: async () => "1" })
+  expect(calls).toContain("replyPermission")
+  // 结果行先于 HTTP 回复打印,回复时工具结果尚未渲染
+  expect(outputAtReply).toContain("权限已通过")
+  expect(outputAtReply).not.toContain("✓ 工具结果")
+  const out = io.plain()
+  expect(out.indexOf("等待权限确认")).toBeLessThan(out.indexOf("权限已通过"))
+  expect(out.indexOf("权限已通过")).toBeLessThan(out.indexOf("执行中"))
+  expect(out.indexOf("执行中")).toBeLessThan(out.indexOf("✓ 工具结果 read"))
 })
 
 test("repl slash commands: /skills lists ready skills, /cancel calls cancelRun, unknown command warns", async () => {

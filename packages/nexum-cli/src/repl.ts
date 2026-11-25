@@ -187,20 +187,39 @@ export async function runRepl(options: ReplOptions): Promise<void> {
               const request = permissionFromEvent(data, id)
               if (!request) return
               const decision = await askPermission(io, options.prompter, request)
-              await adapter.replyPermission({ sessionID: id, requestID: request.id, decision })
+              // 先打印结果再回复:服务器收到回复后可能立刻执行工具并推送 tool.result
               io.line(paint(io.caps, "green", decision === "deny" ? "权限已拒绝" : "权限已通过"))
+              try {
+                await adapter.replyPermission({ sessionID: id, requestID: request.id, decision })
+              } catch (error) {
+                io.line(paint(io.caps, "red", `权限回复失败:${error instanceof Error ? error.message : "未知错误"}`))
+                return
+              }
+              renderer.resumeTool()
               return
             }
             const request = questionFromEvent(data, id)
             if (!request) return
             const answers = await askQuestion(io, options.prompter, request)
             if (answers === "cancel") {
-              await adapter.cancelQuestion({ sessionID: id, requestID: request.id })
               io.line(paint(io.caps, "dim", "已取消补充信息"))
+              try {
+                await adapter.cancelQuestion({ sessionID: id, requestID: request.id })
+              } catch (error) {
+                io.line(paint(io.caps, "red", `取消提交失败:${error instanceof Error ? error.message : "未知错误"}`))
+                return
+              }
+              renderer.resumeTool()
               return
             }
-            await adapter.replyQuestion({ sessionID: id, requestID: request.id, answers })
             io.line(paint(io.caps, "green", "补充信息已提交,运行继续"))
+            try {
+              await adapter.replyQuestion({ sessionID: id, requestID: request.id, answers })
+            } catch (error) {
+              io.line(paint(io.caps, "red", `回答提交失败:${error instanceof Error ? error.message : "未知错误"}`))
+              return
+            }
+            renderer.resumeTool()
           })
           .catch((error) => io.line(paint(io.caps, "red", `交互处理失败:${error instanceof Error ? error.message : "未知错误"}`)))
       }

@@ -16,6 +16,8 @@ export type Renderer = {
   thinkingMode(): ThinkingMode
   setThinkingMode(mode: ThinkingMode): void
   expandLastReasoning(): void
+  /** 权限/问题等待结束后恢复被冻结的工具活动行;未暂停时为空操作。 */
+  resumeTool(): void
   close(): void
 }
 
@@ -29,6 +31,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
   let liveKind: "thinking" | "tool" | "compaction" | undefined
   let liveToolName = ""
   let liveStartedAt = 0
+  let pausedToolName = ""
   let runStartedAt = 0
   let reasoningChars = 0
   let reasoningStartedAt = 0
@@ -88,6 +91,13 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
     live.cancel()
     live = undefined
     liveKind = undefined
+  }
+
+  /** 权限/问题等待期间冻结工具活动行:收敛为静态等待行,记住工具名供 resumeTool 恢复。 */
+  function pauseToolLive(reason: string) {
+    if (liveKind !== "tool" || !live) return
+    pausedToolName = liveToolName
+    settleLive(`${paint(caps, "yellow", "⏸")} ${paint(caps, "dim", `工具调用 ${liveToolName} · ${reason}`)}`)
   }
 
   function ensureThinkingLive() {
@@ -151,6 +161,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
         closeReasoning()
         eraseCursor()
         cancelLive()
+        pausedToolName = ""
         liveToolName = str(record, "toolName") || str(record, "toolCallID") || "工具"
         liveKind = "tool"
         liveStartedAt = Date.now()
@@ -164,19 +175,25 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
         const name = str(record, "toolName") || liveToolName || "工具"
         const summary = compact(str(record, "output"))
         const mark = ok ? paint(caps, "green", "✓") : paint(caps, "red", "✗")
-        settleLive(`${mark} ${paint(caps, "dim", `工具结果 ${name}${summary ? ` · ${summary}` : ""}`)}`)
+        const text = `${mark} ${paint(caps, "dim", `工具结果 ${name}${summary ? ` · ${summary}` : ""}`)}`
+        // 等待期间工具行已冻结成静态行,没有活动行可收敛时直接打印结果行
+        if (live) settleLive(text)
+        else io.line(text)
         liveToolName = ""
+        pausedToolName = ""
         return
       }
       case "permission.requested":
         status = "awaiting permission"
         closeReasoning()
         eraseCursor()
+        pauseToolLive("等待权限确认")
         return
       case "question.request":
         status = "awaiting question"
         closeReasoning()
         eraseCursor()
+        pauseToolLive("等待回答")
         return
       case "question.result":
       case "question.cancelled":
@@ -221,6 +238,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
         closeReasoning()
         eraseCursor()
         cancelLive()
+        pausedToolName = ""
         const elapsed = runStartedAt === 0 ? "" : ` · 用时 ${formatElapsed(Date.now() - runStartedAt)}`
         if (result === "completed") io.line(`${paint(caps, "green", "✓ 运行完成")}${paint(caps, "dim", elapsed)}`)
         if (result === "failed") io.line(paint(caps, "red", "✗ 运行失败"))
@@ -264,6 +282,16 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
       eraseCursor()
       io.line(paint(caps, "dim", "思考全文"))
       io.line(paint(caps, "dim", lastReasoning))
+    },
+    resumeTool: () => {
+      if (!pausedToolName) return
+      const name = pausedToolName
+      pausedToolName = ""
+      cancelLive()
+      liveToolName = name
+      liveKind = "tool"
+      liveStartedAt = Date.now()
+      live = createLiveLine(io, (tick) => `${paint(caps, "cyan", spinnerFrame(tick))} ${paint(caps, "dim", `工具调用 ${name} · 执行中… ${((Date.now() - liveStartedAt) / 1000).toFixed(1)}s`)}`)
     },
     close: () => {
       md.flush()

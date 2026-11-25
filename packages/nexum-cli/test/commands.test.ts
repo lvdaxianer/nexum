@@ -106,6 +106,41 @@ test("cmdPrompt streams events and maps run result to exit codes", async () => {
   expect(io.plain()).toContain("你好")
 })
 
+test("cmdPrompt prints the permission outcome before replying and renders tool.result after the pause", async () => {
+  const io = memoryIO({ anim: true })
+  const client = fakeClient(() => ({ id: "s1", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }))
+  let outputAtReply = ""
+  const adapter: ChatProtocolAdapter = {
+    loadHistory: async () => ({ messages: [], total: 0, hasMore: false, snapshotID: "snap" }),
+    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }, canContinue: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
+    subscribeEvents: async function* () {
+      yield { eventID: "e1", runID: "r1", sessionID: "s1", sequence: 1, occurredAt: "", type: "tool.request", data: { toolCallID: "t1", toolName: "read" } } as never
+      yield { eventID: "e2", runID: "r1", sessionID: "s1", sequence: 2, occurredAt: "", type: "permission.requested", data: { requestID: "p1", action: "edit", resource: "a.ts" } } as never
+      // 生成器是惰性的:tool.result 只在权限回复完成、循环继续后才被消费,模拟服务器收到回复才执行工具
+      yield { eventID: "e3", runID: "r1", sessionID: "s1", sequence: 3, occurredAt: "", type: "tool.result", data: { toolCallID: "t1", toolName: "read", ok: true, output: "完成" } } as never
+      yield { eventID: "e4", runID: "r1", sessionID: "s1", sequence: 4, occurredAt: "", type: "run.settled", data: { result: "completed" } } as never
+    },
+    listSkills: async () => [],
+    sendMessage: async () => {},
+    replyPermission: async () => {
+      outputAtReply = io.plain()
+    },
+    replyQuestion: async () => {},
+    cancelQuestion: async () => {},
+    cancelRun: async () => {},
+    continueRun: async () => {},
+  }
+  const code = await cmdPrompt({ client, adapter, io, prompter: async () => "1", text: "hi", sessionID: "s1", directory: "/tmp" })
+  expect(code).toBe(0)
+  // 结果行先于 HTTP 回复打印
+  expect(outputAtReply).toContain("权限已通过")
+  expect(outputAtReply).not.toContain("✓ 工具结果")
+  const out = io.plain()
+  expect(out.indexOf("等待权限确认")).toBeLessThan(out.indexOf("权限已通过"))
+  expect(out.indexOf("权限已通过")).toBeLessThan(out.indexOf("执行中"))
+  expect(out.indexOf("执行中")).toBeLessThan(out.indexOf("✓ 工具结果 read"))
+})
+
 test("cmdPrompt auto-denies permission and auto-cancels question when not TTY", async () => {
   const io = memoryIO({ isTTY: false })
   const replies: string[] = []

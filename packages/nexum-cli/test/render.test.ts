@@ -83,6 +83,73 @@ test("thinking live never overwrites an active tool live line", async () => {
   expect(out.split("✓ 工具结果 read · 完成\n")[1]).toBe("")
 })
 
+test("permission pauses the active tool line and tool.result still prints after the pause", () => {
+  const io = memoryIO()
+  const renderer = createRenderer({ io })
+  renderer.event(event("tool.request", { toolCallID: "tool_1", toolName: "read" }, 1))
+  renderer.event(event("permission.requested", { requestID: "p1", action: "edit", resource: "a.ts" }, 2))
+  // 工具行冻结为静态等待行,独占一行(后续输出不粘接)
+  expect(io.plain()).toContain("⏸ 工具调用 read · 等待权限确认\n")
+  renderer.event(event("tool.result", { toolCallID: "tool_1", toolName: "read", ok: true, output: "完成" }, 3))
+  const out = io.plain()
+  expect(out).toContain("✓ 工具结果 read · 完成\n")
+  expect(out.indexOf("等待权限确认")).toBeLessThan(out.indexOf("✓ 工具结果 read"))
+  renderer.close()
+})
+
+test("question pauses the active tool line as 等待回答", () => {
+  const io = memoryIO()
+  const renderer = createRenderer({ io })
+  renderer.event(event("tool.request", { toolCallID: "tool_1", toolName: "read" }, 1))
+  renderer.event(
+    event("question.request", { requestID: "q1", toolCallID: "tool_1", questions: [{ header: "h", question: "q?", options: [{ label: "A", description: "" }] }] }, 2),
+  )
+  expect(io.plain()).toContain("⏸ 工具调用 read · 等待回答\n")
+  renderer.event(event("tool.result", { toolCallID: "tool_1", toolName: "read", ok: true, output: "完成" }, 3))
+  expect(io.plain()).toContain("✓ 工具结果 read")
+  renderer.close()
+})
+
+test("paused tool line freezes while awaiting and resumeTool restarts it until tool.result", async () => {
+  const io = memoryIO({ anim: true })
+  const renderer = createRenderer({ io })
+  renderer.event(event("tool.request", { toolCallID: "tool_1", toolName: "read" }, 1))
+  renderer.event(event("permission.requested", { requestID: "p1", action: "edit", resource: "a.ts" }, 2))
+  const frozen = io.output()
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  // 等待期间不再计时重绘
+  expect(io.output()).toBe(frozen)
+  expect(io.plain()).toContain("⏸ 工具调用 read · 等待权限确认")
+  renderer.resumeTool()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  expect(io.plain()).toContain("执行中")
+  renderer.event(event("tool.result", { toolCallID: "tool_1", toolName: "read", ok: true, output: "完成" }, 3))
+  renderer.close()
+  const out = io.plain()
+  expect(out.indexOf("等待权限确认")).toBeLessThan(out.indexOf("执行中"))
+  expect(out.indexOf("执行中")).toBeLessThan(out.indexOf("✓ 工具结果 read"))
+})
+
+test("resumeTool is a no-op when no tool is paused", () => {
+  const io = memoryIO()
+  const renderer = createRenderer({ io })
+  renderer.resumeTool()
+  expect(io.plain()).toBe("")
+  renderer.close()
+})
+
+test("paused tool without resume still prints a failed tool result", () => {
+  const io = memoryIO()
+  const renderer = createRenderer({ io })
+  renderer.event(event("tool.request", { toolCallID: "tool_1", toolName: "read" }, 1))
+  renderer.event(event("permission.requested", { requestID: "p1", action: "edit", resource: "a.ts" }, 2))
+  renderer.event(event("tool.result", { toolCallID: "tool_1", toolName: "read", ok: false, output: "拒绝" }, 3))
+  const out = io.plain()
+  expect(out).toContain("✗ 工具结果 read")
+  expect(out.indexOf("等待权限确认")).toBeLessThan(out.indexOf("✗ 工具结果 read"))
+  renderer.close()
+})
+
 test("assistant text renders markdown with ansi16 caps and hides raw markers", () => {
   const io = memoryIO({ color: "ansi16" })
   const renderer = createRenderer({ io })

@@ -114,10 +114,19 @@ export async function cmdPrompt(options: PromptOptions): Promise<number> {
         if (!io.caps.isTTY) {
           await adapter.replyPermission({ sessionID, requestID: request.id, decision: "deny" })
           io.line(paint(io.caps, "yellow", "非交互环境,权限已自动拒绝"))
+          renderer.resumeTool()
           continue
         }
         const decision = await askPermission(io, prompter, request)
-        await adapter.replyPermission({ sessionID, requestID: request.id, decision })
+        // 先打印结果再回复:服务器收到回复后可能立刻执行工具并推送 tool.result
+        io.line(paint(io.caps, "green", decision === "deny" ? "权限已拒绝" : "权限已通过"))
+        try {
+          await adapter.replyPermission({ sessionID, requestID: request.id, decision })
+        } catch (error) {
+          io.line(paint(io.caps, "red", `权限回复失败:${error instanceof Error ? error.message : "未知错误"}`))
+          continue
+        }
+        renderer.resumeTool()
         continue
       }
       if (event.type === "question.request") {
@@ -126,11 +135,28 @@ export async function cmdPrompt(options: PromptOptions): Promise<number> {
         if (!io.caps.isTTY) {
           await adapter.cancelQuestion({ sessionID, requestID: request.id })
           io.line(paint(io.caps, "yellow", "非交互环境,补充信息已取消"))
+          renderer.resumeTool()
           continue
         }
         const answers = await askQuestion(io, prompter, request)
-        if (answers === "cancel") await adapter.cancelQuestion({ sessionID, requestID: request.id })
-        else await adapter.replyQuestion({ sessionID, requestID: request.id, answers })
+        if (answers === "cancel") {
+          io.line(paint(io.caps, "dim", "已取消补充信息"))
+          try {
+            await adapter.cancelQuestion({ sessionID, requestID: request.id })
+          } catch (error) {
+            io.line(paint(io.caps, "red", `取消提交失败:${error instanceof Error ? error.message : "未知错误"}`))
+            continue
+          }
+        } else {
+          io.line(paint(io.caps, "green", "补充信息已提交,运行继续"))
+          try {
+            await adapter.replyQuestion({ sessionID, requestID: request.id, answers })
+          } catch (error) {
+            io.line(paint(io.caps, "red", `回答提交失败:${error instanceof Error ? error.message : "未知错误"}`))
+            continue
+          }
+        }
+        renderer.resumeTool()
         continue
       }
       if (event.type === "run.settled") {
