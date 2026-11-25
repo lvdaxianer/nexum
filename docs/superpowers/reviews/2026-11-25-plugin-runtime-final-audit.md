@@ -1,7 +1,7 @@
 # Plugin Runtime 最终审计
 
-日期：2026-11-25  
-集成分支：`dev-v0.0.1-feature-plugin`  
+日期：2026-11-25
+集成分支：`dev-v0.0.1-feature-plugin`
 OpenSpec：`plugin-runtime`
 
 ## 计划-实现一致性

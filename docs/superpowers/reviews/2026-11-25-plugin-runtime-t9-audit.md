@@ -1,7 +1,7 @@
 # Plugin Runtime T9 审计：Protocol、Server 与 Client 控制面
 
-日期：2026-11-25  
-分支：`features/✅CHG-001-T9--插件协议控制面`  
+日期：2026-11-25
+分支：`features/✅CHG-001-T9--插件协议控制面`
 OpenSpec：`plugin-runtime` 任务 5.1、5.2
 
 ## 变更范围

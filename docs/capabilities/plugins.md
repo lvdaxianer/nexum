@@ -1,6 +1,6 @@
 # Plugin 能力
 
-状态：现状基线  
+状态：现状基线
 最后核对：2026-11-25
 
 Plugin 是与独立 Skill 平级的顶层扩展包。它可以在一个包里组合 Skill、Function、Workflow 和 Hook，但用户只通过顶层 `@<plugin-id>` 激活整个包；内部能力不注册为独立的 `@` 目标。

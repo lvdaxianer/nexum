@@ -1,7 +1,7 @@
 # Plugin Runtime T10 审计：CRM Fixture 与使用文档
 
-日期：2026-11-25  
-分支：`features/✅CHG-001-T10--CRM插件示例`  
+日期：2026-11-25
+分支：`features/✅CHG-001-T10--CRM插件示例`
 OpenSpec：`plugin-runtime` 任务 6.1
 
 ## 变更范围
