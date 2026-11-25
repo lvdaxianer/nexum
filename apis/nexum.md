@@ -485,7 +485,7 @@ curl --get 'http://127.0.0.1:4097/api/experimental/nexum/session/session_001/mes
 
 ### 接口概览
 
-`DELETE /api/nexum/session/:sessionID` 删除指定 Session 的持久化历史和运行记录，但保留工作目录与模型配置。服务按 `messageStore`、可选 `interactionStore`、`eventHub`、`sessionService` 的顺序删除；任一步依赖失败都会返回稳定的 `NEXUM_SESSION_DELETE_FAILED`，不会暴露内部错误文本。
+`DELETE /api/nexum/session/:sessionID` 删除指定 Session 的持久化历史和运行记录，但保留工作目录与模型配置。默认 SQLite Runtime 在 Session 状态校验通过后，会在一个数据库事务中删除 Session、消息、交互和事件；其他适配器沿用各自的清理顺序。删除失败返回稳定的 `NEXUM_SESSION_DELETE_FAILED`，不会暴露内部错误文本。
 
 | 项目     | 内容                                                                               |
 | -------- | ---------------------------------------------------------------------------------- |

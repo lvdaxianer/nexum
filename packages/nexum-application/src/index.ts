@@ -133,6 +133,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   const sessions = options.sessions ?? createNexumSessionService({
     store: options.sessionStore ?? persistence.sessionStore,
     directoryValidator: createLocalDirectoryValidator(),
+    ...(persistence.atomicDelete ? { atomicDelete: persistence.atomicDelete } : {}),
   })
   const modelConfig = options.modelConfig ?? persistence.modelConfig
   const rolePrompt = options.rolePrompt ?? (options.rolePromptFile

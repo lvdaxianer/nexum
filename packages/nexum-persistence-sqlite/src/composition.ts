@@ -29,6 +29,7 @@ export async function createSqlitePersistence(options: SqlitePersistenceOptions 
 }
 
 function composeSqlitePersistence(database: NexumSqliteDatabase): SqlitePersistence {
+  const eventHub = createSqliteEventHub(database.database)
   return {
     databasePath: database.databasePath,
     close: database.close,
@@ -37,11 +38,17 @@ function composeSqlitePersistence(database: NexumSqliteDatabase): SqlitePersiste
     interactionStore: createSqliteInteractionStore(database.database),
     modelConfig: createSqliteModelConfigStore(database.database),
     rolePrompt: createSqliteRolePromptStore(database.database),
-    eventHub: createSqliteEventHub(database.database),
+    eventHub,
     permissionPolicyStore: createSqlitePermissionPolicyStore(database.database),
     memory: createSqliteMemory(database.database),
     skillRegistrationStore: createSqliteSkillRegistrationStore(database.database),
     mcpConfigStore: createSqliteMcpServerConfigStore(database.database),
     mcpCredentialStore: createSqliteMcpCredentialStore(database.database),
+    atomicDelete: async (sessionID) => {
+      database.transaction(() => {
+        database.database.query("DELETE FROM nexum_record WHERE (namespace IN ('session', 'message') AND record_key = $sessionID) OR (namespace = 'interaction' AND json_extract(payload, '$.sessionID') = $sessionID)").run({ $sessionID: sessionID })
+        void eventHub.delete(sessionID)
+      })
+    },
   }
 }

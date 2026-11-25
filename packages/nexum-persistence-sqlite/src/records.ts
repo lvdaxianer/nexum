@@ -1,4 +1,7 @@
 import type { Database } from "bun:sqlite"
+import { NexumSqlitePersistenceError } from "./errors.ts"
+
+const MAX_RECORD_ROWS = 10_000
 
 export function readRecord<T>(database: Database, namespace: string, key: string): T | undefined {
   const row = database.query("SELECT payload FROM nexum_record WHERE namespace = $namespace AND record_key = $key").get({
@@ -24,7 +27,12 @@ export function deleteRecord(database: Database, namespace: string, key: string)
 }
 
 export function readRecords<T>(database: Database, namespace: string): T[] {
-  return database.query("SELECT payload FROM nexum_record WHERE namespace = $namespace ORDER BY record_key").all({
+  const rows = database.query("SELECT payload FROM nexum_record WHERE namespace = $namespace ORDER BY record_key LIMIT $limit").all({
     $namespace: namespace,
-  }).map((row) => JSON.parse((row as { payload: string }).payload) as T)
+    $limit: MAX_RECORD_ROWS + 1,
+  }) as Array<{ payload: string }>
+  if (rows.length > MAX_RECORD_ROWS) {
+    throw new NexumSqlitePersistenceError("record_limit", `SQLite record limit exceeded for namespace ${namespace}`)
+  }
+  return rows.map((row) => JSON.parse(row.payload) as T)
 }
