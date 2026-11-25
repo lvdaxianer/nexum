@@ -53,7 +53,7 @@ bun run --cwd packages/nexum-cli start -- --help
 
 每次启动默认进入新会话的待创建状态：不恢复任何会话，首条非 slash 消息到达时才创建会话（空启动零垃圾）；`resume`、`-c`/`--continue`、`--session <id>` 为显式恢复入口，`/new [名称]` 随时回到待创建状态（名称留给创建时使用）。打开会话时回放最近 50 条历史，随后从 `lastSequence` 起订阅事件并按 `eventID` 去重。运行期间输入锁定（`/cancel` 可取消）；Permission/Question 请求进入顺序交互队列逐个询问。输入 `@` 触发 Skill 自动补全，只列出 `ready` 状态的 Skill。运行进入终态（completed/failed/cancelled）后事件流结束属正常关闭，静默续订；仅非终态掉线才打印重连提示。
 
-输入框仅在空闲时绘制：框内提示行（`输入任务,Enter 发送 · @ 引用 Skill · /help 命令 · Ctrl+C 取消/退出`）+ `›` 输入行，提交后打印底边框闭合；运行中不显示提示符，事件输出不与输入行粘连。非 TTY 或无色终端降级为普通 `nexum ▸ ` 提示符。视觉参照 `artifacts/nexum-cli-input-box.png`（`artifacts/` 不入库，仅作视觉参照）。slash 命令以 `src/repl.ts` 的 `HELP` 为准：
+输入框仅在空闲时绘制，为五行闭合框（顶边 / 提示行 `输入任务,Enter 发送 · @ 引用 Skill · /help 命令 · Ctrl+C 取消/退出` / `›` 输入行 / 留白行 / 底边），宽度随终端（上限 110 列），光标归位框内输入行；提交后光标移至框外，运行中不显示提示符，事件输出不与输入行粘连；运行结束输入框自动重画。非 TTY 或无色终端降级为普通 `nexum ▸ ` 提示符。视觉参照 `artifacts/nexum-cli-input-box.png`（`artifacts/` 不入库，仅作视觉参照）。slash 命令以 `src/repl.ts` 的 `HELP` 为准：
 
 | 命令 | 作用 | 命令 | 作用 |
 | ---- | ---- | ---- | ---- |
