@@ -19,6 +19,14 @@ const manifest: NexumPluginManifest = {
 }
 
 const summary: NexumPluginSummary = { ...manifest, status: "registered", diagnostics: [] }
+const shippingSummary: NexumPluginSummary = {
+  ...manifest,
+  id: "shipping",
+  description: "处理物流和配送问题",
+  routing: { intents: ["shipping"], examples: ["查询物流"], keywords: ["物流", "配送"] },
+  status: "registered",
+  diagnostics: [],
+}
 
 test("resolves an explicit top-level plugin mention", () => {
   expect(parseNexumPluginMention("@crm 查询订单 123", [summary])).toMatchObject({
@@ -107,4 +115,57 @@ test("leaves mentions for standalone skills to the existing skill path", async (
 
   await expect(invocation.resolve({ sessionID: "session-1", text: "@skill 写一份报告" })).resolves.toEqual([])
   expect(calls).toBe(0)
+})
+
+test("automatically activates the unique plugin matched by safe routing metadata", async () => {
+  const calls: string[] = []
+  const invocation = createNexumPluginInvocationPort({
+    registry: { list: async () => [summary, shippingSummary] },
+    activation: {
+      activate: async (input) => {
+        calls.push(`${input.pluginID}:${input.source}`)
+        return { pluginID: input.pluginID, status: "active", source: input.source }
+      },
+    },
+  })
+
+  await expect(invocation.resolve({ sessionID: "session-1", text: "请帮我查询订单" })).resolves.toEqual([
+    { pluginID: "crm", status: "active", source: "automatic" },
+  ])
+  expect(calls).toEqual(["crm:automatic"])
+})
+
+test("does not activate when natural-language routing is ambiguous or unmatched", async () => {
+  const calls: string[] = []
+  const invocation = createNexumPluginInvocationPort({
+    registry: { list: async () => [summary, shippingSummary] },
+    activation: {
+      activate: async (input) => {
+        calls.push(input.pluginID)
+        return { pluginID: input.pluginID, status: "active", source: input.source }
+      },
+    },
+  })
+
+  await expect(invocation.resolve({ sessionID: "session-1", text: "请查询订单物流" })).resolves.toEqual([])
+  await expect(invocation.resolve({ sessionID: "session-1", text: "帮我写一首诗" })).resolves.toEqual([])
+  expect(calls).toEqual([])
+})
+
+test("gives an explicit plugin mention precedence over natural-language candidates", async () => {
+  const calls: string[] = []
+  const invocation = createNexumPluginInvocationPort({
+    registry: { list: async () => [summary, shippingSummary] },
+    activation: {
+      activate: async (input) => {
+        calls.push(`${input.pluginID}:${input.source}`)
+        return { pluginID: input.pluginID, status: "active", source: input.source }
+      },
+    },
+  })
+
+  await expect(invocation.resolve({ sessionID: "session-1", text: "@crm 请查询物流" })).resolves.toEqual([
+    { pluginID: "crm", status: "active", source: "explicit" },
+  ])
+  expect(calls).toEqual(["crm:explicit"])
 })

@@ -72,6 +72,20 @@ test("closes mounted plugins with the embedded runtime", async () => {
   )
 })
 
+test("routes a unique natural-language request through the same activation port", async () => {
+  const fixture = await createMountFixture()
+  const registry = createNexumPluginRegistry({
+    source: { discover: async () => [{ address: fixture.root, entryPath: fixture.entry, manifest }] },
+  })
+  const runtime = createEmbeddedRuntime({ pluginRegistry: registry })
+
+  await expect(runtime.pluginInvocation.resolve({ sessionID: "session-1", text: "请查询订单" })).resolves.toEqual([
+    { pluginID: "crm", status: "active", source: "automatic" },
+  ])
+  await expect(runtime.pluginRuntime.listActive("session-1")).resolves.toMatchObject([{ pluginID: "crm" }])
+  await runtime.close()
+})
+
 async function createMountFixture(prefix = "") {
   const root = await mkdtemp(join(tmpdir(), "nexum-plugin-runtime-"))
   directories.push(root)
