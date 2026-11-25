@@ -31,6 +31,43 @@ test("code spans keep their content literal", () => {
   expect(line).toBe("使用 \x1b[33m**not bold**\x1b[0m 即可")
 })
 
+test("bold and link in the same segment render without corruption", () => {
+  const [line] = renderMarkdownText(ansi16, "**注意**:详见 [文档](https://example.com)")
+  expect(line).toContain("\x1b[1m注意\x1b[0m")
+  expect(line).toContain("\x1b[36;4m文档\x1b[0m")
+  expect(line).not.toContain("**")
+  const plain = line.replace(/\x1b\[[0-9;]*m/g, "")
+  expect(plain).toBe("注意:详见 文档")
+  expect(plain).not.toContain("\x1b")
+})
+
+test("italic and link in the same segment render without corruption", () => {
+  const [line] = renderMarkdownText(ansi16, "*斜体* 和 [链接](https://x.com)")
+  expect(line).toContain("\x1b[3m斜体\x1b[0m")
+  expect(line).toContain("\x1b[36;4m链接\x1b[0m")
+  const plain = line.replace(/\x1b\[[0-9;]*m/g, "")
+  expect(plain).toBe("斜体 和 链接")
+  expect(plain).not.toContain("\x1b")
+})
+
+test("two links with bold between them all render", () => {
+  const [line] = renderMarkdownText(ansi16, "[a](u1) **b** [c](u2)")
+  expect(line).toContain("\x1b[36;4ma\x1b[0m")
+  expect(line).toContain("\x1b[1mb\x1b[0m")
+  expect(line).toContain("\x1b[36;4mc\x1b[0m")
+  const plain = line.replace(/\x1b\[[0-9;]*m/g, "")
+  expect(plain).toBe("a b c")
+  expect(plain).not.toContain("\x1b")
+})
+
+test("link label with bold inside keeps both styles", () => {
+  const [line] = renderMarkdownText(ansi16, "[**粗体标签**](https://x.com)")
+  expect(line).toContain("\x1b[36;4m")
+  expect(line).toContain("\x1b[1m粗体标签\x1b[0m")
+  expect(line).not.toContain("**")
+  expect(line.replace(/\x1b\[[0-9;]*m/g, "")).toBe("粗体标签")
+})
+
 test("bullets keep indent and use cyan marker", () => {
   expect(renderMarkdownText(ansi16, "- 第一项\n  * 嵌套\n+ 第三项")).toEqual([
     "\x1b[36m•\x1b[0m 第一项",

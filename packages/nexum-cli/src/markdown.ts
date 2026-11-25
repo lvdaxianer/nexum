@@ -109,13 +109,13 @@ function codeLine(caps: TermCaps, line: string): string {
   return `${paint(caps, "cyan", "▎")} ${paint(caps, "dim", line)}`
 }
 
-/** 行内样式:行内代码 → 粗体/斜体 → 链接;简单扫描,不支持嵌套强调。 */
+/** 行内样式:行内代码 → 链接 → 粗体/斜体;简单扫描,不支持嵌套强调。链接先于强调,否则强调插入的 SGR 序列会被链接正则的 [ 误匹配。 */
 function inline(caps: TermCaps, text: string): string {
   return text
     .split(/(`[^`\n]*`)/g)
     .map((part) => {
       if (part.length > 1 && part.startsWith("`") && part.endsWith("`")) return paint(caps, "yellow", part.slice(1, -1))
-      return linkify(caps, emphasize(caps, part))
+      return emphasize(caps, linkify(caps, part))
     })
     .join("")
 }
