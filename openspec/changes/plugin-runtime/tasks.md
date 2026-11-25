@@ -27,7 +27,7 @@
 
 ## 6. 文档、示例与集成验证
 
-- [ ] 6.1 增加一个最小 CRM Plugin Fixture 和 Plugin 使用文档，明确 `@plugin`、自然语言激活、内部 Skill 不支持 `@`、权限和生命周期规则；验证示例可以被 Registry 发现并按测试路径激活。
+- [x] 6.1 增加一个最小 CRM Plugin Fixture 和 Plugin 使用文档，明确 `@plugin`、自然语言激活、内部 Skill 不支持 `@`、权限和生命周期规则；验证示例可以被 Registry 发现并按测试路径激活。
 - [ ] 6.2 在任务分支执行 `openspec validate plugin-runtime --strict`、各受影响 package 的 focused tests、`bun run check`，完成计划-实现一致性审计和全量 diff review；只有所有结果通过后标记本变更的 OpenSpec 任务完成。
 
 ## Workflow follow-up
