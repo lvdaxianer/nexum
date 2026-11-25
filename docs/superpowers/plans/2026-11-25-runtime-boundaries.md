@@ -76,27 +76,27 @@
 - Modify: `packages/nexum-core/src/model-probe.ts`, `packages/nexum-server/src/index.ts`
 - Test: `packages/nexum-core/test/model-probe.test.ts`, `packages/nexum-server/test/server.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 增加一个不产生 chunk 的模型，验证 Probe 在 deadline 到期后返回 `NexumModelProbeError` 的 timeout code；server probe 使用请求 signal 时可以被取消。
 
-- [ ] **Step 2: 运行 focused test 确认失败**
+- [x] **Step 2: 运行 focused test 确认失败**
 
 运行：`bun test packages/nexum-core/test/model-probe.test.ts packages/nexum-server/test/server.test.ts -t "timeout|deadline"`
 
 预期：当前 Probe 没有 deadline，测试会挂起或未按预期失败。
 
-- [ ] **Step 3: 实现最小 deadline**
+- [x] **Step 3: 实现最小 deadline**
 
 为 Probe 输入增加 `signal` 和 `timeoutMs`，在端口内部创建 deadline controller，并将 signal 传给两次模型 prompt；server 将请求取消信号和固定上限传入 Probe，超时映射到稳定 503 错误。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 运行：`bun test packages/nexum-core/test/model-probe.test.ts packages/nexum-server/test/server.test.ts`
 
 预期：Probe 正常能力测试和 timeout 测试全部通过。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 提交：`🐛 fix(core): 为模型探测增加取消和超时`
 

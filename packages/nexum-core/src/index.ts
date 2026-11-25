@@ -1484,7 +1484,7 @@ export type {
 export { NexumModelError } from "./model.js"
 export type { NexumFetch, NexumModelErrorCode, NexumModelErrorDetails } from "./model.js"
 export { createNexumModelProbePort, NexumModelProbeError } from "./model-probe.js"
-export type { NexumModelProbeMode, NexumModelProbeResult, NexumModelProbePort } from "./model-probe.js"
+export type { NexumModelProbeInput, NexumModelProbeMode, NexumModelProbeResult, NexumModelProbePort } from "./model-probe.js"
 export type {
   NexumQuestionErrorCode,
   NexumQuestionItem,
@@ -1537,7 +1537,7 @@ export type {
   McpTool,
   McpToolCall,
 } from "./mcp.js"
-export { normalizeMcpServerConfig, validateMcpServerConfig } from "./mcp.js"
+export { isUnsafeMcpHostname, normalizeMcpServerConfig, validateMcpServerConfig } from "./mcp.js"
 export { createNexumRuntime, NexumRuntimeError } from "./runtime.js"
 export type {
   NexumCapability,
