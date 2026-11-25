@@ -1365,7 +1365,27 @@ async function restoreProjectContext(
 
 /** 把未知错误转换为可安全发布到事件流的消息。 */
 function safeErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Coding Loop 执行失败"
+  if (error instanceof NexumModelError) {
+    return {
+      not_configured: "模型尚未配置",
+      authentication_failed: "模型认证失败",
+      network_error: "模型网络错误",
+      timeout: "模型响应超时",
+      rate_limited: "模型请求受限",
+      upstream_error: "模型上游服务错误",
+      invalid_request: "模型请求无效",
+      unavailable: "模型暂不可用",
+      context_overflow: "模型上下文超限",
+      invalid_response: "模型响应无效",
+    }[error.code]
+  }
+  if (error instanceof NexumRunError) {
+    return error.code === "timeout" ? "Coding Loop 运行超时" : "Session 没有可继续的上下文"
+  }
+  if (error instanceof NexumSkillInvocationError) {
+    return error.code === "skill_not_found" ? "Skill 不存在" : error.code === "skill_not_ready" ? "Skill 当前不可用" : "Skill 权限被拒绝"
+  }
+  return "Coding Loop 执行失败"
 }
 
 /** 判断 Session 是否允许进入目标状态。 */
