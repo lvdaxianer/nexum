@@ -135,7 +135,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
         const content = str(record, "content")
         reasoningChars += [...content].length
         lastReasoning += content
-        reasoningTail = [...lastReasoning].slice(-30).join("")
+        reasoningTail = [...lastReasoning].slice(-30).join("").replace(/\s+/g, " ").trim()
         if (mode === "full") {
           if (!reasoningHeaderPrinted) {
             reasoningHeaderPrinted = true

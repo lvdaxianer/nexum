@@ -150,6 +150,21 @@ test("paused tool without resume still prints a failed tool result", () => {
   renderer.close()
 })
 
+test("thinking live tail collapses newlines so frames never span multiple lines", async () => {
+  const io = memoryIO({ anim: true })
+  const renderer = createRenderer({ io })
+  renderer.event(event("assistant.thinking", { message: "正在思考" }, 1))
+  renderer.event(event("assistant.reasoning", { content: "第一行\n第二行\n第三行" }, 2))
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  // 只取动画帧(close 的 settle 行本身以 \n 结尾,不属于帧)
+  const frames = io.output().split("\r\x1b[2K").filter(Boolean)
+  renderer.close()
+  expect(frames.length).toBeGreaterThan(0)
+  // tail 折叠空白后帧内容恒为单行,\r\x1b[2K 才能整行擦除
+  for (const frame of frames) expect(frame).not.toContain("\n")
+  expect(io.plain()).toContain("第一行 第二行 第三行")
+})
+
 test("assistant text renders markdown with ansi16 caps and hides raw markers", () => {
   const io = memoryIO({ color: "ansi16" })
   const renderer = createRenderer({ io })

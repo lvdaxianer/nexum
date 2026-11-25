@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { createLiveLine, memoryIO } from "../src/io.ts"
+import { displayWidth, paint } from "../src/term.ts"
 
 test("memoryIO collects output and strips ANSI for plain assertions", () => {
   const io = memoryIO({ color: "ansi16" })
@@ -25,4 +26,38 @@ test("live line is static when animation is off", () => {
   const live = createLiveLine(io, (tick) => `⠋ 思考 ${tick}`)
   live.settle("✓ 完成")
   expect(io.plain()).toBe("✓ 完成\n")
+})
+
+test("live line truncates wide frames to columns - 1 without splitting CJK chars", async () => {
+  const io = memoryIO({ color: "none", anim: true })
+  const live = createLiveLine(io, (tick) => `帧${tick} ${"长".repeat(30)}`, 20)
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  live.cancel()
+  const frames = io.output().split("\r\x1b[2K").filter(Boolean)
+  expect(frames.length).toBeGreaterThan(0)
+  // 帧0: "帧0 " 宽 4 + 7 个 "长" 宽 14 = 18,第 8 个 "长" 会到 20 超出 18 预算,整体不劈开宽字符
+  expect(frames[0]).toBe(`帧0 ${"长".repeat(7)}…`)
+  for (const frame of frames) {
+    expect(frame).not.toContain("\n")
+    expect(displayWidth(frame)).toBeLessThanOrEqual(19)
+    expect(frame.endsWith("…")).toBe(true)
+  }
+})
+
+test("live line leaves narrow frames untouched", () => {
+  const io = memoryIO({ color: "none", anim: true })
+  const live = createLiveLine(io, () => "⠋ 思考 0", 20)
+  live.cancel()
+  expect(io.output()).toContain("⠋ 思考 0")
+  expect(io.output()).not.toContain("…")
+})
+
+test("live line truncation keeps ANSI sequences intact and resets style", () => {
+  const io = memoryIO({ color: "ansi16", anim: true })
+  const live = createLiveLine(io, () => paint(io.caps, "cyan", "x".repeat(30)), 20)
+  live.cancel()
+  const frame = io.output().split("\r\x1b[2K").filter(Boolean)[0]!
+  expect(frame).toContain("\x1b[36m")
+  expect(frame.endsWith("…\x1b[0m")).toBe(true)
+  expect(displayWidth(frame.replace(/\x1b\[[0-9;]*m/g, ""))).toBeLessThanOrEqual(19)
 })
