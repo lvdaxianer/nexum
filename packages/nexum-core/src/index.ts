@@ -1548,12 +1548,20 @@ export type {
   NexumSkillPrompt,
   NexumSkillSystemMessage,
 } from "./skill-invocation.js"
-export { NexumPluginInvocationError, parseNexumPluginMention } from "./plugin-invocation.js"
+export {
+  createNexumPluginInvocationPort,
+  NexumPluginInvocationError,
+  parseNexumPluginMention,
+  parseNexumPluginMentions,
+} from "./plugin-invocation.js"
 export type {
   NexumPluginActivationInput,
   NexumPluginActivationPort,
   NexumPluginActivationResult,
   NexumPluginInvocationErrorCode,
+  NexumPluginInvocationInput,
+  NexumPluginInvocationOptions,
+  NexumPluginInvocationPort,
   NexumPluginInvocationSource,
   NexumPluginMention,
   NexumPluginRouteDecision,

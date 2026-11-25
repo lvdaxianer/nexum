@@ -2,6 +2,7 @@
 
 import {
   createNexumCodingLoop,
+  createNexumPluginInvocationPort,
   createNexumModelProbePort,
   createNexumPermissionBroker,
   createNexumSessionService,
@@ -15,6 +16,7 @@ import {
   type NexumModelConfigStore,
   type NexumSessionService,
   type NexumSkillInvocationPort,
+  type NexumPluginInvocationPort,
   type NexumSkillRegistry,
   type HostPort,
   type McpPort,
@@ -129,6 +131,7 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly pluginRoots?: readonly string[]
   readonly pluginRegistry?: NexumApplicationPluginRegistry
   readonly pluginRuntime?: NexumPluginRuntime
+  readonly pluginInvocation?: NexumPluginInvocationPort
   readonly codingLoop?: NexumCodingLoop
   readonly capabilities?: readonly NexumCapability[]
   readonly persistence?: NexumPersistence
@@ -146,6 +149,7 @@ export interface NexumDefaultRuntime extends NexumRuntime {
   readonly skillInvocation: NexumSkillInvocationPort
   readonly pluginRegistry: NexumApplicationPluginRegistry
   readonly pluginRuntime: NexumPluginRuntime
+  readonly pluginInvocation: NexumPluginInvocationPort
   readonly permissionBroker: NexumPermissionBroker
   readonly questionPort: NexumQuestionPort
   readonly modelProbe: NexumModelProbePort
@@ -189,6 +193,10 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   })
   const plugins = options.pluginRegistry ?? createNexumPluginRegistry({ roots: options.pluginRoots ?? [] })
   const pluginRuntime = options.pluginRuntime ?? createNexumPluginRuntime({ registry: plugins })
+  const pluginInvocation = options.pluginInvocation ?? createNexumPluginInvocationPort({
+    registry: plugins,
+    activation: pluginRuntime,
+  })
   const skillInvocation = options.skillInvocation ?? createNexumSkillInvocationPort({ registry: skills, permission })
   const host = options.host ?? createLocalHostAdapter()
   const tools = createNexumToolRegistry({
@@ -251,6 +259,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     skillInvocation,
     pluginRegistry: plugins,
     pluginRuntime,
+    pluginInvocation,
     permissionBroker: permission,
     questionPort: question,
     modelProbe,

@@ -12,7 +12,7 @@
 
 ## 3. 显式与自然语言路由
 
-- [ ] 3.1 将 `@<plugin-id>` 接入 `packages/nexum-core/src/skill-invocation.ts` 旁的独立解析路径，确保独立 Skill 仍由原有解析器处理、Plugin 内部路径被拒绝；用 `packages/nexum-core/test/plugin-invocation.test.ts` 验证 mention 顺序、重复激活和稳定错误码。
+- [x] 3.1 将 `@<plugin-id>` 接入 `packages/nexum-core/src/skill-invocation.ts` 旁的独立解析路径，确保独立 Skill 仍由原有解析器处理、Plugin 内部路径被拒绝；用 `packages/nexum-core/test/plugin-invocation.test.ts` 验证 mention 顺序、重复激活和稳定错误码。
 - [ ] 3.2 在 Application/Loop 中加入模型可见的 Plugin 路由摘要与内部激活控制能力，使无 `@` 的自然语言请求能够唯一匹配并激活 Plugin，且歧义时不激活；在 `packages/nexum-core/test/run-lifecycle.test.ts` 和 Application focused test 中验证两条路径最终共用同一激活端口。
 
 ## 4. Session、Prompt 与 Tool 作用域

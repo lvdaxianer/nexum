@@ -5,7 +5,7 @@
  * @date 2026-11-25
  */
 
-import type { NexumPluginStatus, NexumPluginSummary } from "./plugin-registry.js"
+import type { NexumPluginRegistry, NexumPluginStatus, NexumPluginSummary } from "./plugin-registry.js"
 
 /** Plugin mention 在原始用户输入中的位置。 */
 export interface NexumPluginMention {
@@ -44,6 +44,23 @@ export interface NexumPluginActivationResult {
 /** 显式 @ 与自然语言路由共享的 Plugin 激活端口。 */
 export interface NexumPluginActivationPort {
   readonly activate: (input: NexumPluginActivationInput) => Promise<NexumPluginActivationResult>
+}
+
+/** Plugin 显式 mention 调用请求。 */
+export interface NexumPluginInvocationInput {
+  readonly sessionID: string
+  readonly text: string
+}
+
+/** 与独立 Skill 解析器并列的 Plugin 显式调用端口。 */
+export interface NexumPluginInvocationPort {
+  readonly resolve: (input: NexumPluginInvocationInput) => Promise<readonly NexumPluginActivationResult[]>
+}
+
+/** Plugin 显式调用端口依赖。 */
+export interface NexumPluginInvocationOptions {
+  readonly registry: Pick<NexumPluginRegistry, "list">
+  readonly activation: NexumPluginActivationPort
 }
 
 /** Plugin 命中失败的稳定错误码。 */
@@ -97,6 +114,75 @@ export function parseNexumPluginMention(
   const match = PLUGIN_MENTION.exec(text)
   if (!match) return undefined
   return createExplicitDecision(match[0], match.index ?? 0, summaries)
+}
+
+/**
+ * 解析一条输入中的全部顶层 Plugin mention。
+ *
+ * 未注册的 @mention 留给独立 Skill 解析器或其他顶层能力处理；
+ * 已注册 Plugin 的内部路径仍然稳定拒绝。
+ * @param text - 用户原始输入
+ * @param summaries - 当前可见的 Plugin 摘要
+ * @returns 按原始输入顺序排列的已注册 Plugin 命中结果
+ * @throws {NexumPluginInvocationError} mention 指向已注册 Plugin 的内部能力时抛出
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+export function parseNexumPluginMentions(
+  text: string,
+  summaries: readonly NexumPluginSummary[],
+): readonly Extract<NexumPluginRouteDecision, { readonly kind: "explicit" }>[] {
+  PLUGIN_MENTION.lastIndex = 0
+  return [...text.matchAll(PLUGIN_MENTION)].flatMap((match) => {
+    const mentionText = match[0]
+    const atIndex = mentionText.indexOf("@")
+    const pluginID = mentionText.slice(atIndex + 1).split("/")[0]
+    if (!summaries.some((item) => item.id === pluginID)) return []
+    return [createExplicitDecision(mentionText, match.index ?? 0, summaries)]
+  })
+}
+
+/**
+ * 创建只负责显式 Plugin mention 的调用端口。
+ *
+ * 同一个 Plugin 在一条输入中只激活一次，激活顺序保持 mention 首次出现顺序；
+ * 自然语言路由使用同一个激活端口但不在此处推断。
+ * @param options - Plugin 摘要 Registry 与统一激活端口
+ * @returns Plugin 显式调用端口
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+export function createNexumPluginInvocationPort(options: NexumPluginInvocationOptions): NexumPluginInvocationPort {
+  return {
+    resolve: async (input) => {
+      const summaries = await options.registry.list()
+      const decisions = deduplicatePluginDecisions(parseNexumPluginMentions(input.text, summaries))
+      return Promise.all(decisions.map((decision) => options.activation.activate({
+        sessionID: input.sessionID,
+        pluginID: decision.pluginID,
+        source: "explicit",
+      })))
+    },
+  }
+}
+
+/**
+ * 按 Plugin ID 去重显式命中，保留首次 mention 顺序。
+ *
+ * @param decisions - 原始 Plugin 命中结果
+ * @returns 去重后的 Plugin 命中结果
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+function deduplicatePluginDecisions(
+  decisions: readonly Extract<NexumPluginRouteDecision, { readonly kind: "explicit" }>[],
+): readonly Extract<NexumPluginRouteDecision, { readonly kind: "explicit" }>[] {
+  const seen = new Set<string>()
+  return decisions.filter((decision) => {
+    if (seen.has(decision.pluginID)) return false
+    seen.add(decision.pluginID)
+    return true
+  })
 }
 
 /**
