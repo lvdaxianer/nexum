@@ -32,6 +32,7 @@ import {
   type NexumPermissionPolicyStore,
   type NexumQuestionPort,
   type NexumRolePromptStore,
+  type NexumSkillRegistrationStore,
   type NexumRuntime,
   type SessionStore,
 } from "@nexum/core"
@@ -40,23 +41,15 @@ import { createNexumSkillRegistry } from "./skill-registry.ts"
 import { createNexumToolRegistry } from "./local-tools.ts"
 import { createNexumConfiguredCodingLoop } from "./configured-loop.ts"
 import {
-  createFileInteractionStore,
-  createFileMessageStore,
-  createFileModelConfigStore,
-  createFileMemory,
+  createFilePersistence,
   createFilePermissionPolicyStore,
   createFileRolePromptStore,
-  createFileSessionStore,
-  createInMemoryMemory,
+  createMemoryPersistence,
   createFileMcpCredentialStore,
   createFileMcpServerConfigStore,
-  createInMemoryMessageStore,
-  createInMemoryPermissionPolicyStore,
-  createInMemorySessionStore,
-  createNexumEventHub,
-  createNexumModelConfigStore,
-  createNexumRolePromptStore,
   type NexumEventHub,
+  type FilePersistenceOptions,
+  type NexumPersistence,
 } from "@nexum/persistence"
 import { join } from "node:path"
 import {
@@ -72,25 +65,13 @@ export { createNexumQuestionPort } from "./context.ts"
 export type { NexumQuestionPortOptions } from "./context.ts"
 export { createNexumSkillRegistry } from "./skill-registry.ts"
 export type { NexumSkillRegistryOptions } from "./skill-registry.ts"
+export type { FilePersistenceOptions, NexumPersistence } from "@nexum/persistence"
 export { createNexumToolRegistry } from "./local-tools.ts"
 export { createNexumConfiguredCodingLoop } from "./configured-loop.ts"
 export { createNexumEventHub, NexumEventStoreError } from "@nexum/persistence"
 export type { NexumEventHub, NexumEventHubOptions, NexumEventSubscriptionOptions } from "@nexum/persistence"
 
-export interface NexumRuntimeStorageOptions {
-  readonly dataDirectory?: string
-  readonly sessionFile?: string
-  readonly messageFile?: string
-  readonly interactionFile?: string
-  readonly modelConfigFile?: string
-  readonly rolePromptFile?: string
-  readonly skillRegistryFile?: string
-  readonly permissionPolicyFile?: string
-  readonly eventFile?: string
-  readonly memoryFile?: string
-  readonly mcpConfigFile?: string
-  readonly mcpCredentialFile?: string
-}
+export type NexumRuntimeStorageOptions = FilePersistenceOptions
 
 export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly toolTimeoutMs?: number
@@ -121,6 +102,8 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly skillRoots?: readonly string[]
   readonly codingLoop?: NexumCodingLoop
   readonly capabilities?: readonly NexumCapability[]
+  readonly persistence?: NexumPersistence
+  readonly skillRegistrationStore?: NexumSkillRegistrationStore
 }
 
 export interface NexumDefaultRuntime extends NexumRuntime {
@@ -138,25 +121,27 @@ export interface NexumDefaultRuntime extends NexumRuntime {
   readonly codingLoop: NexumCodingLoop
   readonly mcpReady?: Promise<void>
   readonly mcpConfigStore?: McpServerConfigStore
+  readonly persistence: NexumPersistence
 }
 
 const MCP_OAUTH_REDIRECT_URL = "http://127.0.0.1/oauth/callback"
 
 export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumDefaultRuntime {
+  const persistence = options.persistence ?? createMemoryPersistence()
   const sessions = options.sessions ?? createNexumSessionService({
-    store: options.sessionStore ?? createInMemorySessionStore(),
+    store: options.sessionStore ?? persistence.sessionStore,
     directoryValidator: createLocalDirectoryValidator(),
   })
-  const modelConfig = options.modelConfig ?? createNexumModelConfigStore()
+  const modelConfig = options.modelConfig ?? persistence.modelConfig
   const rolePrompt = options.rolePrompt ?? (options.rolePromptFile
     ? createFileRolePromptStore({ filePath: options.rolePromptFile })
-    : createNexumRolePromptStore())
-  const messageStore = options.messageStore ?? createInMemoryMessageStore()
-  const interactionStore = options.interactionStore
-  const eventHub = options.eventHub ?? createNexumEventHub()
+    : persistence.rolePrompt)
+  const messageStore = options.messageStore ?? persistence.messageStore
+  const interactionStore = options.interactionStore ?? persistence.interactionStore
+  const eventHub = options.eventHub ?? persistence.eventHub
   const permissionPolicyStore = options.permissionPolicyStore ?? (options.permissionPolicyFile
     ? createFilePermissionPolicyStore({ filePath: options.permissionPolicyFile })
-    : createInMemoryPermissionPolicyStore())
+    : persistence.permissionPolicyStore)
   const permission = options.permissionBroker ?? createNexumPermissionBroker({
     ...(interactionStore ? { interactionStore } : {}),
     policyStore: permissionPolicyStore,
@@ -164,7 +149,11 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   const question = options.questionPort ?? createNexumQuestionPort({ ...(interactionStore ? { interactionStore } : {}) })
   const skills = options.skillRegistry ?? createNexumSkillRegistry({
     roots: options.skillRoots ?? [],
-    ...(options.skillRegistryFile ? { filePath: options.skillRegistryFile } : {}),
+    ...(options.skillRegistrationStore
+      ? { registrationStore: options.skillRegistrationStore }
+      : options.skillRegistryFile
+        ? { filePath: options.skillRegistryFile }
+        : { registrationStore: persistence.skillRegistrationStore }),
   })
   const skillInvocation = options.skillInvocation ?? createNexumSkillInvocationPort({ registry: skills, permission })
   const host = options.host ?? createLocalHostAdapter()
@@ -176,7 +165,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     skillRegistry: skills,
     ...(options.mcp ? { mcp: options.mcp } : {}),
   })
-  const memory = options.memory ?? createInMemoryMemory()
+  const memory = options.memory ?? persistence.memory
   const loopOptions = {
     tool: tools.port,
     permission,
@@ -217,13 +206,14 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     sessionService: sessions,
     eventHub,
     messageStore,
-    ...(interactionStore ? { interactionStore } : {}),
+    interactionStore,
     skillRegistry: skills,
     skillInvocation,
     permissionBroker: permission,
     questionPort: question,
     modelProbe,
     codingLoop: runtimeLoop,
+    persistence,
     ...(mcpReady ? { mcpReady } : {}),
     ...(options.mcpConfigStore ? { mcpConfigStore: options.mcpConfigStore } : {}),
   })
@@ -241,33 +231,29 @@ function withMcpReady(loop: NexumCodingLoop, ready: Promise<void>): NexumCodingL
 
 export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefaultRuntime {
   const dataDirectory = options.dataDirectory ?? join(process.cwd(), ".nexum")
-  const sessionFile = options.sessionFile ?? join(dataDirectory, "sessions.json")
-  const messageFile = options.messageFile ?? join(dataDirectory, "messages.json")
-  const interactionFile = options.interactionFile ?? join(dataDirectory, "interactions.json")
-  const modelConfigFile = options.modelConfigFile ?? join(dataDirectory, "model-config.json")
-  const rolePromptFile = options.rolePromptFile ?? join(dataDirectory, "role-prompt.json")
-  const skillRegistryFile = options.skillRegistryFile ?? join(dataDirectory, "skills.json")
-  const permissionPolicyFile = options.permissionPolicyFile ?? join(dataDirectory, "permission-policies.json")
-  const eventFile = options.eventFile ?? join(dataDirectory, "events.json")
-  const memoryFile = options.memoryFile ?? join(dataDirectory, "memory.json")
-  const mcpConfigFile = options.mcpConfigFile ?? join(dataDirectory, "mcp-config.json")
-  const mcpCredentialFile = options.mcpCredentialFile ?? join(dataDirectory, "mcp-credentials.json")
+  const persistence = options.persistence ?? createFilePersistence({
+    dataDirectory,
+    sessionFile: options.sessionFile,
+    messageFile: options.messageFile,
+    interactionFile: options.interactionFile,
+    modelConfigFile: options.modelConfigFile,
+    rolePromptFile: options.rolePromptFile,
+    skillRegistryFile: options.skillRegistryFile,
+    permissionPolicyFile: options.permissionPolicyFile,
+    eventFile: options.eventFile,
+    memoryFile: options.memoryFile,
+    mcpConfigFile: options.mcpConfigFile,
+    mcpCredentialFile: options.mcpCredentialFile,
+  })
   const localMcp = options.mcp ? undefined : createLocalMcpRuntime({
     ...options,
-    mcpConfigFile,
-    mcpCredentialFile,
+    persistence,
+    mcpConfigStore: options.mcpConfigStore ?? persistence.mcpConfigStore,
+    mcpCredentialStore: options.mcpCredentialStore ?? persistence.mcpCredentialStore,
   })
   return createEmbeddedRuntime({
     ...options,
-    sessionStore: options.sessionStore ?? createFileSessionStore({ filePath: sessionFile }),
-    messageStore: options.messageStore ?? createFileMessageStore({ filePath: messageFile }),
-    interactionStore: options.interactionStore ?? createFileInteractionStore({ filePath: interactionFile }),
-    modelConfig: options.modelConfig ?? createFileModelConfigStore({ filePath: modelConfigFile }),
-    rolePromptFile,
-    skillRegistryFile,
-    eventHub: options.eventHub ?? createNexumEventHub({ filePath: eventFile }),
-    memory: options.memory ?? createFileMemory({ filePath: memoryFile }),
-    permissionPolicyFile,
+    persistence,
     ...(localMcp
       ? {
           mcp: localMcp.mcp,

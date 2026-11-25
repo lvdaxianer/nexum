@@ -1,6 +1,8 @@
 /** Nexum Core 端口的持久化实现。 */
-export { createFileInteractionStore } from "./interaction-store.ts"
+export { createFileInteractionStore, createInMemoryInteractionStore } from "./interaction-store.ts"
 export type { FileInteractionStoreOptions } from "./interaction-store.ts"
+export { createFilePersistence, createMemoryPersistence } from "./composition.ts"
+export type { FilePersistenceOptions, NexumPersistence } from "./composition.ts"
 export { createFileMessageStore, createInMemoryMessageStore } from "./message-store.ts"
 export type { FileMessageStoreOptions } from "./message-store.ts"
 export { createFileModelConfigStore, createNexumModelConfigStore } from "./model-config.ts"

@@ -5,7 +5,7 @@
  * @date 2026-11-19
  */
 
-import { createEmbeddedRuntime, type NexumDefaultRuntime } from "@nexum/application"
+import { createEmbeddedRuntime, type NexumDefaultRuntime, type NexumPersistence } from "@nexum/application"
 import {
   NexumModelConfigError,
   NexumPermissionError,
@@ -118,6 +118,7 @@ export interface NexumServerOptions {
   readonly eventHub?: NexumEventHub
   readonly corsOrigins?: readonly string[]
   readonly idleTimeout?: number
+  readonly persistence?: NexumPersistence
 }
 
 /** 已启动的 Nexum Service 控制句柄。 */
@@ -158,6 +159,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
     ...(options.codingLoop ? { codingLoop: options.codingLoop } : {}),
     ...(options.mcp ? { mcp: options.mcp } : {}),
     ...(options.mcpOAuth ? { mcpOAuth: options.mcpOAuth } : {}),
+    ...(options.persistence ? { persistence: options.persistence } : {}),
     skillRoots: options.skillRoots ?? [resolve(process.cwd(), "skills")],
   })
   const ownsRuntime = options.runtime === undefined

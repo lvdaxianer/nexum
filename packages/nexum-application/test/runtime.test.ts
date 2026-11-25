@@ -11,6 +11,7 @@ import {
   createFileMemory,
   createFileRolePromptStore,
   createInMemoryMcpServerConfigStore,
+  createMemoryPersistence,
   createInMemorySessionStore,
   createNexumModelConfigStore,
 } from "../../nexum-persistence/src/index.ts"
@@ -38,6 +39,18 @@ test("creates an embedded runtime with memory, host and event capabilities", asy
   expect(runtime.capabilities().find((item) => item.id === "memory")?.status).toBe("enabled")
   expect(runtime.capabilities().find((item) => item.id === "mcp")?.status).toBe("disabled")
   expect((await runtime.prompt({ sessionID: session.sessionID, text: "开始" })).status).toBe("completed")
+  await runtime.close()
+})
+
+test("uses an injected persistence composition for embedded runtime stores", async () => {
+  const persistence = createMemoryPersistence()
+  const runtime = createEmbeddedRuntime({ persistence })
+
+  expect(runtime.sessionService).toBeDefined()
+  expect(runtime.messageStore).toBe(persistence.messageStore)
+  expect(runtime.interactionStore).toBe(persistence.interactionStore)
+  expect(runtime.eventHub).toBe(persistence.eventHub)
+  expect(runtime.modelConfig).toBe(persistence.modelConfig)
   await runtime.close()
 })
 
