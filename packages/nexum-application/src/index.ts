@@ -193,7 +193,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
         : { registrationStore: persistence.skillRegistrationStore }),
   })
   const plugins = options.pluginRegistry ?? createNexumPluginRegistry({ roots: options.pluginRoots ?? [] })
-  const pluginRuntime = options.pluginRuntime ?? createNexumPluginRuntime({ registry: plugins })
+  const pluginRuntime = options.pluginRuntime ?? createNexumPluginRuntime({ registry: plugins, permission })
   const pluginInvocation = options.pluginInvocation ?? createNexumPluginInvocationPort({
     registry: plugins,
     activation: pluginRuntime,

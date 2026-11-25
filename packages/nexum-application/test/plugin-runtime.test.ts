@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { createEmbeddedRuntime, createNexumPluginRegistry, createNexumPluginRuntime } from "../src/index.ts"
-import type { ModelPort, NexumPluginManifest, ToolRequest } from "@nexum/core"
+import type { ModelPort, NexumPluginManifest, PermissionPort, ToolRequest } from "@nexum/core"
 
 const directories: string[] = []
 
@@ -61,7 +61,8 @@ test("closes mounted plugins with the embedded runtime", async () => {
   const registry = createNexumPluginRegistry({
     source: { discover: async () => [{ address: fixture.root, entryPath: fixture.entry, manifest }] },
   })
-  const runtime = createEmbeddedRuntime({ pluginRegistry: registry })
+  const pluginRuntime = createNexumPluginRuntime({ registry, permission: { evaluate: async () => "allow" } })
+  const runtime = createEmbeddedRuntime({ pluginRegistry: registry, pluginRuntime })
 
   await runtime.pluginInvocation.resolve({ sessionID: "session-1", text: "@crm 查询订单" })
   await runtime.close()
@@ -77,7 +78,8 @@ test("routes a unique natural-language request through the same activation port"
   const registry = createNexumPluginRegistry({
     source: { discover: async () => [{ address: fixture.root, entryPath: fixture.entry, manifest }] },
   })
-  const runtime = createEmbeddedRuntime({ pluginRegistry: registry })
+  const pluginRuntime = createNexumPluginRuntime({ registry, permission: { evaluate: async () => "allow" } })
+  const runtime = createEmbeddedRuntime({ pluginRegistry: registry, pluginRuntime })
 
   await expect(runtime.pluginInvocation.resolve({ sessionID: "session-1", text: "请查询订单" })).resolves.toEqual([
     { pluginID: "crm", status: "active", source: "automatic" },
@@ -122,7 +124,8 @@ test("adds plugin tools to the model only after the Session activates the plugin
       yield { type: "completed" }
     },
   }
-  const runtime = createEmbeddedRuntime({ pluginRegistry: registry, model })
+  const pluginRuntime = createNexumPluginRuntime({ registry, permission: { evaluate: async () => "allow" } })
+  const runtime = createEmbeddedRuntime({ pluginRegistry: registry, pluginRuntime, model })
   const session = await runtime.sessions.create({ directory: fixture.root })
 
   await runtime.prompt({ sessionID: session.sessionID, text: "写一首诗" })
@@ -131,6 +134,27 @@ test("adds plugin tools to the model only after the Session activates the plugin
   expect(toolNames[0]?.some((name) => name.startsWith("plugin__"))).toBe(false)
   expect(toolNames[1]).toContain("plugin__crm__order_query")
   await runtime.close()
+})
+
+test("does not execute a plugin entry when activation permission is denied", async () => {
+  const fixture = await createMountFixture()
+  const registry = createNexumPluginRegistry({
+    source: { discover: async () => [{ address: fixture.root, entryPath: fixture.entry, manifest }] },
+  })
+  const permission: PermissionPort = {
+    async evaluate(request) {
+      expect(request).toMatchObject({ action: "plugin.activate", resource: "crm" })
+      return "deny"
+    },
+  }
+  const runtime = createNexumPluginRuntime({ registry, permission })
+
+  await expect(runtime.activate({ sessionID: "session-1", pluginID: "crm", source: "explicit" })).rejects.toMatchObject({
+    code: "plugin_permission_denied",
+    pluginID: "crm",
+  })
+  await expect(runtime.listActive("session-1")).resolves.toEqual([])
+  await expect(Bun.file(fixture.marker).text()).rejects.toThrow()
 })
 
 async function createMountFixture(prefix = "") {
