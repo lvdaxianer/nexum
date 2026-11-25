@@ -8,7 +8,7 @@
 ## 2. Application Registry 与 Loader
 
 - [x] 2.1 在 `packages/nexum-application/src/plugin-registry.ts` 实现 Manifest 来源扫描、校验、摘要注册和懒加载；使用测试 Fixture 验证未激活 Plugin 不执行入口、激活失败不挂载能力，并运行 `cd packages/nexum-application && bun test test/plugin-registry.test.ts`。
-- [ ] 2.2 将 Plugin Registry 注入 `packages/nexum-application/src/index.ts` 的 Runtime 组合器，增加 Plugin 的 active scope、mount/unmount 和稳定诊断；扩展 Application runtime 测试，运行 `cd packages/nexum-application && bun test test/plugin-registry.test.ts test/runtime.test.ts`。
+- [x] 2.2 将 Plugin Registry 注入 `packages/nexum-application/src/index.ts` 的 Runtime 组合器，增加 Plugin 的 active scope、mount/unmount 和稳定诊断；扩展 Application runtime 测试，运行 `cd packages/nexum-application && bun test test/plugin-registry.test.ts test/runtime.test.ts`。
 
 ## 3. 显式与自然语言路由
 
