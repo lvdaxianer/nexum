@@ -651,16 +651,12 @@ function App() {
     setPolicyError("")
     try {
       const global = policyRules().filter((rule) => rule.scope === "global")
-      for (const rule of global) {
-        await requestPermissionPolicy<{ id: string; deleted: boolean }>(
-          `/api/nexum/permission/policy/${encodeURIComponent(rule.id)}`,
-          { method: "DELETE" },
-        )
-      }
+      await Promise.all(global.map((rule) => requestPermissionPolicy<{ id: string; deleted: boolean }>(
+        `/api/nexum/permission/policy/${encodeURIComponent(rule.id)}`,
+        { method: "DELETE" },
+      )))
       if (mode !== "ask") await createPermissionPolicyRule(anyToolAction, "allow")
-      if (mode === "balanced") {
-        for (const resource of dangerousAskResources) await createPermissionPolicyRule(resource, "ask")
-      }
+      if (mode === "balanced") await Promise.all(dangerousAskResources.map((resource) => createPermissionPolicyRule(resource, "ask")))
       await loadPermissionPolicy()
       setNotice(`权限模式已切换：${permissionModeOptions.find((option) => option.value === mode)?.label ?? mode}`)
       setPolicyPopoverOpen(false)

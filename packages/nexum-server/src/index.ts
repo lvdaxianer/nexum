@@ -2072,7 +2072,7 @@ async function createSession(
     )
   } catch (error) {
     if (error instanceof NexumSessionError && error.code === "invalid_directory") {
-      return errorResponse(400, "NEXUM_INVALID_DIRECTORY", "工作目录无效", traceId)
+      return errorResponse(400, "NEXUM_INVALID_DIRECTORY", "工作目录不存在或不可读写", traceId)
     }
     return errorResponse(500, "NEXUM_SESSION_CREATE_FAILED", "Session 创建失败", traceId)
   }
