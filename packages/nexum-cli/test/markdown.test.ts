@@ -150,6 +150,43 @@ test("fence state survives chunk splits and resets on flush", () => {
   expect(chunks.join("")).toContain("\x1b[1mx\x1b[0m\n")
 })
 
+test("long tail wrapping to multiple visual rows erases every row", () => {
+  const chunks: string[] = []
+  const md = createMarkdownStream(ansi16, (text) => chunks.push(text), 20)
+  const longLine = "这是一段超过终端宽度的长句子用于验证擦除" // 20 CJK = 40 列,+▍ = 41 → 3 行
+  md.push(longLine.slice(0, 10))
+  md.push(longLine.slice(10))
+  md.push("\n")
+  expect(chunks[3]).toBe("\r\x1b[2K" + "\x1b[1A\r\x1b[2K".repeat(2))
+  expect(chunks[4]).toBe(`${longLine}\n`)
+  expect(chunks.join("").split(`${longLine}\n`).length - 1).toBe(1)
+  expect(md.pending).toBe(false)
+})
+
+test("tail erase row count respects the column boundary", () => {
+  // 19 列 + ▍ = 20 = columns → 终端延迟换行,仍占 1 行
+  const exact: string[] = []
+  const md1 = createMarkdownStream(ansi16, (text) => exact.push(text), 20)
+  md1.push("一二三四五六七八九a")
+  md1.push("\n")
+  expect(exact[1]).toBe("\r\x1b[2K")
+  // 20 列 + ▍ = 21 > columns → 占 2 行
+  const over: string[] = []
+  const md2 = createMarkdownStream(ansi16, (text) => over.push(text), 20)
+  md2.push("一二三四五六七八九十")
+  md2.push("\n")
+  expect(over[1]).toBe("\r\x1b[2K\x1b[1A\r\x1b[2K")
+})
+
+test("short tail still erases a single row with injected columns", () => {
+  const chunks: string[] = []
+  const md = createMarkdownStream(ansi16, (text) => chunks.push(text), 20)
+  md.push("短行")
+  md.push("完成\n")
+  expect(chunks[1]).toBe("\r\x1b[2K")
+  expect(chunks[2]).toBe("短行完成\n")
+})
+
 test("renderMarkdownText renders a full document line by line", () => {
   const doc = "# Nexum\n\n- **快** 且 *轻*\n> 引用\n\n```\nplain\n```\n尾行"
   expect(renderMarkdownText(ansi16, doc)).toEqual([

@@ -1,6 +1,6 @@
 /** Markdown → ANSI 渲染:按行缓冲,未完成半行先原样显示,行完成时擦除重渲;非 TTY 原样透传。 */
 
-import { paint, style, type TermCaps } from "./term"
+import { displayWidth, paint, style, type TermCaps } from "./term"
 
 export type MarkdownSink = (text: string) => void
 
@@ -22,8 +22,8 @@ export function renderMarkdownText(caps: TermCaps, text: string): string[] {
   })
 }
 
-/** 流式渲染器:完整行即时渲染;fence 标记行不输出。 */
-export function createMarkdownStream(caps: TermCaps, sink: MarkdownSink): MarkdownStream {
+/** 流式渲染器:完整行即时渲染;fence 标记行不输出。columns 缺省在擦除时读 process.stdout.columns。 */
+export function createMarkdownStream(caps: TermCaps, sink: MarkdownSink, columns?: number): MarkdownStream {
   if (caps.color === "none") {
     return {
       push: (chunk) => sink(chunk),
@@ -37,7 +37,11 @@ export function createMarkdownStream(caps: TermCaps, sink: MarkdownSink): Markdo
 
   function eraseTail() {
     if (!tailShown) return
-    sink("\r\x1b[2K")
+    // tail(原始 pending + 宽 1 的 ▍)超宽自动换行占多行,需逐行上清;恰满列时终端延迟换行仍算 1 行
+    const cols = columns ?? process.stdout.columns ?? 80
+    const width = displayWidth(pending) + 1
+    const rows = width <= cols ? 1 : Math.ceil(width / cols)
+    sink("\r\x1b[2K" + "\x1b[1A\r\x1b[2K".repeat(rows - 1))
     tailShown = false
   }
 

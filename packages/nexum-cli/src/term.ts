@@ -56,6 +56,28 @@ export function paint(caps: TermCaps, color: SemanticColor, text: string): strin
   return style(caps, [color], text)
 }
 
+/** 终端显示宽度:ASCII 计 1,CJK 等宽字符计 2(常用宽字符区间,同 wcwidth 主表)。 */
+export function displayWidth(text: string): number {
+  let width = 0
+  for (const ch of text) {
+    width += isWideChar(ch.codePointAt(0) ?? 0) ? 2 : 1
+  }
+  return width
+}
+
+function isWideChar(code: number): boolean {
+  return (
+    (code >= 0x1100 && code <= 0x115f) ||
+    (code >= 0x2e80 && code <= 0xa4cf && code !== 0x303f) ||
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xfe30 && code <= 0xfe6f) ||
+    (code >= 0xff00 && code <= 0xff60) ||
+    (code >= 0xffe0 && code <= 0xffe6) ||
+    (code >= 0x20000 && code <= 0x3fffd)
+  )
+}
+
 type Rgb = readonly [number, number, number]
 
 function hexToRgb(hex: string): Rgb {

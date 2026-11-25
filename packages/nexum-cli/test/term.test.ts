@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { detectCaps, gradient, paint, style } from "../src/term.ts"
+import { detectCaps, displayWidth, gradient, paint, style } from "../src/term.ts"
 
 test("detectCaps returns static mode for NO_COLOR, dumb term and non-TTY", () => {
   expect(detectCaps({ env: { NO_COLOR: "1" }, isTTY: true })).toEqual({ isTTY: true, color: "none", anim: false, theme: "dark" })
@@ -27,6 +27,15 @@ test("paint and style emit ANSI codes only when color is enabled", () => {
   expect(paint(none, "green", "完成")).toBe("完成")
   expect(paint(ansi16, "green", "完成")).toBe("\x1b[32m完成\x1b[0m")
   expect(style(ansi16, ["cyan", "bold"], "思考")).toBe("\x1b[36;1m思考\x1b[0m")
+})
+
+test("displayWidth counts ASCII as 1 and CJK wide chars as 2", () => {
+  expect(displayWidth("")).toBe(0)
+  expect(displayWidth("abc")).toBe(3)
+  expect(displayWidth("你好")).toBe(4)
+  expect(displayWidth("a你b世")).toBe(6)
+  expect(displayWidth("▍")).toBe(1)
+  expect(displayWidth("•")).toBe(1)
 })
 
 test("gradient degrades by color level", () => {
