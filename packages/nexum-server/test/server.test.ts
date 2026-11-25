@@ -82,7 +82,8 @@ test("uses SQLite by default and restores sessions after a server restart", asyn
   servers.push(second)
   const restored = await fetch(new URL("/api/nexum/session", second.url))
   expect(restored.status).toBe(200)
-  expect((await restored.json()).data).toHaveLength(1)
+  const restoredBody = (await restored.json()) as { data: readonly unknown[] }
+  expect(restoredBody.data).toHaveLength(1)
 })
 
 test("uses an injected persistence composition when creating the server runtime", async () => {
