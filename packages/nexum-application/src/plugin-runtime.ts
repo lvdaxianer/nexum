@@ -10,6 +10,7 @@ import {
   type NexumPluginActivationInput,
   type NexumPluginActivationPort,
   type NexumPluginActivationResult,
+  type PermissionPort,
   type ToolRequest,
   type ToolResult,
 } from "@nexum/core"
@@ -72,6 +73,7 @@ export class NexumPluginRuntimeError extends Error {
 /** Plugin 作用域运行时配置。 */
 export interface NexumPluginRuntimeOptions {
   readonly registry: NexumApplicationPluginRegistry
+  readonly permission?: PermissionPort
 }
 
 /** Plugin 作用域运行时端口。 */
@@ -118,6 +120,7 @@ export function createNexumPluginRuntime(options: NexumPluginRuntimeOptions): Ne
     if (current) return { pluginID: input.pluginID, status: "active", source: input.source }
     const plugin = await options.registry.get(input.pluginID)
     const available = assertPluginAvailable(plugin, input)
+    await requestPluginPermission(options.permission, input)
     const mount = await mountPlugin(available, input)
     const sessionScope = scopes.get(input.sessionID) ?? new Map<string, ActivePlugin>()
     sessionScope.set(input.pluginID, {
@@ -206,6 +209,33 @@ function assertPluginAvailable(
     throw new NexumPluginInvocationError("plugin_not_ready", `Plugin 不可激活: ${input.pluginID}`, input.pluginID)
   }
   return plugin
+}
+
+/**
+ * 在动态入口执行前请求 Plugin 激活权限。
+ *
+ * @param permission - 可选宿主权限端口
+ * @param input - 激活请求
+ * @returns 权限允许后的完成 Promise
+ * @throws {NexumPluginInvocationError} 权限拒绝或需要审批时抛出
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-25
+ */
+async function requestPluginPermission(
+  permission: PermissionPort | undefined,
+  input: NexumPluginActivationInput,
+): Promise<void> {
+  if (!permission) return
+  const effect = await permission.evaluate({
+    sessionID: input.sessionID,
+    toolName: "plugin.activate",
+    action: "plugin.activate",
+    resource: input.pluginID,
+    input: { pluginID: input.pluginID },
+  })
+  if (effect !== "allow") {
+    throw new NexumPluginInvocationError("plugin_permission_denied", `Plugin 权限被拒绝: ${input.pluginID}`, input.pluginID)
+  }
 }
 
 /**
