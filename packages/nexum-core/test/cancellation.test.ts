@@ -130,7 +130,7 @@ test("marks model failures as terminal failed sessions", async () => {
   const events: Array<{ type: string; data?: Record<string, unknown> }> = []
   const model: ModelPort = {
     async *prompt() {
-      throw new Error("模型不可达")
+      throw new Error("internal provider path /secret")
     },
   }
   const tool: ToolPort = {
@@ -150,12 +150,12 @@ test("marks model failures as terminal failed sessions", async () => {
   }
   const loop = createNexumCodingLoop({ model, tool, permission, sessions, events: eventSink })
 
-  await expect(loop.run({ sessionID: session.sessionID, text: "测试失败" })).rejects.toThrow("模型不可达")
+  await expect(loop.run({ sessionID: session.sessionID, text: "测试失败" })).rejects.toThrow("internal provider path /secret")
 
   expect((await sessions.get(session.sessionID))?.status).toBe("failed")
   expect(events).toEqual([
     { type: "model.attempt", data: { attempt: 1, maxRetries: 2 } },
-    { type: "session.failed", data: { message: "模型不可达" } },
+    { type: "session.failed", data: { message: "Coding Loop 执行失败" } },
     { type: "run.settled", data: { result: "failed" } },
   ])
   await rm(directory, { recursive: true, force: true })
