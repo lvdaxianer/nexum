@@ -1548,6 +1548,16 @@ export type {
   NexumSkillPrompt,
   NexumSkillSystemMessage,
 } from "./skill-invocation.js"
+export { NexumPluginInvocationError, parseNexumPluginMention } from "./plugin-invocation.js"
+export type {
+  NexumPluginActivationInput,
+  NexumPluginActivationPort,
+  NexumPluginActivationResult,
+  NexumPluginInvocationErrorCode,
+  NexumPluginInvocationSource,
+  NexumPluginMention,
+  NexumPluginRouteDecision,
+} from "./plugin-invocation.js"
 export type { MemoryItem, MemoryPort, MemoryQuery } from "./memory.js"
 export type { HostPort, HostReadInput, HostShellInput, HostWriteInput } from "./host.js"
 export { McpError, createMcpRegistry } from "./mcp.js"

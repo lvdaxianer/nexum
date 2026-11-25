@@ -3,7 +3,7 @@
 ## 1. Core Plugin 契约
 
 - [x] 1.1 在 `packages/nexum-core/src/plugin-registry.ts` 定义 Plugin Manifest、顶层注册摘要、状态、导出能力、Registry 和生命周期端口；先为 Manifest 必填字段、重复 ID、无效导出和状态转换编写 `packages/nexum-core/test/plugin-registry.test.ts` 的失败测试，并以 `cd packages/nexum-core && bun test test/plugin-registry.test.ts` 验证。
-- [ ] 1.2 在 `packages/nexum-core/src/plugin-invocation.ts` 定义显式 Plugin 激活、自然语言路由结果、激活错误和统一 `PluginActivationPort`；为显式优先、唯一自然语言候选、歧义不激活和内部能力不支持独立 `@` 编写 `packages/nexum-core/test/plugin-invocation.test.ts`，以同一 focused test 验证 RED/GREEN。
+- [x] 1.2 在 `packages/nexum-core/src/plugin-invocation.ts` 定义显式 Plugin 激活、自然语言路由结果、激活错误和统一 `PluginActivationPort`；为显式优先、唯一自然语言候选、歧义不激活和内部能力不支持独立 `@` 编写 `packages/nexum-core/test/plugin-invocation.test.ts`，以同一 focused test 验证 RED/GREEN。
 
 ## 2. Application Registry 与 Loader
 
