@@ -11,6 +11,7 @@ const config: McpServerConfig = {
 test("uses the official MCP client for initialize, catalog discovery, calls, and close", async () => {
   const requests: string[] = []
   const connector = createMcpSdkConnector({
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
     fetch: async (_input, init) => {
       const body = JSON.parse(String(init?.body)) as { method: string; id?: number }
       requests.push(body.method)
@@ -53,6 +54,16 @@ test("uses the official MCP client for initialize, catalog discovery, calls, and
   expect(requests).toContain("initialize")
   expect(requests).toContain("tools/list")
   expect(requests).toContain("tools/call")
+})
+
+test("rejects an MCP connection when DNS resolves to a local address", async () => {
+  const connector = createMcpSdkConnector({
+    lookup: async () => [{ address: "127.0.0.1", family: 4 }],
+  })
+
+  await expect(connector.connect({ ...config, url: "https://public.example.test/mcp" }, new AbortController().signal)).rejects.toMatchObject({
+    code: "invalid_config",
+  })
 })
 
 test("persists OAuth provider tokens and supports redirect URL fallback state", async () => {

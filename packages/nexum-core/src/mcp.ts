@@ -438,10 +438,35 @@ function parseMcpUrl(value: string): URL {
     const url = new URL(value.trim())
     if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error()
     if (url.username || url.password) throw new Error()
+    if (url.search || url.hash || isUnsafeMcpHostname(url.hostname)) throw new Error()
     return url
   } catch {
     throw new McpError("invalid_config", "MCP Server URL 必须是合法的 HTTP(S) 地址")
   }
+}
+
+export function isUnsafeMcpHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "")
+  if (normalized === "localhost" || normalized.endsWith(".localhost") || normalized === "metadata" || normalized === "metadata.google.internal") return true
+
+  const ipv4 = parseIpv4(normalized)
+  if (ipv4) {
+    const [first, second] = ipv4
+    return first === 0 || first === 10 || first === 127 || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168) || (first === 100 && second >= 64 && second <= 127) || first >= 224
+  }
+
+  if (!normalized.includes(":")) return false
+  const mappedIpv4 = normalized.match(/(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1]
+  if (mappedIpv4 && isUnsafeMcpHostname(mappedIpv4)) return true
+  const firstBlock = normalized.split(":")[0] ?? ""
+  return normalized === "::" || normalized === "::1" || normalized.startsWith("::ffff:") || firstBlock.startsWith("fc") || firstBlock.startsWith("fd") || firstBlock.startsWith("fe8") || firstBlock.startsWith("fe9") || firstBlock.startsWith("fea") || firstBlock.startsWith("feb") || firstBlock.startsWith("ff")
+}
+
+function parseIpv4(value: string): readonly [number, number, number, number] | undefined {
+  const parts = value.split(".")
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part))) return undefined
+  const octets = parts.map(Number)
+  return octets.every((octet) => octet >= 0 && octet <= 255) ? [octets[0]!, octets[1]!, octets[2]!, octets[3]!] : undefined
 }
 
 function snapshot(config: McpServerConfig, status: McpServerStatus): McpServer {

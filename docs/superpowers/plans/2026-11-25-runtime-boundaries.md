@@ -106,27 +106,27 @@
 - Modify: `packages/nexum-core/src/mcp.ts`
 - Test: `packages/nexum-core/test/mcp.test.ts`, `packages/nexum-server/test/mcp-api.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 增加 localhost、127.0.0.1、私有网段、链路本地地址、userinfo、query 和 fragment 的拒绝测试。
 
-- [ ] **Step 2: 运行 focused test 确认失败**
+- [x] **Step 2: 运行 focused test 确认失败**
 
 运行：`bun test packages/nexum-core/test/mcp.test.ts packages/nexum-server/test/mcp-api.test.ts -t "private|userinfo|query|fragment"`
 
 预期：当前实现只拒绝非 HTTP(S) 和 userinfo，其他场景会通过。
 
-- [ ] **Step 3: 实现 URL 校验**
+- [x] **Step 3: 实现 URL 校验**
 
 在配置归一化边界拒绝明确的本地/私网/元数据主机和 query/fragment；保留公共 HTTP(S) MCP 的现有行为。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 运行：`bun test packages/nexum-core/test/mcp.test.ts packages/nexum-server/test/mcp-api.test.ts`
 
 预期：MCP 生命周期、持久化和拒绝场景全部通过。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 提交：`🐛 fix(core): 拒绝不安全的 MCP 地址`
 

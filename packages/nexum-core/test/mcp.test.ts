@@ -37,6 +37,25 @@ test("registers remote servers and rejects invalid or duplicate definitions", as
   await expect(registry.register(config)).rejects.toMatchObject({ code: "server_exists" })
 })
 
+test("rejects MCP URLs that can target local resources or carry hidden state", async () => {
+  const registry = createMcpRegistry({ connector: { connect: async () => connection() }, autoConnect: false })
+  const unsafeUrls = [
+    "http://localhost:8080/mcp",
+    "http://127.0.0.1:8080/mcp",
+    "http://10.0.0.1/mcp",
+    "http://[::1]/mcp",
+    "http://[fc00::1]/mcp",
+    "http://[::ffff:127.0.0.1]/mcp",
+    "https://user:password@example.com/mcp",
+    "https://example.com/mcp?token=secret",
+    "https://example.com/mcp#fragment",
+  ]
+
+  for (const [index, url] of unsafeUrls.entries()) {
+    await expect(registry.register({ ...config, id: `unsafe-${index}`, url })).rejects.toMatchObject({ code: "invalid_config" })
+  }
+})
+
 test("connects once, exposes a connected snapshot, and delegates MCP operations", async () => {
   let calls = 0
   const tools = [{ name: "search", description: "Search", inputSchema: { type: "object" } }]

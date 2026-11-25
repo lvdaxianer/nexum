@@ -1,22 +1,28 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { lookup } from "node:dns/promises"
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js"
-import { McpError, type McpConnection, type McpConnector, type McpServerConfig, type McpToolCall, type ToolResult } from "@nexum/core"
+import { isUnsafeMcpHostname, McpError, type McpConnection, type McpConnector, type McpServerConfig, type McpToolCall, type ToolResult } from "@nexum/core"
 
 export interface McpSdkConnectorOptions {
   readonly clientName?: string
   readonly clientVersion?: string
   readonly fetch?: FetchLike
+  readonly lookup?: McpLookup
   readonly oauth?: (config: McpServerConfig) => OAuthClientProvider | undefined
   readonly onAuthorizationRequired?: (config: McpServerConfig) => void | Promise<void>
 }
+
+type McpLookup = (hostname: string, options: { readonly all: true; readonly verbatim: true }) => Promise<readonly { readonly address: string; readonly family: number }[]>
 
 /** 使用官方 MCP TypeScript SDK 创建远程 Streamable HTTP 连接。 */
 export function createMcpSdkConnector(options: McpSdkConnectorOptions = {}): McpConnector {
   return {
     async connect(config, signal) {
+      const resolveHost: McpLookup = options.lookup ?? ((hostname, lookupOptions) => lookup(hostname, lookupOptions))
+      await assertSafeMcpTarget(config, resolveHost)
       const toolsChanged = new Set<() => void>()
       const closed = new Set<() => void>()
       const client = new Client(
@@ -60,6 +66,24 @@ export function createMcpSdkConnector(options: McpSdkConnectorOptions = {}): Mcp
         throw error
       }
     },
+  }
+}
+
+async function assertSafeMcpTarget(config: McpServerConfig, resolveHost: McpLookup): Promise<void> {
+  let url: URL
+  try {
+    url = new URL(config.url)
+  } catch {
+    throw new McpError("invalid_config", "MCP Server URL 无效")
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new McpError("invalid_config", "MCP Server URL 必须是 HTTP(S) 地址")
+  if (url.username || url.password || url.search || url.hash || isUnsafeMcpHostname(url.hostname)) {
+    throw new McpError("invalid_config", "MCP Server URL 不允许访问本地资源或携带隐藏状态")
+  }
+  const addresses = await resolveHost(url.hostname, { all: true, verbatim: true }).catch(() => [])
+  if (addresses.length === 0) throw new McpError("connection_failed", "MCP Server 地址无法解析")
+  if (addresses.some((address) => isUnsafeMcpHostname(address.address))) {
+    throw new McpError("invalid_config", "MCP Server URL 不允许访问本地资源")
   }
 }
 
