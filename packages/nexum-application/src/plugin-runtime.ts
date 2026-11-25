@@ -10,26 +10,24 @@ import {
   type NexumPluginActivationInput,
   type NexumPluginActivationPort,
   type NexumPluginActivationResult,
+  type ToolRequest,
+  type ToolResult,
 } from "@nexum/core"
 import type { NexumApplicationPluginRegistry, NexumApplicationPluginPackage } from "./plugin-registry.ts"
-
-/** Plugin 入口收到的 Session 作用域上下文。 */
-export interface NexumPluginMountContext {
-  readonly sessionID: string
-  readonly pluginID: string
-  readonly source: "explicit" | "automatic"
-}
-
-/** Plugin 入口成功挂载后交给宿主的能力和卸载函数。 */
-export interface NexumPluginMount {
-  readonly capabilities: readonly string[]
-  readonly unmount: () => Promise<void>
-}
-
-/** Plugin 入口模块的最小实现约定。 */
-export interface NexumPluginEntrypoint {
-  readonly mount: (context: NexumPluginMountContext) => Promise<NexumPluginMount>
-}
+import {
+  createNexumPluginActiveTools,
+  normalizeNexumPluginMount,
+  type NexumPluginActiveTool,
+  type NexumPluginEntrypoint,
+  type NexumPluginMount,
+} from "./plugin-mount.ts"
+export type {
+  NexumPluginEntrypoint,
+  NexumPluginMount,
+  NexumPluginMountContext,
+  NexumPluginTool,
+} from "./plugin-mount.ts"
+export { normalizeNexumPluginMount } from "./plugin-mount.ts"
 
 /** 当前 Session 已挂载的 Plugin 快照。 */
 export interface NexumActivePlugin {
@@ -80,12 +78,15 @@ export interface NexumPluginRuntimeOptions {
 export interface NexumPluginRuntime extends NexumPluginActivationPort {
   readonly deactivate: (input: { readonly sessionID: string; readonly pluginID: string }) => Promise<void>
   readonly listActive: (sessionID: string) => Promise<readonly NexumActivePlugin[]>
+  readonly listTools: (sessionID: string) => Promise<readonly NexumPluginActiveTool["definition"][]>
+  readonly executeTool: (request: ToolRequest) => Promise<ToolResult | undefined>
   readonly listDiagnostics: () => Promise<readonly NexumPluginRuntimeDiagnostic[]>
   readonly close: () => Promise<void>
 }
 
 interface ActivePlugin extends NexumActivePlugin {
   readonly mount: NexumPluginMount
+  readonly tools: readonly NexumPluginActiveTool[]
 }
 
 /**
@@ -105,6 +106,9 @@ export function createNexumPluginRuntime(options: NexumPluginRuntimeOptions): Ne
     activate,
     deactivate,
     listActive: async (sessionID) => [...(scopes.get(sessionID)?.values() ?? [])].map(copyActivePlugin),
+    listTools: async (sessionID) => [...(scopes.get(sessionID)?.values() ?? [])]
+      .flatMap((plugin) => plugin.tools.map((tool) => tool.definition)),
+    executeTool: async (request) => executePluginTool(request),
     listDiagnostics: async () => diagnostics.map((item) => ({ ...item })),
     close: async () => closeScopes(),
   }
@@ -121,6 +125,7 @@ export function createNexumPluginRuntime(options: NexumPluginRuntimeOptions): Ne
       pluginID: input.pluginID,
       capabilities: [...mount.capabilities],
       mount,
+      tools: createNexumPluginActiveTools(input.pluginID, mount.tools ?? []),
     })
     scopes.set(input.sessionID, sessionScope)
     return { pluginID: input.pluginID, status: "active", source: input.source }
@@ -150,6 +155,12 @@ export function createNexumPluginRuntime(options: NexumPluginRuntimeOptions): Ne
     await Promise.all(active.map((plugin) => deactivate(plugin)))
   }
 
+  async function executePluginTool(request: ToolRequest): Promise<ToolResult | undefined> {
+    const tools = [...(scopes.get(request.sessionID)?.values() ?? [])].flatMap((plugin) => plugin.tools)
+    const tool = tools.find((item) => item.name === request.toolName)
+    return tool ? tool.execute(request) : undefined
+  }
+
   async function mountPlugin(
     plugin: NexumApplicationPluginPackage,
     input: NexumPluginActivationInput,
@@ -161,7 +172,7 @@ export function createNexumPluginRuntime(options: NexumPluginRuntimeOptions): Ne
         pluginID: input.pluginID,
         source: input.source,
       })
-      return requireMount(mount, input)
+      return normalizeNexumPluginMount(mount)
     } catch (error) {
       if (error instanceof NexumPluginRuntimeError) throw error
       diagnostics.push({ code: "plugin_mount_failed", pluginID: input.pluginID, sessionID: input.sessionID })
@@ -173,29 +184,6 @@ export function createNexumPluginRuntime(options: NexumPluginRuntimeOptions): Ne
       )
     }
   }
-}
-
-/**
- * 校验入口返回的挂载句柄，避免不完整能力进入 active scope。
- *
- * @param mount - Plugin 入口返回的未知挂载值
- * @param input - 激活请求
- * @returns 经过校验的挂载句柄
- * @throws {NexumPluginRuntimeError} 挂载值缺少能力列表或卸载函数时抛出
- * @author lvdaxianer@yeah.net
- * @date 2026-11-25
- */
-function requireMount(mount: unknown, input: NexumPluginActivationInput): NexumPluginMount {
-  if (!isRecord(mount) || !isStringArray(mount.capabilities) || typeof mount.unmount !== "function") {
-    throw new NexumPluginRuntimeError(
-      "plugin_mount_failed",
-      `Plugin 挂载结果无效: ${input.pluginID}`,
-      input.pluginID,
-      input.sessionID,
-    )
-  }
-  const unmount = mount.unmount as unknown as () => Promise<unknown>
-  return { capabilities: [...mount.capabilities], unmount: async () => void (await unmount()) }
 }
 
 /**
@@ -266,16 +254,4 @@ function copyActivePlugin(plugin: ActivePlugin): NexumActivePlugin {
  */
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input)
-}
-
-/**
- * 判断值是否为字符串数组。
- *
- * @param input - 未知输入
- * @returns 是否为只包含字符串的数组
- * @author lvdaxianer@yeah.net
- * @date 2026-11-25
- */
-function isStringArray(input: unknown): input is readonly string[] {
-  return Array.isArray(input) && input.every((item) => typeof item === "string")
 }

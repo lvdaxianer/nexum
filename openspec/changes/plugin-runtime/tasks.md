@@ -17,7 +17,7 @@
 
 ## 4. Session、Prompt 与 Tool 作用域
 
-- [ ] 4.1 在 `packages/nexum-core/src/runtime.ts`、`packages/nexum-core/src/tools.ts` 和 `packages/nexum-application/src/configured-loop.ts` 接入 Plugin active scope，使激活后的内部 Skill、Function、Workflow 和 Hook 只对当前 Session 可见；以 `packages/nexum-core/test/tools.test.ts` 和 `packages/nexum-core/test/session.test.ts` 验证未激活能力不可见、激活后可调用。
+- [x] 4.1 在 `packages/nexum-core/src/runtime.ts`、`packages/nexum-core/src/tools.ts` 和 `packages/nexum-application/src/configured-loop.ts` 接入 Plugin active scope，使激活后的内部 Skill、Function、Workflow 和 Hook 只对当前 Session 可见；以 `packages/nexum-core/test/tools.test.ts` 和 `packages/nexum-core/test/session.test.ts` 验证未激活能力不可见、激活后可调用。
 - [ ] 4.2 复用现有 Permission、Event、取消和错误边界，验证拒绝激活不执行 Plugin 代码，停用撤销注册并终结自有任务；运行 `cd packages/nexum-core && bun test test/plugin-invocation.test.ts test/tools.test.ts test/run-lifecycle.test.ts`。
 
 ## 5. Protocol、Server 与 Client 控制面

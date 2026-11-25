@@ -407,6 +407,7 @@ export interface NexumCodingLoopOptions {
   readonly events: EventSink
   readonly messageStore: MessageStore
   readonly tools?: readonly ModelToolDefinition[]
+  readonly toolDefinitions?: (sessionID: string) => Promise<readonly ModelToolDefinition[]>
   readonly contextCompaction?: ContextCompactionPort
   readonly projectContext?: ProjectContextPort
   readonly question?: NexumQuestionPort
@@ -586,6 +587,9 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       // 用户输入先进入 canonical 历史并立即落盘，避免后续临时注入污染历史。
       if (!continuation) await persist()
       if (!continuation) await options.plugins?.resolve({ sessionID: input.sessionID, text: promptText })
+      const availableTools = options.toolDefinitions
+        ? await options.toolDefinitions(input.sessionID)
+        : options.tools
       const skillPrompt = options.skills
         ? await options.skills.resolve({ sessionID: input.sessionID, text: promptText })
         : { skills: [], systemMessages: [] }
@@ -602,7 +606,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         sessionID: input.sessionID,
         text: promptText,
         messages: modelMessages,
-        ...(options.tools ? { tools: options.tools } : {}),
+        ...(availableTools ? { tools: availableTools } : {}),
       }
       let step = 0
       let outputContinuations = 0
@@ -625,8 +629,8 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
             : modelMessages,
           ...(finalizing
             ? { tools: [], toolChoice: "none" as const }
-            : options.tools
-              ? { tools: options.tools, toolChoice: "auto" as const }
+            : availableTools
+              ? { tools: availableTools, toolChoice: "auto" as const }
               : {}),
         }
         let continued = false
@@ -661,7 +665,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                     sessionID: input.sessionID,
                     text: OUTPUT_CONTINUATION_PROMPT,
                     messages: modelMessages,
-                    ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
+                    ...(availableTools ? { tools: availableTools, toolChoice: "auto" as const } : {}),
                   }
                   continued = true
                   break
@@ -703,7 +707,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                   text: promptText,
                   toolResults: [result],
                   messages: modelMessages,
-                  ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
+                  ...(availableTools ? { tools: availableTools, toolChoice: "auto" as const } : {}),
                 }
                 continued = true
                 break
@@ -793,7 +797,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 text: promptText,
                 toolResults,
                 messages: modelMessages,
-                ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
+                ...(availableTools ? { tools: availableTools, toolChoice: "auto" as const } : {}),
               }
               continued = true
               break

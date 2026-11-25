@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { createEmbeddedRuntime, createNexumPluginRegistry, createNexumPluginRuntime } from "../src/index.ts"
-import type { NexumPluginManifest } from "@nexum/core"
+import type { ModelPort, NexumPluginManifest, ToolRequest } from "@nexum/core"
 
 const directories: string[] = []
 
@@ -86,6 +86,53 @@ test("routes a unique natural-language request through the same activation port"
   await runtime.close()
 })
 
+test("exposes mounted plugin tools only to the active session", async () => {
+  const fixture = await createToolFixture()
+  const registry = createNexumPluginRegistry({
+    source: { discover: async () => [{ address: fixture.root, entryPath: fixture.entry, manifest }] },
+  })
+  const runtime = createNexumPluginRuntime({ registry })
+  const request: ToolRequest = {
+    sessionID: "session-1",
+    toolName: "plugin__crm__order_query",
+    action: "plugin__crm__order_query",
+    resource: "order-1",
+    input: { orderID: "order-1" },
+  }
+
+  await expect(runtime.listTools("session-1")).resolves.toEqual([])
+  await runtime.activate({ sessionID: "session-1", pluginID: "crm", source: "explicit" })
+  await expect(runtime.listTools("session-1")).resolves.toMatchObject([{ name: "plugin__crm__order_query" }])
+  await expect(runtime.listTools("session-2")).resolves.toEqual([])
+  await expect(runtime.executeTool(request)).resolves.toMatchObject({ ok: true, output: "order-1" })
+  await runtime.deactivate({ sessionID: "session-1", pluginID: "crm" })
+  await expect(runtime.executeTool(request)).resolves.toBeUndefined()
+})
+
+test("adds plugin tools to the model only after the Session activates the plugin", async () => {
+  const fixture = await createToolFixture()
+  const registry = createNexumPluginRegistry({
+    source: { discover: async () => [{ address: fixture.root, entryPath: fixture.entry, manifest }] },
+  })
+  const toolNames: string[][] = []
+  const model: ModelPort = {
+    async *prompt(input) {
+      toolNames.push((input.tools ?? []).map((tool) => tool.name))
+      yield { type: "text", content: "完成" }
+      yield { type: "completed" }
+    },
+  }
+  const runtime = createEmbeddedRuntime({ pluginRegistry: registry, model })
+  const session = await runtime.sessions.create({ directory: fixture.root })
+
+  await runtime.prompt({ sessionID: session.sessionID, text: "写一首诗" })
+  await runtime.prompt({ sessionID: session.sessionID, text: "请查询订单" })
+
+  expect(toolNames[0]?.some((name) => name.startsWith("plugin__"))).toBe(false)
+  expect(toolNames[1]).toContain("plugin__crm__order_query")
+  await runtime.close()
+})
+
 async function createMountFixture(prefix = "") {
   const root = await mkdtemp(join(tmpdir(), "nexum-plugin-runtime-"))
   directories.push(root)
@@ -111,4 +158,29 @@ function mountSource(marker: string): string {
     }
   },
 }`
+}
+
+async function createToolFixture() {
+  const root = await mkdtemp(join(tmpdir(), "nexum-plugin-tool-"))
+  directories.push(root)
+  const entry = join(root, "index.ts")
+  await writeFile(entry, `export default {
+  async mount() {
+    return {
+      capabilities: ["order.query"],
+      tools: [{
+        definition: {
+          name: "order.query",
+          description: "查询订单",
+          parameters: { type: "object", properties: { orderID: { type: "string" } }, required: ["orderID"] },
+        },
+        async execute(request) {
+          return { ok: true, output: request.input.orderID }
+        },
+      }],
+      async unmount() {},
+    }
+  },
+}`)
+  return { root, entry }
 }
