@@ -2,7 +2,7 @@
 
 本文是 Nexum Runtime 对外 API 的使用说明。协议模型的权威定义位于 [`packages/nexum-protocol`](../packages/nexum-protocol/README.md)，服务端装配位于 [`packages/nexum-server`](../packages/nexum-server/README.md)。
 
-本文档覆盖 Nexum Runtime 的模型、默认角色提示词、Session、Permission、Question、Skill、MCP 和事件路由；其中 Skill 管理路由归属 `Skill Registry` 模块，MCP 路由归属 `MCP Runtime Registry`，调用方是 Nexum Web UI 和 Session Agent。
+本文档覆盖 Nexum Runtime 的模型、默认角色提示词、Session、Permission、Question、Skill、Plugin、MCP 和事件路由；其中 Skill 管理路由归属 `Skill Registry` 模块，Plugin 路由归属 `Plugin Runtime`，MCP 路由归属 `MCP Runtime Registry`，调用方是 Nexum Web UI 和 Session Agent。
 
 ### 对外 route 覆盖表
 
@@ -27,6 +27,7 @@
 | Permission  | `/api/nexum/session/:sessionID/permission`、`/permission/:requestID/reply`        | [Permission 与策略](#permission-与策略)                                  | 已覆盖   |
 | Question    | `/api/nexum/session/:sessionID/question`、`/question/:requestID/reply`、`/cancel` | [Question 反问](#question-反问)                                          | 已覆盖   |
 | Skill       | `/api/nexum/skills...`                                                            | [Skill 注册管理](#skill-注册管理)                                        | 已覆盖   |
+| Plugin      | `/api/nexum/plugins...`                                                           | [Plugin 控制面](#plugin-控制面)                                          | 已覆盖   |
 | MCP         | `/api/experimental/nexum/mcp...`                                                  | [MCP 生命周期](#mcp-生命周期)                                            | 已覆盖   |
 
 ### 逐路由审计
@@ -63,6 +64,10 @@
 | `POST`                   | `/api/nexum/skills/validate`                                | [Skill 注册管理](#skill-注册管理)         | 已记录 valid、诊断和 safe summary                | HTTP      |
 | `POST`                   | `/api/nexum/skills/:id/activate`                            | [Skill 注册管理](#skill-注册管理)         | 已记录 sessionID/text、权限和激活错误            | 表格      |
 | `DELETE`                 | `/api/nexum/skills/:id`                                     | [Skill 注册管理](#skill-注册管理)         | 已记录 deleted、源目录保留和 not found           | HTTP      |
+| `GET`                    | `/api/nexum/plugins`                                        | [Plugin 控制面](#plugin-控制面)           | 已记录安全摘要和未配置错误                       | JSON      |
+| `GET`                    | `/api/nexum/plugins/:id`                                    | [Plugin 控制面](#plugin-控制面)           | 已记录详情、active Session 和 not found          | JSON      |
+| `POST`                   | `/api/nexum/plugins/:id/activate`                           | [Plugin 控制面](#plugin-控制面)           | 已记录 Session、source、权限和挂载错误           | JSON      |
+| `POST`                   | `/api/nexum/plugins/:id/deactivate`                         | [Plugin 控制面](#plugin-控制面)           | 已记录 Session、能力撤销和卸载错误               | JSON      |
 | `GET`                    | `/api/experimental/nexum/mcp`                               | [MCP 生命周期](#mcp-生命周期)             | 已记录安全状态、retrying 字段和启动快照语义      | JSON      |
 | `POST`                   | `/api/experimental/nexum/mcp`                               | [MCP 生命周期](#mcp-生命周期)             | 已记录远程 URL 注册、持久化和配置错误            | JSON      |
 | `POST`                   | `/api/experimental/nexum/mcp/:id/connect`                   | [MCP 生命周期](#mcp-生命周期)             | 已记录显式连接、重试预算重置和安全错误           | JSON      |
@@ -119,6 +124,7 @@ JSON 请求体统一限制为 1 MiB。超过上限、格式无法解析或不是
 | `GET` / `POST`            | `/api/nexum/session/:sessionID/permission...`         | 查询和回复权限请求                                          |
 | `GET` / `POST`            | `/api/nexum/session/:sessionID/question...`           | 查询、回答和取消结构化反问                                  |
 | `GET` / `POST` / `DELETE` | `/api/nexum/skills...`                                | Skill 列表、详情、按地址注册、刷新、校验、取消注册和激活    |
+| `GET` / `POST`            | `/api/nexum/plugins...`                               | Plugin 列表、详情、按 Session 激活和停用                    |
 | `GET` / `POST` / `DELETE` | `/api/experimental/nexum/mcp...`                      | MCP 注册、状态、连接控制、目录读取和 OAuth 授权；实验性接口 |
 
 ## Health 与 Capabilities
@@ -381,7 +387,7 @@ Content-Type: application/json
 | 分页     | `limit` 为 1-100 的整数，默认 50；`before` 为非负消息索引，返回其之前的一页；继续翻页时带上上页的 `snapshot` |
 | 排序     | 按 canonical 消息写入顺序升序返回；`index` 是当前历史快照中的零基索引                                        |
 | 脱敏     | 文本和结构化工具输入在响应边界脱敏；内部模型历史不被修改                                                     |
-| 认证     | 服务配置 `authToken` 时必须携带 `Authorization: Bearer <authToken>`；回环监听且未配置 token 时可省略        |
+| 认证     | 服务配置 `authToken` 时必须携带 `Authorization: Bearer <authToken>`；回环监听且未配置 token 时可省略         |
 
 ### 请求定义
 
@@ -489,14 +495,14 @@ curl --get 'http://127.0.0.1:4097/api/experimental/nexum/session/session_001/mes
 
 `DELETE /api/nexum/session/:sessionID` 删除指定 Session 的持久化历史和运行记录，但保留工作目录与模型配置。默认 SQLite Runtime 在 Session 状态校验通过后，会在一个数据库事务中删除 Session、消息、交互和事件；其他适配器沿用各自的清理顺序。删除失败返回稳定的 `NEXUM_SESSION_DELETE_FAILED`，不会暴露内部错误文本。
 
-| 项目     | 内容                                                                               |
-| -------- | ---------------------------------------------------------------------------------- |
-| 接口用途 | 删除不再需要的 Nexum Session 及其消息、交互和事件记录                              |
-| 调用方   | 已确认 Session 不再需要的 Runtime 客户端                                           |
-| 前置条件 | `sessionID` 对应现存且当前不处于 `running` 状态的 Session                          |
+| 项目     | 内容                                                                                                 |
+| -------- | ---------------------------------------------------------------------------------------------------- |
+| 接口用途 | 删除不再需要的 Nexum Session 及其消息、交互和事件记录                                                |
+| 调用方   | 已确认 Session 不再需要的 Runtime 客户端                                                             |
+| 前置条件 | `sessionID` 对应现存且当前不处于 `running` 状态的 Session                                            |
 | 权限要求 | 服务配置 `authToken` 时必须携带 `Authorization: Bearer <authToken>`；回环监听且未配置 token 时可省略 |
-| 幂等性   | 重复删除不视为成功幂等：首次成功返回 `200`，之后返回 `404 NEXUM_SESSION_NOT_FOUND` |
-| 数据保留 | 工作目录和模型配置不受影响                                                         |
+| 幂等性   | 重复删除不视为成功幂等：首次成功返回 `200`，之后返回 `404 NEXUM_SESSION_NOT_FOUND`                   |
+| 数据保留 | 工作目录和模型配置不受影响                                                                           |
 
 ### 请求定义
 
@@ -525,10 +531,10 @@ DELETE http://127.0.0.1:4097/api/nexum/session/{sessionID}
 
 #### Request headers
 
-| Header          | 必填   | 类型/格式                                | 示例               | 用途                                              | 缺失或非法时                             |
-| --------------- | ------ | ---------------------------------------- | ------------------ | ------------------------------------------------- | ---------------------------------------- |
-| `X-Trace-Id`    | 否     | 1-128 位字母、数字、`.`、`_`、`:` 或 `-` | `trace_delete_001` | 排障关联；响应 Header 和响应体会返回同一 trace ID | 缺失或非法时生成新的 trace ID            |
-| `Authorization` | 条件必填 | `Bearer <authToken>`                  | `Bearer <authToken>` | 访问受保护 API 的服务认证                         | 缺失或错误时返回 `401 NEXUM_AUTH_REQUIRED` |
+| Header          | 必填     | 类型/格式                                | 示例                 | 用途                                              | 缺失或非法时                               |
+| --------------- | -------- | ---------------------------------------- | -------------------- | ------------------------------------------------- | ------------------------------------------ |
+| `X-Trace-Id`    | 否       | 1-128 位字母、数字、`.`、`_`、`:` 或 `-` | `trace_delete_001`   | 排障关联；响应 Header 和响应体会返回同一 trace ID | 缺失或非法时生成新的 trace ID              |
+| `Authorization` | 条件必填 | `Bearer <authToken>`                     | `Bearer <authToken>` | 访问受保护 API 的服务认证                         | 缺失或错误时返回 `401 NEXUM_AUTH_REQUIRED` |
 
 #### Request cookies
 
@@ -808,15 +814,15 @@ Session Agent 使用内置 `skill_registry` 工具管理 Nexum 注册表，操�
 
 ### 通用约定
 
-| 项目           | 约定                                                                                               |
-| -------------- | -------------------------------------------------------------------------------------------------- |
+| 项目           | 约定                                                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------------------------------- |
 | 权限           | 服务配置 `authToken` 时需先通过服务认证；注册/刷新/取消注册还受调用方的 Nexum 管理权限边界约束，服务端不读取 Cookie。 |
-| `Content-Type` | 有 JSON body 的 POST 使用 `application/json`；GET/DELETE 请求体不适用。                            |
-| `Accept`       | 可选，推荐 `application/json`。                                                                    |
-| `X-Trace-Id`   | 可选，1-128 位安全字符；缺失或非法时服务生成新的 trace ID。                                        |
-| Cookie         | 请求 Cookie 和响应 Cookie 均不适用。                                                               |
-| 幂等性         | 同一规范化 address 重复注册不会创建重复记录；DELETE 重复执行返回 `404 NEXUM_SKILL_NOT_FOUND`。     |
-| 地址安全       | 只接受本地目录；拒绝 HTTP(S)、路径遍历、源目录符号链接和 Skill 内符号链接。                        |
+| `Content-Type` | 有 JSON body 的 POST 使用 `application/json`；GET/DELETE 请求体不适用。                                               |
+| `Accept`       | 可选，推荐 `application/json`。                                                                                       |
+| `X-Trace-Id`   | 可选，1-128 位安全字符；缺失或非法时服务生成新的 trace ID。                                                           |
+| Cookie         | 请求 Cookie 和响应 Cookie 均不适用。                                                                                  |
+| 幂等性         | 同一规范化 address 重复注册不会创建重复记录；DELETE 重复执行返回 `404 NEXUM_SKILL_NOT_FOUND`。                        |
+| 地址安全       | 只接受本地目录；拒绝 HTTP(S)、路径遍历、源目录符号链接和 Skill 内符号链接。                                           |
 
 ### 端点覆盖
 
@@ -894,6 +900,45 @@ DELETE http://127.0.0.1:4097/api/nexum/skills/metric-view-lifecycle
 
 注册、刷新、校验和取消注册可产生 `skill.updated` 事件，数据只包含 Skill ID、变更类型和安全状态，不包含绝对路径或文件正文。已有 `skill.activated` 和 `skill.failed` 事件保持不变。
 
+## Plugin 控制面
+
+Plugin 是和独立 Skill 平级的顶层扩展包。列表和详情只返回安全 Manifest 摘要；入口路径、动态模块内容、凭据和宿主绝对路径不会出现在响应中。Plugin 内部 Skill、Function、Workflow 和 Hook 不支持 `@plugin/internal-capability` 形式的用户直接命中。
+
+### `GET /api/nexum/plugins`
+
+返回当前已发现的 Plugin 摘要。每个摘要包含 `id`、`version`、`description`、`routing`、`exports`、`permissions`、`status` 和 `diagnostics`。`status` 可能是 `registered`、`activating`、`active`、`failed` 或 `disabled`。
+
+### `GET /api/nexum/plugins/:id`
+
+返回单个 Plugin 摘要，并附加当前已挂载该 Plugin 的 `activeSessions`。Plugin 不存在返回 `404 NEXUM_PLUGIN_NOT_FOUND`。
+
+### `POST /api/nexum/plugins/:id/activate`
+
+请求体必须包含 `sessionID`，可选 `source` 为 `explicit` 或 `automatic`；省略时按 `explicit` 处理：
+
+```json
+{ "sessionID": "session_001", "source": "explicit" }
+```
+
+成功响应的 `data` 包含 `pluginID`、`sessionID`、`status: "active"` 和命中来源。激活只挂载当前 Session 的内部能力，不自动执行订单查询、发消息或其它业务副作用。激活前会请求现有 Permission；入口动态加载和 mount 失败不会进入 active scope。
+
+### `POST /api/nexum/plugins/:id/deactivate`
+
+请求体为 `{ "sessionID": "session_001" }`。成功返回 `status: "deactivated"`；停用先撤销当前 Session 的 Plugin 工具资格，再执行 Plugin 的 `unmount` 清理函数。
+
+| 错误码                                | HTTP | 含义                            |
+| ------------------------------------- | ---- | ------------------------------- |
+| `NEXUM_PLUGIN_RUNTIME_NOT_CONFIGURED` | 503  | Plugin Registry/Runtime 不可用  |
+| `NEXUM_PLUGIN_NOT_FOUND`              | 404  | Plugin 不存在                   |
+| `NEXUM_PLUGIN_NOT_READY`              | 409  | Manifest 冲突或 Plugin 不可激活 |
+| `NEXUM_PLUGIN_PERMISSION_DENIED`      | 403  | 激活权限被拒绝                  |
+| `NEXUM_PLUGIN_MOUNT_FAILED`           | 409  | 入口加载或挂载失败              |
+| `NEXUM_PLUGIN_DEACTIVATION_FAILED`    | 409  | 卸载清理失败                    |
+
+### CRM 示例
+
+仓库内的最小 Fixture 在 [`packages/nexum-application/test/fixtures/crm-plugin`](../packages/nexum-application/test/fixtures/crm-plugin)，它声明 `customer-support`、`order.query`、`ticket-triage` 和 `support.audit` 四类内部能力。可以通过 `@crm 查询订单 123` 或唯一命中的自然语言请求激活；激活后模型才会看到命名工具 `plugin__crm__order_query`。
+
 ## MCP 生命周期
 
 MCP 接口位于实验性前缀 `/api/experimental/nexum/mcp`。注册远程 URL 后，Server 将配置写入 Runtime 的 `McpServerConfigStore`；Local Runtime 启动时恢复配置并异步连接。Server 等待配置恢复完成，但不等待远程 transport 建连，因此 `GET /mcp` 可能先返回 `pending`。
@@ -966,6 +1011,8 @@ Core 只产生运行事实，Server 将事实编码为协议事件，应用层�
 - `context.compaction.started`、`context.compaction.completed`、`context.compaction.failed`：上下文压缩；
 - `skill.activated`、`skill.failed`：Skill 生命周期；
 - `skill.updated`：Skill 注册状态发生变化；
+- `plugin.activated`、`plugin.failed`、`plugin.deactivated`：Plugin Session 作用域生命周期；
+- `plugin.updated`：Plugin 注册摘要或生命周期状态发生变化；
 - `model.attempt`、`model.retry`：模型尝试与自动重试；
 - `session.completed`、`session.failed`、`session.cancelled`：Session 终态。
 - `run.settled`：一次运行最终结算，`result` 为 `completed`、`failed` 或 `cancelled`。
