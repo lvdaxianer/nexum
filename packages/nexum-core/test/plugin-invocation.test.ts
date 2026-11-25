@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import {
   NexumPluginInvocationError,
+  createNexumPluginInvocationPort,
   parseNexumPluginMention,
   type NexumPluginActivationPort,
   type NexumPluginManifest,
@@ -67,4 +68,43 @@ test("defines a shared activation port result for explicit and automatic routes"
     status: "active",
     source: "automatic",
   })
+})
+
+test("activates explicit plugins in mention order without duplicate activation", async () => {
+  const calls: string[] = []
+  const activation = {
+    async activate(input: {
+      readonly pluginID: string
+      readonly source: "explicit" | "automatic"
+      readonly sessionID: string
+    }) {
+      calls.push(input.pluginID)
+      return { pluginID: input.pluginID, status: "active" as const, source: input.source }
+    },
+  }
+  const invocation = createNexumPluginInvocationPort({
+    registry: { list: async () => [summary] },
+    activation,
+  })
+
+  await expect(invocation.resolve({ sessionID: "session-1", text: "@crm 查询 @crm 再查" })).resolves.toEqual([
+    { pluginID: "crm", status: "active", source: "explicit" },
+  ])
+  expect(calls).toEqual(["crm"])
+})
+
+test("leaves mentions for standalone skills to the existing skill path", async () => {
+  let calls = 0
+  const invocation = createNexumPluginInvocationPort({
+    registry: { list: async () => [summary] },
+    activation: {
+      activate: async () => {
+        calls += 1
+        return { pluginID: "crm", status: "active", source: "explicit" as const }
+      },
+    },
+  })
+
+  await expect(invocation.resolve({ sessionID: "session-1", text: "@skill 写一份报告" })).resolves.toEqual([])
+  expect(calls).toBe(0)
 })

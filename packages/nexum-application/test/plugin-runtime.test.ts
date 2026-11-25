@@ -63,7 +63,7 @@ test("closes mounted plugins with the embedded runtime", async () => {
   })
   const runtime = createEmbeddedRuntime({ pluginRegistry: registry })
 
-  await runtime.pluginRuntime.activate({ sessionID: "session-1", pluginID: "crm", source: "explicit" })
+  await runtime.pluginInvocation.resolve({ sessionID: "session-1", text: "@crm 查询订单" })
   await runtime.close()
 
   await expect(runtime.pluginRuntime.listActive("session-1")).resolves.toEqual([])
