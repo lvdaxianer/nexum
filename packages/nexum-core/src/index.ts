@@ -27,6 +27,18 @@ export {
   type NexumSkillStatus,
   type NexumSkillSummary,
 } from "./skill-registry.js"
+export {
+  validateNexumPluginManifest,
+  type NexumPluginExport,
+  type NexumPluginExportKind,
+  type NexumPluginManifest,
+  type NexumPluginManifestIssue,
+  type NexumPluginManifestIssueCode,
+  type NexumPluginRegistry,
+  type NexumPluginRouting,
+  type NexumPluginStatus,
+  type NexumPluginSummary,
+} from "./plugin-registry.js"
 import type { MessageStore } from "./message-store.js"
 import { normalizeNexumToolRequest } from "./tools.js"
 import { NexumSkillInvocationError } from "./skill-invocation.js"
