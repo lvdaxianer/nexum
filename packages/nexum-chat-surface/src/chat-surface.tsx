@@ -40,6 +40,7 @@ export type ChatItem = {
   readonly startedAt?: string
   readonly elapsedMs?: number
   readonly skillIDs?: readonly string[]
+  readonly attachmentName?: string
   readonly status: ChatStatus
   readonly localTime: string
   readonly eventType?: string
@@ -72,8 +73,13 @@ const CHAT_FILE_MAX_KIB = 512
 export const CHAT_FILE_MAX_BYTES = CHAT_FILE_MAX_KIB * KIB_BYTES
 const CHAT_FILE_EXTENSIONS = [".md", ".txt"] as const
 const CHAT_FILE_ACCEPT = ".md,.txt,text/markdown,text/plain"
-const CHAT_FILE_NAME_PREFIX = "【文件："
-const CHAT_FILE_END_MARKER = "【文件结束】"
+const CHAT_FILE_CONTEXT_START = "【本地上传文件上下文开始】"
+const CHAT_FILE_CONTEXT_END = "【本地上传文件上下文结束】"
+const CHAT_FILE_BODY_START = "【文件正文开始】"
+const CHAT_FILE_BODY_END = "【文件正文结束】"
+const CHAT_FILE_CONTEXT_INSTRUCTION = "以下正文已经由浏览器读取并随本条消息发送。请直接使用正文回答，不要根据文件名调用 read、ls 或其他工作目录工具查找文件。"
+const LEGACY_CHAT_FILE_NAME_PREFIX = "【文件："
+const LEGACY_CHAT_FILE_END_MARKER = "【文件结束】"
 const markdown = new Marked({
   gfm: true,
   breaks: true,
@@ -111,7 +117,17 @@ export function validateChatFile(file: Pick<File, "name" | "size">): string | un
  * @date 2026-11-26
  */
 export function composeChatPrompt(text: string, file: ChatFileContext): string {
-  return [text, "", `${CHAT_FILE_NAME_PREFIX}${file.name}】`, file.text, CHAT_FILE_END_MARKER].join("\n")
+  return [
+    text,
+    "",
+    CHAT_FILE_CONTEXT_START,
+    CHAT_FILE_CONTEXT_INSTRUCTION,
+    `文件名：${file.name}`,
+    CHAT_FILE_BODY_START,
+    file.text,
+    CHAT_FILE_BODY_END,
+    CHAT_FILE_CONTEXT_END,
+  ].join("\n")
 }
 
 /** 渲染不可信模型输出，并限制链接打开行为。 */
@@ -266,7 +282,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
     setContinueAvailable(state.canContinue)
     setPermissions([...state.pendingPermissions])
     setQuestions([...state.pendingQuestions])
-    setChatItems([...state.pendingPermissions.map(permissionChatItem), ...state.pendingQuestions.map(questionChatItem)])
+    setChatItems((current) => mergePendingChatItems(current, state))
   }
 
   function applyHistory(history: ChatHistoryPage) {
@@ -393,21 +409,13 @@ export function ChatSurface(props: ChatSurfaceProps) {
     const text = prompt().trim()
     const file = fileContext()
     const finalText = file ? composeChatPrompt(text, file) : text
-    if (!id || !text || busy() || fileBusy() || inputLocked()) return
+    if (!id || !text || busy() || fileBusy() || historyLoading() || inputLocked()) return
     setBusy(true)
     setFollowTail(true)
     const thinkingID = `thinking:${id}:${Date.now()}:${promptSequence++}`
     setChatItems((current) => [
       ...current,
-      {
-        id: `user:${Date.now()}:${promptSequence++}`,
-        kind: "user",
-        title: "你",
-        content: finalText,
-        skillIDs: skillIDsFromText(text),
-        status: "completed",
-        localTime: formatLocalTime(),
-      },
+      userChatItem(finalText, `user:${Date.now()}:${promptSequence++}`, formatLocalTime()),
       thinkingChatItem(thinkingID),
     ])
     setActiveSkillIDs(skillIDsFromText(text))
@@ -681,7 +689,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
 
       <div class="nexum-chat-composer">
         <div class="nexum-chat-composer-inner">
-          <textarea aria-label="Coding Prompt" rows={3} value={prompt()} onInput={(event) => setPrompt(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); void sendPrompt() } }} placeholder={inputLocked() ? "Agent 正在回复，本轮完成后可继续输入…" : "描述下一步 Coding 任务…"} disabled={!props.sessionID || busy() || inputLocked()} />
+          <textarea aria-label="Coding Prompt" rows={3} value={prompt()} onInput={(event) => setPrompt(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); void sendPrompt() } }} placeholder={inputLocked() ? "Agent 正在回复，本轮完成后可继续输入…" : "描述下一步 Coding 任务…"} disabled={!props.sessionID || busy() || historyLoading() || inputLocked()} />
           <Show when={skillSuggestions().length > 0}><div class="nexum-chat-suggestions" role="listbox" aria-label="Skill 建议"><For each={skillSuggestions()}>{(skill) => <button type="button" role="option" onMouseDown={(event) => event.preventDefault()} onClick={() => selectSkill(skill)}><span>@{skill.id}</span><small>{skill.description}</small></button>}</For></div></Show>
           <Show when={activeSkillIDs().length > 0}><div class="nexum-chat-active-skills"><span>已附加</span><For each={activeSkillIDs()}>{(id) => <span class="nexum-chat-chip skill-chip">@{id}</span>}</For></div></Show>
           <Show when={fileContext() || fileBusy() || fileError()}>
@@ -701,8 +709,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
             <span class="nexum-chat-hint">
               {inputLocked() ? "Agent 正在回复" : (<><span class="hint-enter">Enter 发送<span class="hint-sep"> · </span></span><span class="hint-shift">Shift+Enter 换行 · </span>@ 引用 Skill</>)}
             </span>
-            <input ref={(element) => (fileInput = element)} class="nexum-chat-file-input" type="file" accept={CHAT_FILE_ACCEPT} aria-label="选择 Markdown 或纯文本文件" tabindex="-1" onChange={(event) => void handleFileSelection(event)} disabled={!props.sessionID || busy() || fileBusy() || inputLocked()} />
-            <button type="button" class="nexum-chat-button nexum-chat-file-button" onClick={() => fileInput?.click()} disabled={!props.sessionID || busy() || fileBusy() || inputLocked()} aria-label="上传 Markdown 或纯文本文件">
+            <input ref={(element) => (fileInput = element)} class="nexum-chat-file-input" type="file" accept={CHAT_FILE_ACCEPT} aria-label="选择 Markdown 或纯文本文件" tabindex="-1" onChange={(event) => void handleFileSelection(event)} disabled={!props.sessionID || busy() || fileBusy() || historyLoading() || inputLocked()} />
+            <button type="button" class="nexum-chat-button nexum-chat-file-button" onClick={() => fileInput?.click()} disabled={!props.sessionID || busy() || fileBusy() || historyLoading() || inputLocked()} aria-label="上传 Markdown 或纯文本文件">
               {fileBusy() ? "读取中…" : "上传文件"}
             </button>
             <Show when={props.composerExtras}>
@@ -722,7 +730,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
                 <button type="button" class="nexum-chat-button is-danger" onClick={() => setCancelConfirmOpen(true)}>取消运行</button>
               </Show>
             </Show>
-            <button type="button" class="nexum-chat-primary" aria-label="发送 Prompt" disabled={!props.sessionID || !prompt().trim() || busy() || fileBusy() || inputLocked()} onClick={() => void sendPrompt()}>{busy() ? "发送中…" : "发送"}</button>
+            <button type="button" class="nexum-chat-primary" aria-label="发送 Prompt" disabled={!props.sessionID || !prompt().trim() || busy() || fileBusy() || historyLoading() || inputLocked()} onClick={() => void sendPrompt()}>{busy() ? "发送中…" : "发送"}</button>
           </div>
         </div>
       </div>
@@ -736,7 +744,14 @@ function ChatItemView(props: { readonly item: ChatItem }) {
   return <Switch>
     <Match when={props.item.kind === "user"}>
       <article class={`nexum-chat-item chat-message user status-${props.item.status}`}>
-        <div class="nexum-chat-user-bubble"><MarkdownView content={props.item.content ?? ""} /></div>
+        <div class="nexum-chat-user-bubble">
+          <MarkdownView content={props.item.content ?? ""} />
+          <Show when={props.item.attachmentName}>
+            <div class="nexum-chat-user-attachment" aria-label={`已附加文件 ${props.item.attachmentName}`}>
+              <span aria-hidden="true">📄</span> 已附加文件：{props.item.attachmentName}
+            </div>
+          </Show>
+        </div>
         <div class="nexum-chat-user-meta">{props.item.localTime} · {statusLabel(props.item.status)}</div>
         <Show when={props.item.skillIDs?.length}><div class="nexum-chat-chips"><For each={props.item.skillIDs}>{(id) => <span class="nexum-chat-chip">@{id}</span>}</For></div></Show>
       </article>
@@ -827,7 +842,7 @@ function ReasoningView(props: { readonly item: ChatItem }) {
 export function historyItemsFromMessages(messages: NexumSessionMessages["messages"]): ChatItem[] {
   return messages.reduce<ChatItem[]>((items, entry) => {
     const message = entry.message
-    if (message.role === "user") return [...items, { id: `history:user:${entry.index}`, kind: "user", title: "你", content: message.content, skillIDs: skillIDsFromText(message.content), status: "completed", localTime: "历史" }]
+    if (message.role === "user") return [...items, userChatItem(message.content, `history:user:${entry.index}`, "历史")]
     if (message.role === "assistant") {
       const next = [...items]
       if (message.reasoningContent !== undefined) next.push({ id: `history:reasoning:${entry.index}`, kind: "reasoning", title: "模型思考", content: message.reasoningContent, status: "completed", localTime: "历史" })
@@ -838,6 +853,51 @@ export function historyItemsFromMessages(messages: NexumSessionMessages["message
     if (message.role === "tool") return [...items, { id: `history:tool-result:${entry.index}:${message.toolCallID}`, kind: "execution", title: "工具结果", content: compactSummary(message.content) || "工具执行完成", detail: message.content, status: "completed", localTime: "历史" }]
     return [...items, { id: `history:system:${entry.index}`, kind: "execution", title: message.sourceID === "context:summary" ? "上下文压缩摘要" : "系统上下文", content: message.sourceID === "context:summary" ? "已保存的上下文压缩摘要" : "已保存的系统消息", detail: message.content, status: "completed", localTime: "历史" }]
   }, [])
+}
+
+function userChatItem(content: string, id: string, localTime: string): ChatItem {
+  const display = parseChatPrompt(content)
+  return {
+    id,
+    kind: "user",
+    title: "你",
+    content: display.text,
+    ...(display.fileName ? { attachmentName: display.fileName } : {}),
+    skillIDs: skillIDsFromText(display.text),
+    status: "completed",
+    localTime,
+  }
+}
+
+function parseChatPrompt(content: string): { readonly text: string; readonly fileName?: string } {
+  const contextStart = content.indexOf(CHAT_FILE_CONTEXT_START)
+  if (contextStart >= 0) {
+    const context = content.slice(contextStart)
+    const fileName = context.match(/^文件名：(.+)$/m)?.[1]?.trim()
+    return { text: content.slice(0, contextStart).trimEnd(), ...(fileName ? { fileName } : {}) }
+  }
+
+  const legacyStart = content.indexOf(`\n\n${LEGACY_CHAT_FILE_NAME_PREFIX}`)
+  if (legacyStart < 0 || !content.endsWith(`\n${LEGACY_CHAT_FILE_END_MARKER}`)) return { text: content }
+  const nameStart = legacyStart + 2 + LEGACY_CHAT_FILE_NAME_PREFIX.length
+  const nameEnd = content.indexOf("】", nameStart)
+  if (nameEnd < 0) return { text: content }
+  return { text: content.slice(0, legacyStart).trimEnd(), fileName: content.slice(nameStart, nameEnd) }
+}
+
+/**
+ * 合并状态快照中的待处理交互，不覆盖已经渲染的对话内容。
+ *
+ * @param items - 当前已经渲染的聊天项
+ * @param state - Session 状态快照
+ * @returns 保留现有聊天项并补充新的待处理交互
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-26
+ */
+export function mergePendingChatItems(items: readonly ChatItem[], state: ChatStateSnapshot): ChatItem[] {
+  const existingIDs = new Set(items.map((item) => item.id))
+  const pending = [...state.pendingPermissions.map(permissionChatItem), ...state.pendingQuestions.map(questionChatItem)]
+  return [...items, ...pending.filter((item) => !existingIDs.has(item.id))]
 }
 
 export function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {

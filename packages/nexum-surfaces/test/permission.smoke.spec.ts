@@ -204,7 +204,9 @@ describe.serial("Nexum UI smoke", () => {
     const promptRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().includes("/prompt"))
     await page.getByRole("button", { name: "发送 Prompt" }).click()
     const requestBody = (await promptRequest).postDataJSON() as { text: string }
-    expect(requestBody.text).toBe("请总结文件\n\n【文件：notes.md】\n# 标题\n正文\n【文件结束】")
+    expect(requestBody.text).toBe("请总结文件\n\n【本地上传文件上下文开始】\n以下正文已经由浏览器读取并随本条消息发送。请直接使用正文回答，不要根据文件名调用 read、ls 或其他工作目录工具查找文件。\n文件名：notes.md\n【文件正文开始】\n# 标题\n正文\n【文件正文结束】\n【本地上传文件上下文结束】")
+    await expect(page.locator(".chat-message.user")).toContainText("请总结文件")
+    await expect(page.locator(".nexum-chat-user-attachment")).toContainText("notes.md")
     await expect(page.getByLabel("Coding Prompt")).toHaveValue("")
     await expect(page.locator(".nexum-chat-file-name")).toHaveCount(0)
   })

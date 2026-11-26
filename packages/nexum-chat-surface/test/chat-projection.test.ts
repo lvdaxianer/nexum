@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
 import type { NexumEvent } from "../src/index.ts"
-import { historyItemsFromMessages, projectChatEvent } from "../src/chat-surface.tsx"
+import { composeChatPrompt, historyItemsFromMessages, mergePendingChatItems, projectChatEvent } from "../src/chat-surface.tsx"
+import type { ChatItem } from "../src/chat-surface.tsx"
+import type { ChatStateSnapshot } from "../src/index.ts"
 
 test("ChatSurface projects canonical history into user, assistant, reasoning and tool items", () => {
   const items = historyItemsFromMessages([
@@ -23,6 +25,38 @@ test("ChatSurface projects canonical history into user, assistant, reasoning and
     ["assistant", "我开始检查。"],
     ["execution", "历史工具调用"],
     ["execution", "/workspace/project"],
+  ])
+})
+
+test("ChatSurface keeps the question visible and summarizes the uploaded file in history", () => {
+  const items = historyItemsFromMessages([
+    { index: 1, message: { role: "user", content: composeChatPrompt("请总结重点", { name: "README.md", text: "# 标题\n长文件正文" }) } },
+  ])
+
+  expect(items[0]).toMatchObject({ kind: "user", content: "请总结重点", attachmentName: "README.md" })
+})
+
+test("ChatSurface can replay the previous file-context format", () => {
+  const items = historyItemsFromMessages([
+    { index: 1, message: { role: "user", content: "请总结重点\n\n【文件：README.md】\n# 标题\n正文\n【文件结束】" } },
+  ])
+
+  expect(items[0]).toMatchObject({ kind: "user", content: "请总结重点", attachmentName: "README.md" })
+})
+
+test("ChatSurface merges pending state without removing an existing user message", () => {
+  const current = [{ id: "user:001", kind: "user", title: "你", content: "刚发送的问题", status: "completed", localTime: "当前" }] satisfies ChatItem[]
+  const state = {
+    session: { id: "session_001", name: "测试", directory: "/tmp/nexum", status: "idle", createdAt: "2026-11-26T00:00:00.000Z", updatedAt: "2026-11-26T00:00:00.000Z" },
+    canContinue: false,
+    pendingPermissions: [{ id: "permission_001", sessionID: "session_001", action: "read", resource: "README.md" }],
+    pendingQuestions: [],
+    lastSequence: 0,
+  } satisfies ChatStateSnapshot
+
+  expect(mergePendingChatItems(current, state)).toMatchObject([
+    { id: "user:001", content: "刚发送的问题" },
+    { id: "permission:permission_001", status: "waiting" },
   ])
 })
 
