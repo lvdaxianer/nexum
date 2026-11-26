@@ -18,7 +18,7 @@
 ## 4. Integration verification
 
 - [x] 4.1 运行 Core/Application/Server/Client 受影响测试、`bun run check` 和 `openspec validate --strict`；记录环境基线失败并修复本变更引入的问题。
-- [ ] 4.2 完成代码审查、依赖方向/敏感字段审计、工作树验证，提交并合并回 `dev-v0.0.1`。
+- [x] 4.2 完成代码审查、依赖方向/敏感字段审计、工作树验证，提交并合并回 `dev-v0.0.1`。
 
 ## Workflow follow-up
 
