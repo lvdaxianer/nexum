@@ -1,139 +1,65 @@
 # Nexum
 
-Nexum 是一个由最小功能单元组合而成的独立 Agent Runtime，拥有独立的包名、协议名和组合边界。
+Nexum 是一个 UI 无关、协议优先、可组合的 Agent Runtime。它把 Agent 的运行语义、环境实现、应用编排、网络协议和交互 Surface 拆成清晰的模块，让同一套 Agent 能力可以被 Web、Desktop、TUI、CLI 或企业内部应用复用。
 
-Nexum 不试图提供一个绑定特定 UI 的完整产品，也不是把所有能力塞进一个“大 Agent 类”。它把 Agent 运行过程中真正稳定、跨场景复用的部分收敛为 Core，把持久化、外部系统接入和 UI/协议桥接等环境差异放到明确的适配器包中，再通过 Application 组合业务编排，最后连接 Web、桌面端、TUI、CLI 或企业内部应用。
+Nexum 不是绑定某个 UI 的完整聊天产品，也不是把所有能力塞进一个“大 Agent 类”。它提供可运行的默认组合，同时允许替换模型、存储、Host、MCP、协议客户端和 UI。
 
 ## GitHub 项目简介（中文）
 
-Nexum 是一个面向多场景 Agent 应用的可组合运行时。它将 Coding Loop、Session、上下文压缩、权限、Skill、Memory 和 MCP 等稳定运行语义沉淀在独立 Core 中，通过 Persistence 和 Integrations 接入存储、模型、文件系统和宿主能力，再由 Application 组合运行时，并以协议层连接 Web、Desktop、TUI、CLI 及企业应用。Nexum 关注最小功能单元、清晰分层、长任务可恢复和 UI/运行时解耦，让同一套 Agent 能力可以被不同产品安全复用。
+Nexum 是一个面向多场景 Agent 应用的可组合运行时。它将 Coding Loop、Session、上下文压缩、权限、Skill、Memory 和 MCP 等稳定运行语义沉淀在 UI 无关的 Core 中，通过 Persistence 和 Integrations 接入存储、模型、文件系统和宿主能力，再由 Application 组合运行时，并以协议层连接 Web、Desktop、TUI、CLI 及企业应用。Nexum 关注最小功能单元、清晰分层、长任务可恢复和 UI/运行时解耦，让同一套 Agent 能力可以被不同产品安全复用。
 
 ## GitHub Project Description (English)
 
-Nexum is a composable Agent Runtime for Web, Desktop, TUI, CLI, and enterprise applications. It isolates durable runtime semantics—Coding Loop, sessions, context compaction, permissions, skills, memory, and MCP—in a UI-agnostic Core, while replaceable adapters provide models, storage, filesystem, and host capabilities. A protocol-first boundary connects the runtime to any surface, enabling resumable long-running tasks, clear layering, and reuse without coupling application UI to execution internals.
+Nexum is a composable, UI-agnostic Agent Runtime for Web, Desktop, TUI, CLI, and enterprise applications. It isolates durable runtime semantics—coding loops, sessions, context compaction, permissions, skills, memory, and MCP—in a replaceable Core, while adapters provide models, storage, filesystem, and host capabilities. A versioned protocol connects the runtime to any surface and supports observable, resumable long-running tasks.
 
 ## Nexum 解决什么问题
 
 一个 Agent 应用通常同时包含几类变化速度不同的内容：
 
-- Coding Loop、Session、上下文压缩、权限语义和 Skill 调用等运行语义；
+- Coding Loop、Session、上下文压缩、权限和 Skill 调用等运行语义；
 - 模型、文件系统、Shell、数据库、事件总线和 MCP 等环境能力；
-- HTTP、SSE、WebSocket 或进程内调用等传输协议；
+- HTTP、SSE、进程内调用等传输边界；
 - Web、Desktop、TUI、CLI 或业务系统等交互呈现。
 
-如果这些内容全部放在同一层，替换一个 UI 会牵动 Agent Loop，替换存储会影响协议，测试只能依赖完整应用启动。Nexum 的做法是把它们拆成可组合单元：Core 负责语义，Persistence/Integrations 负责环境实现，Protocol 负责公开边界，Application 负责运行时和服务编排，Surface 负责具体 UI 场景。
+如果这些内容全部放在同一层，替换一个 UI 会牵动 Agent Loop，替换存储会影响协议，测试也只能依赖完整应用启动。Nexum 的做法是把它们拆成可以独立理解、测试和替换的组合单元：Core 负责语义，Persistence/Integrations 负责环境，Application 负责编排，Protocol/Client/Server 负责外部边界，Surface 负责呈现。
 
-## 三层架构
+## 能做什么
 
-```text
-┌──────────────────────────────────────────────────────────┐
-│ 应用层 Application / Surface                              │
-│ Web · Desktop · TUI · CLI · 企业内部页面 · Test Workbench │
-│ 负责场景、交互布局、卡片投影和用户操作                     │
-└───────────────────────────┬──────────────────────────────┘
-                            │ @nexum/client
-┌───────────────────────────▼──────────────────────────────┐
-│ 协议层 Protocol                                           │
-│ JSON Envelope · Capability · Session · Event · SSE         │
-│ Permission · Question · Skill · 错误和版本兼容             │
-└───────────────────────────┬──────────────────────────────┘
-                            │ Runtime 注入
-┌───────────────────────────▼──────────────────────────────┐
-│ 基础层 Foundation                                          │
-│ @nexum/core：Coding Loop、Session 语义、权限、上下文、Skill │
-│ 只依赖端口和领域契约，不依赖 UI、HTTP、文件系统或模型 SDK   │
-└───────────────────────────┬──────────────────────────────┘
-                            │ Ports
-       @nexum/persistence + @nexum/integrations + @nexum/application
-                     提供实现和运行时组合
-```
+Nexum 当前提供以下运行时能力：
 
-### 基础层：`@nexum/core`
+- **Coding Loop**：模型流式输出、工具调用、工具结果、续跑和终态收敛；
+- **Session**：创建、恢复、更新、取消、继续和并发运行边界；
+- **Prompt admission**：输入先进入可恢复的会话队列，再由执行器推进；
+- **Tool 与 Host**：文件读写、Shell 等宿主能力，以及工作目录和超时边界；
+- **Permission**：`allow_once`、`allow_always`、`deny` 和 Session 隔离；
+- **Question**：结构化反问、答案提交、取消和安全暂停；
+- **Context 与 History**：项目上下文、消息历史、上下文预算、压缩和恢复；
+- **Skill**：Skill 发现、注册、校验、调用和更新事件；
+- **Model**：OpenAI-compatible Model、模型配置、能力探测和 Provider Catalog；
+- **MCP**：MCP Server 注册、工具/资源/Prompt 发现、调用和 OAuth 控制；
+- **Memory**：可替换的 Memory Port 和默认 Persistence 实现；
+- **Event 与 Protocol**：JSON Envelope、能力发现、事件序列、SSE 和稳定错误；
+- **持久化与恢复**：Session、消息、交互、事件、权限和执行状态可保存并在重启后恢复。
 
-Core 是 Nexum 的最小功能单元集合，承载所有跨应用仍然成立的运行语义：
+这些能力可以用于编码 Agent、企业内部助手、自动化工作台、长任务执行器、终端 Agent 或嵌入式聊天组件。UI 不需要复制这些状态机，只需要消费 Protocol/Client 暴露的状态和事件。
 
-- Coding Loop：模型流式输出、工具调用、工具结果、续跑和终态收敛；
-- Session：创建、恢复、状态流转、取消和并发运行边界；
-- Prompt admission：输入先进入可恢复的会话队列，再由执行器推进；
-- Permission：`allow_once`、`allow_always`、`deny` 和 Session 隔离；
-- Question：结构化反问、答案提交、取消和安全暂停；
-- Context：上下文预算、项目上下文、压缩、恢复和失败安全；
-- Skill：Skill 注册、调用语义、权限边界和事件；
-- Memory、MCP、Host、Model、Store 和 Event 等可替换端口与领域错误。
+## 先跑起来
 
-Core 不知道页面长什么样，也不负责决定使用 JSON 文件、SQLite 还是远程数据库。缺少的环境能力必须通过端口注入，默认实现由 Persistence 和 Integrations 提供；Application 只负责把这些端口组合成可运行服务。
-
-### 协议层：`@nexum/protocol`、`@nexum/client`、`@nexum/server`
-
-协议层把运行语义变成稳定的外部边界：
-
-- `@nexum/protocol` 定义 `nexum.runtime.v1`、JSON Envelope、能力发现、请求/响应、事件和 SSE 数据模型；
-- `@nexum/client` 负责协议编码、响应校验、错误归一化和 SSE 消费，不依赖 Core 或 Server；
-- `@nexum/server` 把已经组合好的 Runtime 绑定到 HTTP/SSE，只负责传输、路由、错误映射和事件订阅。
-
-协议层还定义交互什么时候发生以及如何表达：
-
-| 运行事实         | 协议事件                             | 应用层表现             |
-| ---------------- | ------------------------------------ | ---------------------- |
-| 模型产生文本     | `assistant.text`                     | 流式文本消息           |
-| 模型请求工具     | `tool.request`                       | 工具调用卡片           |
-| 工具返回结果     | `tool.result`                        | 执行结果卡片或折叠详情 |
-| 需要用户授权     | `permission.requested`               | 权限确认卡片           |
-| 需要用户补充信息 | `question.request`                   | 反问卡片，暂停后续工具 |
-| 上下文正在压缩   | `context.compaction.*`               | 上下文状态条           |
-| Skill 被激活     | `skill.activated`                    | Skill 活动卡片         |
-| Session 到达终态 | `session.completed/failed/cancelled` | 完成、失败或取消状态   |
-
-Core 产生事实，协议层表达事实，应用层决定如何呈现。应用层不能通过猜测文本来判断“是否需要反问”或“是否应该展示权限卡片”。
-
-### 应用层：Surface 与场景应用
-
-应用层把协议状态投影成用户能操作的场景：
-
-- Web 工作台可以将事件流投影为聊天区、工具卡片、权限抽屉和运行监控；
-- TUI 可以将同一组事件映射为终端组件和键盘操作；
-- Desktop、CLI、Mobile 或企业页面可以各自拥有不同的布局和交互方式；
-- 它们共享同一套 Protocol/Client，不需要复制 Core 的执行规则。
-
-`@nexum/surfaces` 是当前的参考 Surface，不是 Core 的组成部分，也不限定未来使用 Solid、Vue、React 或原生 UI。
-
-## 默认实现与 Runtime 组合
-
-默认实现按职责拆成三个包：`@nexum/persistence` 保存可恢复状态，`@nexum/integrations` 对接模型、Host、目录和 MCP，`@nexum/application` 承载 Skill/Tool/Question 编排以及 Runtime Composer。运行时由 Application 把前两者显式组合成两种形态：
-
-```ts
-import { createEmbeddedRuntime, createLocalRuntime } from "@nexum/application"
-
-// 进程内组合：适合 Core 单元测试、嵌入式宿主和一次性场景
-const embedded = createEmbeddedRuntime({ model })
-
-// 本地服务组合：默认使用文件持久化
-const local = createLocalRuntime({ dataDirectory: ".nexum" })
-```
-
-默认实现包括：
-
-- `@nexum/persistence`：Session、Message、Interaction、Model Config、Role Prompt、Permission Policy、Skill 注册状态、Event 和 Memory 的文件/内存实现；
-- `@nexum/integrations`：OpenAI-compatible Model、本地 Host、目录校验、项目上下文、Skill 文件来源和 MCP；
-- `@nexum/application`：Skill Registry、Tool Registry、Question Broker、配置型 Coding Loop 和 Runtime Composer；
-- 所有文件实现保留原子写入、损坏文件保护和敏感信息脱敏。
-
-这里的“适配器”只指把 Core Port 接到外部技术或存储的实现。Permission Policy 是 Core 的领域策略，Skill Registry、Tool Registry 和 Question Broker 是 Application 服务；它们不再被归类或放入适配器包。
-
-应用可以替换任意一个端口而不修改 Core 或 Protocol，例如把文件 Store 替换为 SQLite，把 OpenAI-compatible Model 替换为企业模型网关，或把本地 Host 替换为沙箱执行器。
-
-## `@nexum/test`：完整链路验证
-
-`@nexum/test` 不是业务功能模块，而是一个只用于测试和演示的组合包。它将 Core、Persistence、Integrations、Application、Protocol、Client 和 Surface 连接成一条真实链路。
-
-POC 默认使用工作树下的 `.nexum-test/` 目录和 `createLocalRuntime`，不使用内存作为真实运行时存储。Session、消息、交互、事件、模型配置、权限策略和 Memory 都可以在进程重启后恢复；内存实现只用于 Core 单元测试或显式的嵌入式场景。
+### 安装
 
 ```bash
-# 启动 Nexum Test Workbench（Server + Surface）
-bun run --cwd packages/nexum-test dev
+bun install
 ```
 
-打开 <http://127.0.0.1:5173> 后，可以验证：
+### Test Workbench：验证完整链路
+
+Test Workbench 组合 Server、Runtime、Client 和参考 Surface，适合第一次了解 Nexum 或验证持久化/恢复链路：
+
+```bash
+bun run dev
+```
+
+打开 <http://127.0.0.1:5173>，可以验证：
 
 1. 创建和恢复 Session；
 2. 配置模型并探测能力；
@@ -141,49 +67,201 @@ bun run --cwd packages/nexum-test dev
 4. 观察文本、工具、权限、反问、Skill、上下文和终态事件；
 5. 刷新页面或重启服务后恢复历史状态。
 
-## 包模块地图
+### HTTP/SSE Server 与 CLI
 
-| 包                    | 层级         | 职责                                                                   | 能否被替换                    |
-| --------------------- | ------------ | ---------------------------------------------------------------------- | ----------------------------- |
-| `@nexum/core`         | 基础层       | 领域语义、Agent Loop、端口和生命周期                                   | 通过端口替换环境实现          |
-| `@nexum/persistence`  | 持久化实现层 | Session、Message、Interaction、Policy、Event、Memory 等文件/内存 Store | 可替换为数据库或远程存储      |
-| `@nexum/integrations` | 外部集成层   | Model、Host、目录校验和 MCP                                            | 可替换为网关、沙箱或其他 SDK  |
-| `@nexum/application`  | 应用编排层   | Skill、Tool、Question、Configured Loop 和 Runtime Composer             | 可替换为其他应用组合          |
-| `@nexum/protocol`     | 协议层       | Wire Contract、Envelope、事件和能力模型                                | 以版本演进                    |
-| `@nexum/client`       | 协议层       | HTTP/SSE Client 和协议消费                                             | 可替换为其他语言客户端        |
-| `@nexum/server`       | 协议绑定层   | HTTP/SSE 路由、错误边界和事件投递                                      | 可替换为其他传输绑定          |
-| `@nexum/chat-surface` | 应用层       | 可嵌入聊天组件和聊天交互                                               | 可替换为其他聊天 Surface      |
-| `@nexum/surface-adapter` | 协议适配层 | `ChatProtocolAdapter` 契约、协议错误归一化和默认实现                   | 所有聊天类 Surface 共用       |
-| `@nexum/cli`          | 应用层       | 终端 Surface：REPL、思考动画、交互问答和管理面命令                     | 可替换为其他终端 UI           |
-| `@nexum/surfaces`     | 应用层       | Web 参考交互面和协议状态投影                                           | 可替换为 TUI、Desktop 等；CLI 已由 `@nexum/cli` 提供 |
-| `@nexum/test`         | 验证层       | 跨层 POC、文件持久化和重启恢复验证                                     | 不作为生产依赖                |
+先启动本地 Server：
 
-依赖方向保持单向：
+```bash
+bun run dev:server
+```
+
+Server 默认监听 `http://127.0.0.1:4097`，本地运行时使用当前工作目录下的 `.nexum/` 文件存储。再打开另一个终端启动 CLI：
+
+```bash
+bun run cli
+bun run cli -- --help
+```
+
+CLI 通过 `@nexum/client` 消费 HTTP/SSE 协议；它不直接依赖 Core 的执行实现。详细命令见 [`@nexum/cli`](packages/nexum-cli/README.md)。
+
+## 怎么组合
+
+Application 提供默认 Runtime Composer。你可以先使用默认组合，再按部署形态替换 Persistence、Model、Host 或其他 Port。
+
+### 1. 进程内组合：嵌入和测试
+
+`createEmbeddedRuntime` 默认使用内存 Persistence，不创建文件，适合单元测试、嵌入式宿主和一次性场景：
+
+```ts
+import { createEmbeddedRuntime } from "@nexum/application"
+import type { ModelPort } from "@nexum/core"
+
+declare const model: ModelPort
+
+const runtime = createEmbeddedRuntime({ model })
+const session = await runtime.sessionService.create({
+  directory: process.cwd(),
+  name: "embedded-demo",
+})
+
+await runtime.codingLoop.run({
+  sessionID: session.sessionID,
+  text: "检查当前项目的结构并给出摘要",
+})
+```
+
+`model` 是调用方注入的 `ModelPort`；可以接入模型网关、测试模型或其他 OpenAI-compatible 实现。Core 不需要知道模型 SDK 的具体类型。
+
+### 2. 本地持久化：文件 Runtime
+
+`createLocalRuntime` 使用 `@nexum/persistence-file`，把 Session、消息、事件、交互和其他 Runtime 状态保存到数据目录，适合本地 CLI 或单机应用：
+
+```ts
+import { createLocalRuntime } from "@nexum/application"
+
+const runtime = createLocalRuntime({ dataDirectory: ".nexum" })
+```
+
+文件实现支持逐文件路径覆盖和原子写入。需要临时状态时使用 `@nexum/persistence-memory`；需要数据库事务和重启恢复时使用 SQLite。
+
+### 3. SQLite + HTTP/SSE：服务形态
+
+`createSqliteRuntime` 使用 `@nexum/persistence-sqlite`，再交给 Server 绑定 HTTP/SSE：
+
+```ts
+import { createSqliteRuntime } from "@nexum/application"
+import { startNexumServer } from "@nexum/server"
+
+const runtime = await createSqliteRuntime({
+  databasePath: ".nexum/nexum.db",
+})
+const server = await startNexumServer({ runtime })
+
+console.log(`Nexum listening at ${server.url}`)
+```
+
+Server 只负责传输、路由、错误映射和事件订阅；Runtime 的 Session、权限、工具和模型能力由注入的 Application/Core 组合提供。停止服务时调用 `await server.stop()`，需要时再关闭 Runtime。
+
+### 4. 客户端和 Surface
+
+协议客户端不依赖 Core 或 Server，可以被 Web、Desktop、TUI、CLI 或其他语言绑定复用：
+
+```ts
+import { Nexum } from "@nexum/client"
+
+const client = Nexum.make({ baseUrl: "http://127.0.0.1:4097" })
+const capabilities = await client.capabilities()
+```
+
+聊天类 Surface 通常使用 `@nexum/surface-adapter` 的 `ChatProtocolAdapter`，再由 `@nexum/chat-surface` 或其他 UI 组件决定布局。Surface 应根据事件和状态展示权限、Question、工具和终态，不应通过猜测文本来判断运行时状态。
+
+## 模块怎么划分
+
+### 运行时边界
 
 ```text
-@nexum/persistence ─────> @nexum/core
-@nexum/integrations ────> @nexum/core
-@nexum/application ─────> @nexum/core + Persistence + Integrations
-@nexum/protocol           纯协议模型
-@nexum/client ──────────> @nexum/protocol
-@nexum/server ──────────> @nexum/core + @nexum/application + @nexum/protocol
-@nexum/surface-adapter ─> @nexum/client
-@nexum/chat-surface ────> @nexum/surface-adapter
-@nexum/surfaces ────────> @nexum/client + @nexum/chat-surface
-@nexum/cli ─────────────> @nexum/surface-adapter + @nexum/client
-@nexum/test ────────────> Core + Persistence + Integrations + Application + Protocol + Client + Surface
+┌──────────────────────────────────────────────────────────────┐
+│ Surface：Web · Chat · CLI · Desktop · TUI · 企业应用          │
+│ 负责布局、交互和状态投影                                      │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ Client / Surface Adapter
+┌──────────────────────────────▼───────────────────────────────┐
+│ Protocol / Transport：Protocol · Client · Server              │
+│ 负责版本化契约、Envelope、错误、事件和 HTTP/SSE              │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ Runtime 注入
+┌──────────────────────────────▼───────────────────────────────┐
+│ Application：Runtime Composer、Skill、Tool、Question 编排     │
+└───────────────┬──────────────────────────────┬────────────────┘
+                │                              │
+┌───────────────▼──────────────┐  ┌────────────▼────────────────┐
+│ Core：运行语义和 Port          │  │ Environment：Persistence     │
+│ Loop · Session · Permission    │  │ · Integrations               │
+│ Context · Skill · Memory       │  │ 文件/内存/SQLite/Model/Host  │
+└───────────────────────────────┘  └─────────────────────────────┘
 ```
+
+### 包职责
+
+| 包                          | 所在边界     | 负责什么                                                                                            | 典型选择                       |
+| --------------------------- | ------------ | --------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `@nexum/core`               | 运行时基础   | Coding Loop、Session、Permission、Question、Context、Skill、Memory/Host/Model/Store Port 和领域错误 | 所有 Runtime 的核心            |
+| `@nexum/persistence`        | 持久化契约   | `NexumPersistence`、Store 组合契约和事件 Hub Port，不包含具体存储                                   | 自定义持久化实现的公共边界     |
+| `@nexum/persistence-memory` | 持久化实现   | 进程内内存 Store，不创建文件或数据库                                                                | 嵌入式运行、快速测试           |
+| `@nexum/persistence-file`   | 持久化实现   | 本地 JSON 文件 Store，支持数据目录和原子写入                                                        | CLI、本地单机运行              |
+| `@nexum/persistence-sqlite` | 持久化实现   | SQLite Store、Schema 初始化、事务和重启恢复                                                         | Web/Server、真实持久化测试     |
+| `@nexum/integrations`       | 外部集成     | OpenAI-compatible Model、本地 Host、目录校验、项目上下文、Skill 文件来源和 MCP                      | 替换模型、执行环境或 MCP SDK   |
+| `@nexum/application`        | 应用编排     | Skill Registry、Tool Registry、Question Broker、Configured Coding Loop 和 Runtime Composer          | 创建完整 Runtime               |
+| `@nexum/protocol`           | 协议模型     | `nexum.runtime.v1`、JSON Envelope、能力、Session、交互和事件模型                                    | 实现其他语言或传输绑定         |
+| `@nexum/client`             | 协议消费     | HTTP 请求、响应校验、错误归一化和 SSE 消费                                                          | Web、CLI、桌面端和自定义客户端 |
+| `@nexum/server`             | 协议绑定     | 将已组合 Runtime 暴露为 HTTP/SSE，负责路由、错误边界和事件投递                                      | 独立本地服务或应用后端         |
+| `@nexum/surface-adapter`    | Surface 适配 | `ChatProtocolAdapter`、聊天操作和协议错误归一化                                                     | 复用聊天协议接入不同 UI        |
+| `@nexum/chat-surface`       | UI 组件      | 可嵌入聊天组件、聊天交互和 Web Component                                                            | 在应用内嵌入聊天体验           |
+| `@nexum/surfaces`           | 参考 UI      | Web 参考 Surface，把协议事件投影成聊天、卡片、抽屉和状态视图                                        | 运行 Test Workbench 或参考实现 |
+| `@nexum/cli`                | 终端 Surface | REPL、思考动画、交互问答和管理面命令                                                                | 终端 Agent                     |
+| `@nexum/test`               | 验证组合     | Server、Runtime、Client 和 Surface 的跨层 POC 与持久化恢复验证                                      | Test Workbench，不作为生产依赖 |
+
+Persistence 实现的细节见 [`@nexum/persistence-memory`](packages/nexum-persistence-memory/README.md)、[`@nexum/persistence-file`](packages/nexum-persistence-file/README.md) 和 [`@nexum/persistence-sqlite`](packages/nexum-persistence-sqlite/README.md)。每个主要模块的实现边界见[模块文档索引](docs/modules/README.md)。
+
+### 依赖方向
+
+```text
+@nexum/persistence-* ──> @nexum/persistence ──> @nexum/core
+@nexum/integrations ─────────────────────────> @nexum/core
+@nexum/application ──> @nexum/core + persistence-* + integrations
+@nexum/protocol       纯协议模型，不依赖 Runtime 实现
+@nexum/client ───────> @nexum/protocol
+@nexum/server ───────> @nexum/core + @nexum/application + @nexum/protocol
+@nexum/surface-adapter ──> @nexum/client
+@nexum/chat-surface ─────> @nexum/surface-adapter
+@nexum/cli ──────────────> @nexum/surface-adapter + @nexum/client
+@nexum/surfaces ─────────> Client + Chat Surface，并组合本地运行时依赖
+@nexum/test ─────────────> Application + Server + Client + Core
+```
+
+依赖方向的核心原则是：Core 不导入实现包；Persistence 和 Integrations 通过 Port 实现环境能力；Application 负责组合；Client 不依赖 Core 或 Server；Surface 不复制 Agent Loop。
+
+## 什么时候替换哪个模块
+
+| 需求                                  | 组合建议                                                         |
+| ------------------------------------- | ---------------------------------------------------------------- |
+| 只想测试 Coding Loop 或嵌入一个 Agent | `createEmbeddedRuntime` + `@nexum/persistence-memory`            |
+| 需要本地 CLI 和可查看的运行状态       | `createLocalRuntime` + `@nexum/persistence-file`                 |
+| 需要服务重启后恢复 Session 和事件     | `createSqliteRuntime` + `@nexum/server`                          |
+| 使用企业模型网关                      | 注入自己的 `ModelPort` 或 Provider Catalog                       |
+| 限制文件和 Shell 能力                 | 注入自己的 `HostPort`/Sandbox，并保留 Core Permission            |
+| 使用远程数据库或事件总线              | 实现 `@nexum/persistence` 的 Store/Event Port                    |
+| 换成另一种 UI                         | 复用 `@nexum/protocol`/`@nexum/client`，按需实现 Surface Adapter |
+
+适配器只负责把 Core Port 接到外部技术。Permission Policy 是 Core 的领域策略；Skill Registry、Tool Registry 和 Question Broker 是 Application 服务，不应被误认为 Persistence 或 Integrations 的实现细节。
+
+## 事件和交互模型
+
+Core 产生运行事实，Protocol 表达事实，Surface 决定呈现：
+
+| 运行事实         | 协议事件                             | Surface 表现           |
+| ---------------- | ------------------------------------ | ---------------------- |
+| 模型产生文本     | `assistant.text`                     | 流式文本消息           |
+| 模型请求工具     | `tool.request`                       | 工具调用卡片           |
+| 工具返回结果     | `tool.result`                        | 执行结果或折叠详情     |
+| 需要用户授权     | `permission.requested`               | 权限确认卡片           |
+| 需要用户补充信息 | `question.request`                   | 反问卡片，暂停后续工具 |
+| 上下文正在压缩   | `context.compaction.*`               | 上下文状态条           |
+| Skill 被激活     | `skill.activated`                    | Skill 活动卡片         |
+| Session 到达终态 | `session.completed/failed/cancelled` | 完成、失败或取消状态   |
+
+长任务的输入、事件序列、权限等待、Question 暂停、上下文压缩和终态都可以通过协议观察和恢复。详细生命周期见[Session 文档](docs/capabilities/session.md)、[事件文档](docs/capabilities/events.md)、[Question 协议](docs/ui/question.md)和[Permission 协议](docs/ui/permission.md)。
 
 ## 文档导航
 
-根 README 是 Nexum 文档总入口。先按协作问题选择 UI/能力文档，再通过模块文档了解实现边界；API 文档用于接口联调，源码和测试是协议事实来源。模块文档状态为“现状基线”，最后核对日期为 2026-11-24。
+根 README 是 Nexum 文档总入口。先按协作问题选择能力或 UI 文档，再通过模块文档了解实现边界；API 文档用于接口联调，源码和测试是协议事实来源。
 
-### 规则与架构
+### 架构与规则
 
 - [文档维护规则](docs/README.md)
 - [API 文档规则](apis/README.md)
 - [包模块地图与包级验证](packages/README.md)
-- [模块文档索引与一对一清单](docs/modules/README.md)
+- [模块文档索引](docs/modules/README.md)
 - [模块边界](docs/architecture/module-boundaries.md)
 - [Runtime 运行流程](docs/architecture/runtime-flow.md)
 
@@ -209,7 +287,6 @@ bun run --cwd packages/nexum-test dev
 
 ### 模块文档
 
-- [模块索引](docs/modules/README.md)
 - [`@nexum/protocol`](docs/modules/nexum-protocol.md)
 - [`@nexum/client`](docs/modules/nexum-client.md)
 - [`@nexum/server`](docs/modules/nexum-server.md)
@@ -223,79 +300,15 @@ bun run --cwd packages/nexum-test dev
 - [`@nexum/surfaces`](docs/modules/nexum-surfaces.md)
 - [`@nexum/test`](docs/modules/nexum-test.md)
 
-新增或修改文档时，必须同步更新本节、对应索引和模块文档中的“修改同步清单”，保持从根 README 可达。
-
-## Nexum 的优势
-
-### 1. 最小功能单元，而不是单体框架
-
-Agent Loop、权限、上下文、Skill、存储和呈现都可以独立测试和组合。宿主只引入真正需要的能力，不必接受一整套不可拆分的应用运行时。
-
-### 2. 一套语义，多种宿主
-
-Web、桌面端、TUI、CLI 和企业页面共享同一套 Session、权限、Question、事件和恢复语义；差异只存在于 Adapter、Transport 和 Surface。
-
-### 3. Core 与环境彻底隔离
-
-Core 不绑定文件系统、网络、模型 SDK、数据库或 UI 框架。替换供应商、存储、执行环境和前端技术，不需要重写 Coding Loop。
-
-### 4. 长任务可观测、可恢复
-
-Prompt admission、事件序列、工具结果、权限等待、Question 暂停、上下文压缩和终态都通过协议显式表达。用户看到的是完整交互过程，而不是只看到最后一段答案。
-
-### 5. 安全边界是运行时语义
-
-工具调用必须经过权限门禁，资源路径受工作目录约束，权限和事件内容做脱敏，取消和失败会收敛到明确状态。安全规则不依赖某个页面是否正确实现。
-
-### 6. 默认可用，生产可替换
-
-官方提供开箱即用的本地 Persistence、Integrations、Application 实现和 HTTP/SSE 绑定，便于快速验证；生产环境可以逐个替换为数据库、模型网关、沙箱、消息总线或企业协议。
-
-### 7. 协议优先，应用持续演进
-
-协议是 Core 与应用之间的稳定边界。新增 Surface 或新的业务页面时，优先复用已有协议，而不是复制一套隐藏的 Agent 状态机。
-
-## 快速开始
-
-```bash
-bun install
-```
-
-运行 Nexum Test Workbench：
-
-```bash
-bun run --cwd packages/nexum-test dev
-```
-
-启动 Headless Server 与终端 CLI：
-
-```bash
-bun run dev:server      # 前台启动 Server(http://127.0.0.1:4097),Ctrl+C 停止
-bun run cli             # 进入 REPL(另开一个终端)
-bun run cli -- --help   # 查看全部命令;子命令直接跟在后面,如 bun run cli session list
-```
-
-分别验证包：
-
-```bash
-cd packages/nexum-core && bun test && bun run typecheck:tsc
-cd ../nexum-persistence && bun test && bun run typecheck:tsc
-cd ../nexum-integrations && bun test && bun run typecheck:tsc
-cd ../nexum-application && bun test && bun run typecheck:tsc
-cd ../nexum-server && bun test && bun run typecheck:tsc
-cd ../nexum-protocol && bun test && bun run typecheck
-cd ../nexum-client && bun test && bun run typecheck
-cd ../nexum-surface-adapter && bun test && bun run typecheck:tsc
-cd ../nexum-cli && bun test && bun run typecheck:tsc
-cd ../nexum-test && bun test && bun run typecheck:tsc
-```
-
-更多细节见：
+### 包级 README
 
 - [`@nexum/core`](packages/nexum-core/README.md)
-- [`@nexum/persistence`](packages/nexum-persistence/README.md)
-- [`@nexum/integrations`](packages/nexum-integrations/README.md)
 - [`@nexum/application`](packages/nexum-application/README.md)
+- [`@nexum/persistence`](packages/nexum-persistence/README.md)
+- [`@nexum/persistence-memory`](packages/nexum-persistence-memory/README.md)
+- [`@nexum/persistence-file`](packages/nexum-persistence-file/README.md)
+- [`@nexum/persistence-sqlite`](packages/nexum-persistence-sqlite/README.md)
+- [`@nexum/integrations`](packages/nexum-integrations/README.md)
 - [`@nexum/protocol`](packages/nexum-protocol/README.md)
 - [`@nexum/client`](packages/nexum-client/README.md)
 - [`@nexum/server`](packages/nexum-server/README.md)
@@ -305,6 +318,29 @@ cd ../nexum-test && bun test && bun run typecheck:tsc
 - [`@nexum/surfaces`](packages/nexum-surfaces/README.md)
 - [`@nexum/test`](packages/nexum-test/README.md)
 
+## 验证与开发
+
+完整检查从仓库根目录执行：
+
+```bash
+bun run check
+```
+
+测试不要从根目录执行；应进入目标包目录，例如：
+
+```bash
+cd packages/nexum-core && bun test && bun run typecheck:tsc
+cd ../nexum-application && bun test && bun run typecheck:tsc
+cd ../nexum-server && bun test && bun run typecheck:tsc
+cd ../nexum-client && bun test && bun run typecheck
+```
+
+更多包级验证命令见 [`packages/README.md`](packages/README.md)。
+
 ## 项目状态
 
-当前分支为 `dev-v0.0.1`。Nexum 已完成第一阶段的 Core/Adapter/Protocol/Server/Surface 解耦和持久化 POC 验证，后续可以在不修改 Core 运行语义的前提下继续增加新的传输、存储、模型、执行环境和交互 Surface。
+当前仓库已经具备可独立组合的 Core、Persistence、Integrations、Application、Protocol、Server、Client 和 Surface；Test Workbench、文件持久化、SQLite 持久化、HTTP/SSE、CLI、权限、Question、Skill、MCP 和执行恢复均有对应实现或验证入口。Nexum 仍处于持续演进阶段，新增能力优先通过 Port、Protocol 和可替换模块接入，避免把宿主 UI 或具体供应商绑定进 Core。
+
+## License
+
+MIT
