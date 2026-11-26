@@ -309,6 +309,7 @@ export async function runRepl(options: ReplOptions): Promise<void> {
 
       options.lineSource.setSigintHandler?.(() => {
         if (locked()) {
+          renderer.flushThinking()
           io.line(paint(io.caps, "dim", "已请求取消运行(Ctrl+C)"))
           if (sessionID) void adapter.cancelRun(sessionID).catch(() => {})
           return
@@ -396,6 +397,7 @@ export async function runRepl(options: ReplOptions): Promise<void> {
             continue
           }
           if (locked()) {
+            renderer.flushThinking()
             io.line(paint(io.caps, "yellow", "Agent 正在回复,/cancel 取消本轮"))
             continue
           }

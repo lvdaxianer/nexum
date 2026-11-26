@@ -218,6 +218,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
         return
       case "context.compaction.started":
         status = "running"
+        closeReasoning()
         cancelLive()
         liveKind = "compaction"
         live = createLiveLine(io, (tick) => `${paint(caps, "cyan", spinnerFrame(tick))} ${paint(caps, "dim", "上下文压缩")} ${paint(caps, "cyan", barberPole(tick))}`)
@@ -249,6 +250,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
         io.line(paint(caps, "yellow", `模型重试 · ${String(record.delayMs ?? 0)}ms 后重试`))
         return
       case "coding-loop.limit.reached":
+        closeReasoning()
         io.line(paint(caps, "yellow", "已达到本轮步数上限,/continue 可继续"))
         return
       case "run.settled": {
@@ -276,6 +278,7 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
         return
       case "session.failed":
         status = "failed"
+        closeReasoning()
         io.line(paint(caps, "red", `运行失败 ${str(record, "message")}`))
         return
       case "session.cancelled":

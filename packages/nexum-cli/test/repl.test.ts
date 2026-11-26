@@ -659,3 +659,45 @@ test("repl slash commands collapse the live thinking region before printing", as
   expect(out).toContain("✓ 思考过程 · 10 字")
   expect(out.indexOf("✓ 思考过程")).toBeLessThan(out.indexOf("assistant.reasoning"))
 })
+
+test("repl SIGINT cancel notice collapses the live thinking region before printing", async () => {
+  const io = memoryIO({ anim: true })
+  const { adapter, calls } = fakeAdapter({
+    onSend: () => [makeEvent("assistant.reasoning", { content: "取消前的推理行\n" }, 1)],
+  })
+  let sigint: (() => void) | undefined
+  let pending: ((line: string | null) => void) | undefined
+  const queue = ["你好"]
+  const lineSource = {
+    next: () => (queue.length > 0 ? Promise.resolve(queue.shift()!) : new Promise<string | null>((resolve) => { pending = resolve })),
+    close: () => {
+      sigint = undefined
+      pending?.(null)
+    },
+    setSigintHandler: (handler: () => void) => {
+      sigint = handler
+    },
+  }
+  const run = runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource, prompter: async () => "" })
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  sigint!()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  expect(calls).toContain("cancelRun")
+  lineSource.close()
+  await run
+  const out = io.plain()
+  // 思考区先收起为摘要,取消提示完整落在区域外
+  expect(out).toContain("✓ 思考过程 · 8 字")
+  expect(out.indexOf("✓ 思考过程")).toBeLessThan(out.indexOf("已请求取消运行(Ctrl+C)"))
+})
+
+test("repl locked warning collapses the live thinking region before printing", async () => {
+  const io = memoryIO({ anim: true })
+  const { adapter } = fakeAdapter({
+    onSend: () => [makeEvent("assistant.reasoning", { content: "锁定前的推理行\n" }, 1)],
+  })
+  await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: slowLineSource(["你好", "第二条消息", "/quit"]), prompter: async () => "" })
+  const out = io.plain()
+  expect(out).toContain("✓ 思考过程 · 8 字")
+  expect(out.indexOf("✓ 思考过程")).toBeLessThan(out.indexOf("Agent 正在回复,/cancel 取消本轮"))
+})
