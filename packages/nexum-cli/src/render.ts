@@ -46,6 +46,8 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
 
   const data = (event: NexumEvent) => (event.data ?? {}) as Record<string, unknown>
   const str = (record: Record<string, unknown>, key: string) => (typeof record[key] === "string" ? (record[key] as string) : "")
+  /** 判断 Renderer 是否处于权限或 Question 交互等待状态。 */
+  const interactionWaiting = () => status === "awaiting permission" || status === "awaiting question"
 
   function eraseCursor() {
     if (!cursorOut) return
@@ -129,12 +131,14 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
     const record = data(event)
     switch (event.type) {
       case "assistant.thinking":
+        if (interactionWaiting()) return
         status = "running"
         markRunStarted()
         if (reasoningStartedAt === 0) reasoningStartedAt = Date.now()
         ensureThinkingLive()
         return
       case "assistant.reasoning": {
+        if (interactionWaiting()) return
         status = "running"
         markRunStarted()
         if (reasoningStartedAt === 0) reasoningStartedAt = Date.now()

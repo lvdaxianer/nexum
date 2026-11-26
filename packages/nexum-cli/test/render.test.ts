@@ -97,6 +97,20 @@ test("permission pauses the active tool line and tool.result still prints after 
   renderer.close()
 })
 
+test("permission waiting ignores thinking heartbeats and keeps the prompt line stable", async () => {
+  const io = memoryIO({ anim: true })
+  const renderer = createRenderer({ io })
+  renderer.event(event("tool.request", { toolCallID: "tool_1", toolName: "read" }, 1))
+  renderer.event(event("permission.requested", { requestID: "p1", action: "read", resource: "README.md" }, 2))
+  const waitingOutput = io.output()
+  renderer.event(event("assistant.thinking", { message: "正在思考" }, 3))
+  renderer.event(event("assistant.reasoning", { content: "不应覆盖审批输入" }, 4))
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  expect(renderer.status()).toBe("awaiting permission")
+  expect(io.output()).toBe(waitingOutput)
+  renderer.close()
+})
+
 test("question pauses the active tool line as 等待回答", () => {
   const io = memoryIO()
   const renderer = createRenderer({ io })
@@ -107,6 +121,22 @@ test("question pauses the active tool line as 等待回答", () => {
   expect(io.plain()).toContain("⏸ 工具调用 read · 等待回答\n")
   renderer.event(event("tool.result", { toolCallID: "tool_1", toolName: "read", ok: true, output: "完成" }, 3))
   expect(io.plain()).toContain("✓ 工具结果 read")
+  renderer.close()
+})
+
+test("question waiting ignores thinking heartbeats and keeps the prompt line stable", async () => {
+  const io = memoryIO({ anim: true })
+  const renderer = createRenderer({ io })
+  renderer.event(event("tool.request", { toolCallID: "tool_1", toolName: "read" }, 1))
+  renderer.event(
+    event("question.request", { requestID: "q1", toolCallID: "tool_1", questions: [{ header: "h", question: "q?", options: [{ label: "A", description: "" }] }] }, 2),
+  )
+  const waitingOutput = io.output()
+  renderer.event(event("assistant.thinking", { message: "正在思考" }, 3))
+  renderer.event(event("assistant.reasoning", { content: "不应覆盖回答输入" }, 4))
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  expect(renderer.status()).toBe("awaiting question")
+  expect(io.output()).toBe(waitingOutput)
   renderer.close()
 })
 
