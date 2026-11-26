@@ -25,8 +25,8 @@
 Solid 接入：
 
 ```tsx
-import { ChatSurface } from "@nexum/chat-surface"
-import "@nexum/chat-surface/styles.css"
+import { ChatSurface } from "nexum/chat-surface"
+import "nexum/chat-surface/styles.css"
 
 export function ChatPanel(props: { sessionID: string; apiBaseUrl: string }) {
   return <ChatSurface sessionID={props.sessionID} client={{ baseUrl: props.apiBaseUrl }} title="Nexum Chat" />

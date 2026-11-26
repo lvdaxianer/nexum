@@ -25,7 +25,7 @@ Application 不定义通用存储格式，也不直接处理 HTTP/UI。替换模
 - `createNexumEventHub` 及相关 Event 类型。
 
 ```ts
-import { createLocalRuntime } from "@nexum/application"
+import { createLocalRuntime } from "nexum/application"
 
 const runtime = createLocalRuntime({ dataDirectory: ".nexum" })
 const session = await runtime.sessions.create({ directory: process.cwd() })

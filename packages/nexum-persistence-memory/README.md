@@ -1,10 +1,19 @@
-# @nexum/persistence-memory
+# Nexum Memory Persistence
 
-Nexum 的进程内存储适配器。
+Memory Persistence 是进程内存储实现，发布入口为 `nexum/persistence/memory`。
 
-- 不创建文件或 SQLite 数据库。
-- 每次创建 Persistence 组合都会得到独立状态。
-- 适合临时嵌入式运行和不验证重启恢复的快速测试。
-- 测试默认使用 `@nexum/persistence-sqlite`，避免把内存行为误当作持久化行为。
+```bash
+npm install nexum
+```
 
-使用 `createMemoryPersistence()` 创建完整的 `NexumPersistence` 组合。
+```ts
+import { createMemoryPersistence } from "nexum/persistence/memory"
+import { createEmbeddedRuntime } from "nexum/application"
+
+const persistence = createMemoryPersistence()
+const runtime = createEmbeddedRuntime({ persistence })
+```
+
+每次创建组合都会得到独立状态，不创建文件或 SQLite 数据库，适合嵌入式运行、快速测试和一次性任务。它不提供进程重启恢复；需要恢复语义时改用 `nexum/persistence/file` 或 `nexum/persistence/sqlite`。
+
+仓库内开发：`bun test --cwd packages/nexum-persistence-memory`、`bun run --cwd packages/nexum-persistence-memory typecheck`。

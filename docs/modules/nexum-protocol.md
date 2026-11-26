@@ -30,7 +30,7 @@
 Server 将模型编码为 JSON Envelope 或 SSE 事件；Client 校验 `meta.protocolVersion` 并把结果恢复为协议类型；UI 只消费协议数据和事件，不直接依赖 Server 内部实现。
 
 ```ts
-import type { NexumEvent, NexumSession } from "@nexum/protocol"
+import type { NexumEvent, NexumSession } from "nexum/protocol"
 
 function renderSession(session: NexumSession) {
   return `${session.id}: ${session.status}`

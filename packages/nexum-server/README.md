@@ -1,21 +1,22 @@
-# @nexum/server
+# Nexum Server
 
-`@nexum/server` 是 Nexum Core 的 HTTP/SSE 适配层，为任意 Web、桌面端、TUI 或企业页面提供稳定的控制接口。
-
-## 目录职责
-
-- `src/main.ts`：本地开发启动入口。
-- `src/index.ts`：服务装配和对外导出。
-- `src/events.ts`：Session 事件发布和 SSE 订阅。
-- `test/`：服务、协议、Skill API 和事件流测试。
-
-生产入口 `src/main.ts` 使用 JSON 文件保存 Session 元数据和全局模型配置。默认文件为当前工作目录下的 `.nexum/sessions.json` 与 `.nexum/model-config.json`；部署时可通过 `NEXUM_DATA_DIR` 指向 release 之外的共享数据目录，或通过 `NEXUM_SESSION_FILE`、`NEXUM_MODEL_CONFIG_FILE` 指定完整文件路径。Session 文件只保存名称、工作目录、状态和时间戳；模型配置文件保存服务地址、模型名和凭据（权限为 `0600`），接口不会回显凭据值。
-
-Server 只负责传输、Session 编排和事件投递，核心权限与工具规则由 [`@nexum/core`](../nexum-core/README.md) 决定；参考交互面位于 [`@nexum/surfaces`](../nexum-surfaces/README.md)。
-
-## 验证
+Server 把已组合的 Runtime 暴露为 HTTP/SSE 服务，发布入口为 `nexum/server`。
 
 ```bash
-bun test --cwd packages/nexum-server
-bun run --cwd packages/nexum-server typecheck
+npm install nexum
 ```
+
+```ts
+import { createSqliteRuntime } from "nexum/application"
+import { startNexumServer } from "nexum/server"
+
+const runtime = await createSqliteRuntime({ databasePath: ".nexum/nexum.db" })
+const server = await startNexumServer({ runtime, port: 4097 })
+console.log(server.url)
+```
+
+Server 负责路由、JSON Envelope、错误边界、SSE 事件投递和 Session 控制面；运行语义由注入的 Application/Core 决定。客户端使用 `nexum/client`，UI 使用 `nexum/surface-adapter` 或其他 Surface。
+
+运行约束：生产环境应把数据库和凭据目录放在 release 目录之外，并配置认证、CORS、Host 和 Permission 策略。Server 不应等待动态插件加载后才响应。
+
+仓库内开发：`bun run --cwd packages/nexum-server dev`、`bun test --cwd packages/nexum-server`、`bun run --cwd packages/nexum-server typecheck`。

@@ -1,11 +1,21 @@
-# @nexum/persistence
+# Nexum Persistence
 
-Nexum 持久化适配器的公共组合契约层。这里定义 `NexumPersistence`、事件 Hub 端口和共享选项，不承载具体的内存、文件或 SQLite 实现。
+Persistence 是存储组合契约，发布入口为 `nexum/persistence`。它定义 `NexumPersistence`、Store 组合和 Event Hub，不决定具体数据库或文件格式。
 
-## 实现包
+```bash
+npm install nexum
+```
 
-- `@nexum/persistence-memory`：进程内存储，适合临时嵌入式运行和不需要恢复语义的 Core 单元测试。
-- `@nexum/persistence-file`：JSON 文件存储，适合 CLI 和需要人工查看、备份的本地运行。
-- `@nexum/persistence-sqlite`：SQLite 文件数据库，适合 Web/Server 和需要验证真实重启恢复的测试。
+```ts
+import type { NexumPersistence } from "nexum/persistence"
+import { createNexumEventHub } from "nexum/persistence"
 
-所有实现包都通过同一组 Core Store/Port 工作。数据库事务、文件原子写入、凭据存储和错误恢复策略属于具体实现包，不进入 Core。
+declare const persistence: NexumPersistence
+const events = createNexumEventHub({ store: persistence.eventStore })
+```
+
+应用通常不直接创建契约层，而是选择 `nexum/persistence/memory`、`nexum/persistence/file` 或 `nexum/persistence/sqlite` 后交给 `nexum/application`。自定义存储实现必须保持 Core Store/Port 的一致性、错误边界和恢复语义。
+
+运行约束：契约层本身不提供重启恢复；需要恢复时选择文件或 SQLite 实现，并把数据目录放在 release 之外。
+
+仓库内开发：`bun test --cwd packages/nexum-persistence`、`bun run --cwd packages/nexum-persistence typecheck`。

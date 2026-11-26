@@ -17,7 +17,7 @@ Server 不拥有 Core 的工具和权限决策，也不把 UI 规则下沉到 HT
 入口 [`src/index.ts`](../../packages/nexum-server/src/index.ts) 导出 `startNexumServer(options)` 和 `NexumServer` 句柄。开发/参考启动入口为 [`src/main.ts`](../../packages/nexum-server/src/main.ts)。
 
 ```ts
-import { startNexumServer } from "@nexum/server"
+import { startNexumServer } from "nexum/server"
 
 const server = await startNexumServer({
   hostname: "127.0.0.1",

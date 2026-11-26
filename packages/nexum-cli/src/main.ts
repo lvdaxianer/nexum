@@ -115,7 +115,7 @@ export async function run(argv: string[]): Promise<number> {
     await client.capabilities()
   } catch {
     io.line(`无法连接 ${baseUrl}`)
-    io.line("请先启动 Server:bun run --cwd packages/nexum-server dev")
+    io.line("请先启动 Nexum Server（默认地址 http://127.0.0.1:4097）")
     return 1
   }
   const adapter = createChatProtocolAdapter({ baseUrl })
