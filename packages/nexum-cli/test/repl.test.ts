@@ -288,8 +288,8 @@ test("inputBoxLines returns undefined for non-TTY and box strings for ansi16", (
   expect(box.bottom).toContain("╰")
   expect(box.bottom).toContain("╯")
   expect(box.top).toContain("\x1b[36m")
-  // 宽度:columns - 6,上限 110,下限 44
-  expect(plain(box.top)).toHaveLength(74)
+  // 宽度:columns - 4,上限 110,下限 44
+  expect(plain(box.top)).toHaveLength(76)
   expect(plain(inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 130)!.top)).toHaveLength(110)
   expect(plain(inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 40)!.top)).toHaveLength(44)
 })
@@ -552,8 +552,8 @@ test("repl /permissions lists rules, switches mode and refreshes the box status"
   const lineSource = statusLineSource(["/permissions", "/permissions mode allow", "/permissions", "/quit"])
   await runRepl({ adapter, client, io, sessionID: session.id, lineSource, prompter: async () => "" })
   // 初始 ask,mode allow 后刷新为 allow · 1 规则
-  expect(lineSource.statuses[0]).toBe("权限:ask")
-  expect(lineSource.statuses.at(-1)).toBe("权限:allow · 1 规则")
+  expect(lineSource.statuses[0]).toBe("未配置模型 · 权限:ask")
+  expect(lineSource.statuses.at(-1)).toBe("未配置模型 · 权限:allow · 1 规则")
   expect(rules[0]).toMatchObject({ action: "*", resource: "*", effect: "allow", scope: "global" })
   const out = io.plain()
   expect(out).toContain("暂无规则,全部操作逐次询问")
@@ -797,4 +797,87 @@ test("repl /help lists every slash command", async () => {
   for (const name of ["help", "new", "sessions", "use", "resume", "status", "skills", "mcp", "model", "theme", "permissions", "events", "clear", "cancel", "continue", "thinking", "expand", "quit"]) {
     expect(out).toContain(`/${name}`)
   }
+})
+
+/** 模型配置可编程的 fake client:GET /model 返回给定配置(null=未配置,"fail"=请求失败),权限列表恒空。 */
+function modelClient(model: { baseUrl: string; model: string; credentialConfigured: boolean } | null | "fail") {
+  const gets: number[] = []
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      const request = new Request(typeof input === "string" ? input : input.toString(), init)
+      if (request.method === "GET" && request.url.endsWith("/model")) {
+        gets.push(1)
+        if (model === "fail") throw new Error("连接失败")
+        return Response.json({ data: model, meta })
+      }
+      if (request.method === "GET") return Response.json({ data: { rules: [], defaultEffect: "ask" }, meta })
+      return Response.json({ data: {}, meta })
+    },
+  })
+  return { client, gets }
+}
+
+test("repl box status shows the configured model name before the permission segment", async () => {
+  const io = memoryIO({ color: "ansi16" })
+  const { adapter } = fakeAdapter({})
+  const { client } = modelClient({ baseUrl: "http://api.test", model: "deepseek-v4-pro", credentialConfigured: true })
+  const lineSource = statusLineSource(["/quit"])
+  await runRepl({ adapter, client, io, sessionID: session.id, lineSource, prompter: async () => "" })
+  const status = lineSource.statuses.at(-1)!
+  expect(status).toContain("\x1b[36mdeepseek-v4-pro\x1b[0m")
+  expect(status.replace(/\x1b\[[0-9;]*m/g, "")).toContain("权限:ask")
+  expect(status.indexOf("deepseek-v4-pro")).toBeLessThan(status.indexOf("权限:"))
+})
+
+test("repl box status shows a yellow 未配置模型 when no model is configured", async () => {
+  const io = memoryIO({ color: "ansi16" })
+  const { adapter } = fakeAdapter({})
+  const { client } = modelClient(null)
+  const lineSource = statusLineSource(["/quit"])
+  await runRepl({ adapter, client, io, sessionID: session.id, lineSource, prompter: async () => "" })
+  const status = lineSource.statuses.at(-1)!
+  expect(status).toContain("\x1b[33m未配置模型\x1b[0m")
+  expect(status.replace(/\x1b\[[0-9;]*m/g, "")).toContain("权限:ask")
+})
+
+test("repl box status falls back to permission-only when the model fetch fails", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  const { client } = modelClient("fail")
+  const lineSource = statusLineSource(["/quit"])
+  await runRepl({ adapter, client, io, sessionID: session.id, lineSource, prompter: async () => "" })
+  expect(lineSource.statuses.at(-1)).toBe("权限:ask")
+})
+
+test("repl /model refreshes the model segment after displaying", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  const { client, gets } = modelClient({ baseUrl: "http://api.test", model: "qwen3-max", credentialConfigured: true })
+  const lineSource = statusLineSource(["/model", "/quit"])
+  await runRepl({ adapter, client, io, sessionID: session.id, lineSource, prompter: async () => "" })
+  // 启动一次 + /model 后刷新一次
+  expect(gets.length).toBeGreaterThanOrEqual(2)
+  expect(io.plain()).toContain("qwen3-max")
+  expect(lineSource.statuses.at(-1)).toContain("qwen3-max · 权限:ask")
+})
+
+test("composed model + permission status stays on the hint row at 80 columns", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 80)!
+  const source = readlineLineSource(() => [], { input, output, box })
+  source.setStatus?.("deepseek-v4-pro · 权限:ask")
+  source.showPrompt?.()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const hintLine = rendered.split("\n").find((line) => line.includes("输入任务"))!
+  const plainHint = hintLine.replace(/\x1b\[[0-9;]*m/g, "")
+  // 状态段未被丢弃,且提示行整体不超出框宽
+  expect(plainHint.endsWith("deepseek-v4-pro · 权限:ask")).toBe(true)
+  expect(displayWidth(plainHint)).toBe(displayWidth(box.top.replace(/\x1b\[[0-9;]*m/g, "")))
+  source.close()
 })

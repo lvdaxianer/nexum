@@ -44,8 +44,8 @@ export type InputBox = {
 /** 行式近似的输入框:非 TTY 或无颜色时降级为 undefined(调用方退回普通提示符)。 */
 export function inputBoxLines(caps: TermCaps, columns: number): InputBox | undefined {
   if (!caps.isTTY || caps.color === "none") return undefined
-  const width = Math.max(44, Math.min(columns - 6, 110))
-  const hintText = "输入任务,Enter 发送 · @ 引用 Skill · /help 命令 · Ctrl+C 取消/退出"
+  const width = Math.max(44, Math.min(columns - 4, 110))
+  const hintText = "输入任务,Enter 发送 · @ 引用 Skill · /help 命令"
   return {
     top: paint(caps, "cyan", `╭${"─".repeat(width - 2)}╮`),
     hint: `${paint(caps, "cyan", "│")} ${paint(caps, "dim", hintText)}`,
@@ -246,16 +246,38 @@ export async function runRepl(options: ReplOptions): Promise<void> {
   let pendingName: string | undefined
   const recentEvents: string[] = []
 
-  // 权限状态段:启动时获取,/permissions 变更与权限回复(allow_always 会写规则)后刷新;失败静默置空。
-  const refreshPermission = async () => {
-    if (!options.lineSource.setStatus) return
-    const status = await client.experimental.nexum.permissionPolicy
+  // 框内右侧状态段 = 模型段 + 权限段:启动时并行获取一次,/model 与 /permissions 后各自刷新;
+  // 任一段获取失败仅留空该段,另一段照常显示。
+  let modelSegment = ""
+  let permissionSegment = ""
+  const pushStatus = () =>
+    options.lineSource.setStatus?.([modelSegment, permissionSegment].filter((part) => part !== "").join(paint(io.caps, "dim", " · ")))
+  const fetchPermissionSegment = async () => {
+    permissionSegment = await client.experimental.nexum.permissionPolicy
       .list()
       .then((list) => permissionStatusText(io.caps, list.data))
       .catch(() => "")
-    options.lineSource.setStatus?.(status)
   }
-  await refreshPermission()
+  const fetchModelSegment = async () => {
+    modelSegment = await client.experimental.nexum.model
+      .get()
+      .then((config) => (config.data?.model ? paint(io.caps, "cyan", config.data.model) : paint(io.caps, "yellow", "未配置模型")))
+      .catch(() => "")
+  }
+  const refreshPermission = async () => {
+    if (!options.lineSource.setStatus) return
+    await fetchPermissionSegment()
+    pushStatus()
+  }
+  const refreshModel = async () => {
+    if (!options.lineSource.setStatus) return
+    await fetchModelSegment()
+    pushStatus()
+  }
+  if (options.lineSource.setStatus) {
+    await Promise.all([fetchPermissionSegment(), fetchModelSegment()])
+    pushStatus()
+  }
 
   try {
     while (true) {
@@ -432,10 +454,13 @@ export async function runRepl(options: ReplOptions): Promise<void> {
             else if (command === "status") await cmdStatus(client, io, { baseUrl: options.baseUrl })
             else if (command === "theme") await cmdTheme(io, rest)
             else if (command === "mcp") await cmdMcpList(client, io)
-            else if (command === "model") await cmdModelGet(client, io)
-            else if (command === "permissions") {
+            else if (command === "model") {
+              await cmdModelGet(client, io)
+              await refreshModel()
+            } else if (command === "permissions") {
               await cmdPermission(client, io, rest)
               await refreshPermission()
+              await refreshModel()
             }
             else if (command === "clear") {
               io.write("\x1b[2J\x1b[H")
