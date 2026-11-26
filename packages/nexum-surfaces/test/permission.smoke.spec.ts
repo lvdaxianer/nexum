@@ -71,7 +71,7 @@ describe.serial("Nexum UI smoke", () => {
 
     await page.goto(remoteUiOrigin)
     await apiRequest
-    await expect(page.getByRole("heading", { name: "Agent 工作台" })).toBeVisible()
+    await expect(page.locator(".nexum-chat-surface")).toBeVisible()
   })
 
   test.serial("restores paged conversation history and keeps live events incremental", { timeout: 15_000 }, async () => {
@@ -153,13 +153,8 @@ describe.serial("Nexum UI smoke", () => {
     uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
 
     await page.goto(uiOrigin)
-    await expect(page.getByRole("heading", { name: "Agent 工作台" })).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Coding Loop" })).toBeVisible()
-    await expect(page.locator(".nexum-chat-toolbar")).toBeVisible()
-    await expect(page.locator(".nexum-chat-status-cluster")).toBeVisible()
-    await expect(page.getByRole("tab", { name: "对话" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: /事件/ })).toBeVisible()
-    await expect(page.getByText("上下文", { exact: true })).toBeVisible()
+    await expect(page.locator(".nexum-chat-surface")).toBeVisible()
+    await expect(page.locator(".nexum-chat-composer")).toBeVisible()
     await expect(page.locator(".app-sidebar").getByRole("button", { name: /权限策略/ })).toBeVisible()
     await openDrawer(page, /模型配置/)
     await expect(page.getByLabel("服务地址")).toHaveValue("")
@@ -611,8 +606,7 @@ describe.serial("Nexum UI smoke", () => {
       await page.getByTestId("permission-actions").getByRole("button", { name: "拒绝" }).click()
 
       await expect(page.locator(".pill-failed")).toBeVisible()
-      await page.getByRole("tab", { name: /事件/ }).click()
-      await expect(page.getByText("session.failed")).toBeVisible()
+      await expect(page.locator(".nexum-chat-status-item").filter({ hasText: "运行失败" })).toBeVisible()
       await expect(page.getByRole("button", { name: "拒绝" })).toHaveCount(0)
       expect(await Bun.file(join(directory, "denied.txt")).exists()).toBe(false)
     },
@@ -679,8 +673,6 @@ describe.serial("Nexum UI smoke", () => {
       await expect(page.locator(".chat-message.assistant")).toContainText("命令已执行")
       await expect(page.locator(".act-row").filter({ hasText: "工具结果" })).toContainText("已完成")
       await expect(page.locator(".act-row").filter({ hasText: "模型尝试" })).toContainText("已完成")
-      await page.getByRole("tab", { name: /事件/ }).click()
-      await expect(page.getByText("tool.result")).toBeVisible()
       await expect(page.locator("body")).not.toContainText("super-secret-token")
     },
   )
@@ -963,12 +955,8 @@ describe.serial("Nexum UI smoke", () => {
     await page.getByRole("button", { name: "提交回答" }).click()
 
     await expect(page.locator(".pill-completed")).toBeVisible()
-    await expect(page.locator(".context-value").filter({ hasText: "completed" })).toBeVisible()
     await expect(page.getByText("AGENTS.md", { exact: true })).toBeVisible()
-    await page.getByRole("tab", { name: /事件/ }).click()
-    await expect(
-      page.locator(".event-body strong").filter({ hasText: "context.compaction.completed" }).first(),
-    ).toBeVisible()
+    await expect(page.locator(".nexum-chat-execution").filter({ hasText: "上下文压缩" })).toBeVisible()
   })
 
   test.serial(
@@ -1336,8 +1324,7 @@ describe.serial("Nexum UI smoke", () => {
     await page.getByRole("button", { name: /发送 Prompt/ }).click()
     await expect(page.getByTestId("permission-actions").getByRole("button", { name: "允许一次" })).toBeVisible()
     await page.getByTestId("permission-actions").getByRole("button", { name: "允许一次" }).click()
-    await page.getByRole("tab", { name: /事件/ }).click()
-    await expect(page.locator(".event-body strong").filter({ hasText: "skill.activated" })).toBeVisible()
+    await expect(page.locator(".nexum-chat-execution").filter({ hasText: "Skill 已进入模型上下文" })).toBeVisible()
     await expect(page.locator(".pill-completed")).toBeVisible()
   })
 

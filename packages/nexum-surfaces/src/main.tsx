@@ -61,7 +61,6 @@ function App() {
   const [model, setModel] = createSignal("")
   const [credentialRef, setCredentialRef] = createSignal("")
   const [credential, setCredential] = createSignal("")
-  const [sessionName, setSessionName] = createSignal("")
   const [sessionCreateName, setSessionCreateName] = createSignal("")
   const [directory, setDirectory] = createSignal("")
   const [sessionID, setSessionID] = createSignal("")
@@ -740,7 +739,6 @@ function App() {
     setDeleteState("idle")
     setDeleteMessage("")
     setSessionID(session.id)
-    setSessionName(snapshot.data.session.name)
     setDirectory(snapshot.data.session.directory)
     sessionStorage.setItem("nexum.sessionID", session.id)
     if (announce) setNotice(`已选择 Session：${snapshot.data.session.name}`)
@@ -794,7 +792,6 @@ function App() {
   function applyCreatedSession(created: SessionSummary) {
     ++sessionSelectSequence
     setSessionID(created.id)
-    setSessionName(created.name)
     setDirectory(created.directory)
     sessionStorage.setItem("nexum.sessionID", created.id)
     setSessions((current) => [...current.filter((item) => item.id !== created.id), created])
@@ -846,7 +843,6 @@ function App() {
     try {
       const updated = await client.experimental.nexum.session.update({ sessionID: sessionID(), name })
       setSessions((current) => current.map((session) => (session.id === updated.data.id ? updated.data : session)))
-      setSessionName(updated.data.name)
       setSessionEditDrawerOpen(false)
       setSessionNameError("")
       setNotice(`Session 已重命名为「${updated.data.name}」`)
@@ -902,7 +898,6 @@ function App() {
 
   function clearSelectedSession() {
     setSessionID("")
-    setSessionName("")
     setDirectory("")
     setDeleteState("idle")
     setDeleteMessage("")
@@ -970,6 +965,10 @@ function App() {
             <p class="eyebrow">NEXUM / RUNTIME</p>
             <strong>内部演示工作台</strong>
           </div>
+        </div>
+
+        <div class="sidebar-meta">
+          <span class="model-chip">{model() ? `全局模型 · ${model()}` : "未配置全局模型"}</span>
         </div>
 
         <nav class="side-nav" aria-label="主导航">
@@ -1346,7 +1345,74 @@ function App() {
               <span class="section-kicker">可恢复工作区</span>
               <h2>Session</h2>
             </div>
-            <span class="status-badge">{sessions().length} 个</span>
+            <div class="card-heading-actions">
+              <span class="status-badge">{sessions().length} 个</span>
+              <Drawer
+                title="会话操作"
+                description="重命名、恢复当前 Session，或删除不再需要的运行记录。"
+                open={sessionEditDrawerOpen()}
+                onOpenChange={(open) => (open ? openRenameSession() : setSessionEditDrawerOpen(false))}
+                triggerClass="session-ops-button"
+                trigger={
+                  <>
+                    <span aria-hidden="true">⋯</span>
+                    <span class="sr-only">会话操作</span>
+                  </>
+                }
+              >
+                <label class={`form-field ${sessionNameError() ? "field-invalid" : ""}`}>
+                  <span>
+                    Session 名称 <span class="required-mark">必填</span>
+                  </span>
+                  <input
+                    id="session-edit-name"
+                    aria-label="Session 名称"
+                    aria-invalid={Boolean(sessionNameError())}
+                    value={sessionEditName()}
+                    onInput={(event) => {
+                      setSessionEditName(event.currentTarget.value)
+                      setSessionNameError("")
+                    }}
+                  />
+                  <Show when={sessionNameError()}>
+                    <span class="field-error" role="alert">
+                      {sessionNameError()}
+                    </span>
+                  </Show>
+                </label>
+                <button
+                  class="button button-primary"
+                  disabled={!sessionID() || renameBusy()}
+                  onClick={() => void renameSession()}
+                >
+                  {renameBusy() ? "保存中…" : "保存名称"}
+                </button>
+                <div class="drawer-toolbar">
+                  <p class="helper-text">Session 状态和聊天事件由 ChatSurface 管理。</p>
+                </div>
+                <div class="button-stack">
+                  <button
+                    class="button button-secondary"
+                    disabled={!sessionID() || refreshBusy()}
+                    onClick={refreshRuntime}
+                  >
+                    {refreshBusy() ? "刷新中…" : "刷新状态"}
+                  </button>
+                </div>
+                <button
+                  class="button button-danger session-delete-button"
+                  disabled={!sessionID() || deleteBusy()}
+                  onClick={requestDeleteSession}
+                >
+                  {deleteBusy() ? "删除中…" : "删除 Session"}
+                </button>
+                <Show when={deleteMessage()}>
+                  <p class={`form-feedback form-feedback-${deleteState()}`} role="status" aria-live="polite">
+                    {deleteMessage()}
+                  </p>
+                </Show>
+              </Drawer>
+            </div>
           </div>
           <Show
             when={sessions().length > 0}
@@ -1445,95 +1511,6 @@ function App() {
       </aside>
 
       <section class="app-main" id="workspace">
-        <header class="topbar">
-          <div class="topbar-copy">
-            <p class="breadcrumb">内部演示 / Nexum Core</p>
-            <div class="topbar-title">
-              <h1>Agent 工作台</h1>
-              <Show when={sessionID()}>
-                <span class="topbar-sep">·</span>
-                <strong class="topbar-session">{sessionName()}</strong>
-              </Show>
-            </div>
-            <Show when={sessionID()}>
-              <p class="topbar-sub">
-                <span class="current-session-directory" title={directory()}>
-                  {directory()}
-                </span>
-                <span class="session-id">{sessionID()}</span>
-              </p>
-            </Show>
-          </div>
-          <div class="topbar-meta">
-            <span class="model-chip">{model() ? `全局模型 · ${model()}` : "未配置全局模型"}</span>
-            <Drawer
-              title="会话操作"
-              description="重命名、恢复当前 Session，或删除不再需要的运行记录。"
-              open={sessionEditDrawerOpen()}
-              onOpenChange={(open) => (open ? openRenameSession() : setSessionEditDrawerOpen(false))}
-              triggerClass="toolbar-button"
-              trigger={
-                <>
-                  <span aria-hidden="true">⋯</span>
-                  <span class="sr-only">会话操作</span>
-                </>
-              }
-            >
-              <label class={`form-field ${sessionNameError() ? "field-invalid" : ""}`}>
-                <span>
-                  Session 名称 <span class="required-mark">必填</span>
-                </span>
-                <input
-                  id="session-edit-name"
-                  aria-label="Session 名称"
-                  aria-invalid={Boolean(sessionNameError())}
-                  value={sessionEditName()}
-                  onInput={(event) => {
-                    setSessionEditName(event.currentTarget.value)
-                    setSessionNameError("")
-                  }}
-                />
-                <Show when={sessionNameError()}>
-                  <span class="field-error" role="alert">
-                    {sessionNameError()}
-                  </span>
-                </Show>
-              </label>
-              <button
-                class="button button-primary"
-                disabled={!sessionID() || renameBusy()}
-                onClick={() => void renameSession()}
-              >
-                {renameBusy() ? "保存中…" : "保存名称"}
-              </button>
-              <div class="drawer-toolbar">
-                <p class="helper-text">Session 状态和聊天事件由 ChatSurface 管理。</p>
-              </div>
-              <div class="button-stack">
-                <button
-                  class="button button-secondary"
-                  disabled={!sessionID() || refreshBusy()}
-                  onClick={refreshRuntime}
-                >
-                  {refreshBusy() ? "刷新中…" : "刷新状态"}
-                </button>
-              </div>
-              <button
-                class="button button-danger session-delete-button"
-                disabled={!sessionID() || deleteBusy()}
-                onClick={requestDeleteSession}
-              >
-                {deleteBusy() ? "删除中…" : "删除 Session"}
-              </button>
-              <Show when={deleteMessage()}>
-                <p class={`form-feedback form-feedback-${deleteState()}`} role="status" aria-live="polite">
-                  {deleteMessage()}
-                </p>
-              </Show>
-            </Drawer>
-          </div>
-        </header>
-
         <section class="main-grid chat-surface-host">
           <ChatSurface
             sessionID={sessionID()}

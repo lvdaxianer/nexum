@@ -15,7 +15,6 @@ export function ChatPanel(props: { sessionID: string; apiBaseUrl: string }) {
     <ChatSurface
       sessionID={props.sessionID}
       client={{ baseUrl: props.apiBaseUrl }}
-      title="Nexum Chat"
     />
   )
 }
@@ -37,7 +36,6 @@ export function ChatPanel(props: { sessionID: string; apiBaseUrl: string }) {
   <nexum-chat
     session-id="session-id"
     api-base-url="http://127.0.0.1:4097"
-    title="Nexum Chat"
   ></nexum-chat>
 </dialog>
 ```
@@ -56,7 +54,6 @@ element.setAttribute("session-id", sessionID)
 
 - `session-id`：要显示的 Session ID。
 - `api-base-url`：默认协议适配器的 API 根地址；不设置时使用客户端默认地址。
-- `title`：组件标题。
 - `theme`：主题，`dark` 启用内置深色主题；不设置时为默认亮色。
 
 组件注册后会派发 `nexum-chat-ready` 事件，事件 `detail.sessionID` 包含当前 Session ID。

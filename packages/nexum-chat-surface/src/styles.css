@@ -25,8 +25,8 @@
   --nexum-chat-radius-sm: 8px;
   --nexum-chat-radius-md: 10px;
   --nexum-chat-radius-lg: 14px;
-  --nexum-chat-fs-copy: 14px;
-  --nexum-chat-fs-meta: 12px;
+  --nexum-chat-fs-copy: 13px;
+  --nexum-chat-fs-meta: 11px;
   --nexum-chat-tap-min: 32px;
 
   container-type: inline-size;
@@ -91,9 +91,8 @@
   opacity: 0.54;
 }
 
-/* ===== 顶栏 ===== */
+/* ===== 状态徽章与底栏 ===== */
 
-.nexum-chat-header,
 .nexum-chat-footer,
 .nexum-chat-composer-bar,
 .nexum-chat-request-title,
@@ -104,18 +103,6 @@
   gap: 12px;
 }
 
-.nexum-chat-header {
-  flex: 0 0 auto;
-  padding: 14px 20px 12px;
-  border-bottom: 1px solid var(--nexum-chat-border);
-}
-
-.nexum-chat-header h2 {
-  margin: 3px 0 0;
-  font-size: 17px;
-}
-
-.nexum-chat-kicker,
 .nexum-chat-hint,
 .nexum-chat-footer,
 .nexum-chat-turn-label span,
@@ -127,64 +114,11 @@
   font-size: var(--nexum-chat-fs-meta);
 }
 
-.nexum-chat-kicker {
-  letter-spacing: 0.08em;
-  font-size: 10px;
-}
-
-.nexum-chat-header-actions,
 .nexum-chat-request-actions,
 .nexum-chat-confirm {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.nexum-chat-status {
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: var(--nexum-chat-panel);
-  color: var(--nexum-chat-muted);
-  font-size: 11px;
-}
-
-.nexum-chat-status.is-online {
-  background: var(--nexum-chat-success-soft);
-  color: var(--nexum-chat-success);
-}
-
-/* ===== 工具行：Tabs + 唯一状态簇 ===== */
-
-.nexum-chat-toolbar {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--nexum-chat-border);
-  background: var(--nexum-chat-bg);
-}
-
-.nexum-chat-tabs {
-  display: inline-flex;
-  background: var(--nexum-chat-panel);
-  border-radius: 999px;
-  padding: 3px;
-  gap: 2px;
-}
-
-.nexum-chat-status-cluster {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.nexum-chat-context-label {
-  color: var(--nexum-chat-muted);
-  font-size: 11px;
-  white-space: nowrap;
 }
 
 .nexum-chat-status-pill {
@@ -231,7 +165,6 @@
   color: var(--nexum-chat-success);
 }
 
-.nexum-chat-tabs button,
 .nexum-chat-button,
 .nexum-chat-primary,
 .nexum-chat-request-actions button,
@@ -240,32 +173,6 @@
   border-radius: var(--nexum-chat-radius-sm);
   background: var(--nexum-chat-bg);
   color: var(--nexum-chat-text);
-}
-
-.nexum-chat-tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--nexum-chat-tap-min);
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--nexum-chat-muted);
-  font-size: var(--nexum-chat-fs-meta);
-  white-space: nowrap;
-}
-
-.nexum-chat-tabs button.is-active {
-  background: var(--nexum-chat-bg);
-  color: var(--nexum-chat-accent);
-  font-weight: 600;
-  box-shadow: 0 1px 3px var(--nexum-chat-shadow);
-}
-
-.nexum-chat-tabs button span {
-  opacity: 0.66;
-  font-weight: 400;
 }
 
 /* ===== 消息体 ===== */
@@ -278,9 +185,8 @@
   background: linear-gradient(180deg, var(--nexum-chat-panel), var(--nexum-chat-bg) 180px);
 }
 
-.nexum-chat-stream,
-.nexum-chat-events {
-  max-width: 860px;
+.nexum-chat-stream {
+  max-width: 1240px;
   margin: 0 auto;
 }
 
@@ -329,7 +235,7 @@
 
 .nexum-chat-turn-label strong {
   color: var(--nexum-chat-accent);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .nexum-chat-turn-state {
@@ -375,11 +281,11 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
-  max-width: 760px;
+  max-width: 1080px;
 }
 
 .nexum-chat-user-bubble {
-  max-width: 640px;
+  max-width: 900px;
   padding: 12px 15px;
   border: 1px solid var(--nexum-chat-bubble-border);
   border-radius: var(--nexum-chat-radius-lg) var(--nexum-chat-radius-lg) 4px var(--nexum-chat-radius-lg);
@@ -438,13 +344,12 @@
   margin: 18px 0 10px;
   padding-left: 10px;
   border-left: 3px solid var(--nexum-chat-accent);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.4;
 }
 
 .nexum-chat-copy pre,
-.nexum-chat-execution pre,
-.nexum-chat-event pre {
+.nexum-chat-execution pre {
   overflow: auto;
   padding: 10px;
   border-radius: var(--nexum-chat-radius-sm);
@@ -461,7 +366,7 @@
 /* ===== 思考过程 ===== */
 
 .nexum-chat-reasoning {
-  max-width: 720px;
+  max-width: 960px;
   border: 1px solid var(--nexum-chat-border);
   border-radius: var(--nexum-chat-radius-md);
   background: color-mix(in srgb, var(--nexum-chat-panel) 72%, transparent);
@@ -496,7 +401,7 @@
   padding: 0 12px 12px;
   white-space: pre-wrap;
   color: var(--nexum-chat-muted);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.7;
   max-height: 320px;
   overflow: auto;
@@ -549,7 +454,7 @@
   gap: 8px;
   margin: 0 0 8px;
   padding: 9px 12px;
-  max-width: 720px;
+  max-width: 960px;
   border: 1px solid var(--nexum-chat-border);
   border-radius: var(--nexum-chat-radius-md);
   background: color-mix(in srgb, var(--nexum-chat-panel) 72%, transparent);
@@ -580,12 +485,12 @@
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  max-width: 720px;
+  max-width: 960px;
   padding: 9px 12px;
   border: 1px solid var(--nexum-chat-border);
   border-radius: var(--nexum-chat-radius-md);
   background: color-mix(in srgb, var(--nexum-chat-panel) 85%, transparent);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .nexum-chat-exec-icon {
@@ -646,37 +551,6 @@
   font-size: 11px;
 }
 
-/* ===== 事件视图 ===== */
-
-.nexum-chat-events-head {
-  margin-bottom: 12px;
-  color: var(--nexum-chat-muted);
-  font-size: var(--nexum-chat-fs-meta);
-}
-
-.nexum-chat-event {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--nexum-chat-border);
-}
-
-.nexum-chat-event > span {
-  color: var(--nexum-chat-accent);
-  font-family: ui-monospace, monospace;
-}
-
-.nexum-chat-event small {
-  display: block;
-  margin-top: 3px;
-  color: var(--nexum-chat-muted);
-}
-
-.nexum-chat-event pre {
-  margin-bottom: 0;
-}
-
 /* ===== 空态与加载 ===== */
 
 .nexum-chat-empty,
@@ -696,7 +570,7 @@
 
 .nexum-chat-empty p {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .nexum-chat-error {
@@ -724,13 +598,13 @@
 }
 
 .nexum-chat-request-title {
-  max-width: 860px;
+  max-width: 1240px;
   margin: 0 auto 8px;
 }
 
 .nexum-chat-request-title strong {
   color: var(--nexum-chat-text);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .nexum-chat-request-title span {
@@ -750,7 +624,7 @@
 
 .nexum-chat-request,
 .nexum-chat-question {
-  max-width: 860px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 12px 0;
   border-top: 1px solid color-mix(in srgb, var(--nexum-chat-border) 75%, transparent);
@@ -829,7 +703,7 @@
 }
 
 .nexum-chat-composer-inner {
-  max-width: 860px;
+  max-width: 1240px;
   margin: 0 auto;
 }
 
@@ -901,7 +775,7 @@
 }
 
 .nexum-chat-active-skills {
-  max-width: 860px;
+  max-width: 1240px;
   margin: 8px auto 0;
 }
 
@@ -927,6 +801,12 @@
   min-height: 18px;
 }
 
+.nexum-chat-footer > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .nexum-chat-context-source {
   color: var(--nexum-chat-muted);
 }
@@ -934,8 +814,6 @@
 /* ===== 断点：平板 481–719px ===== */
 
 @container (min-width: 481px) and (max-width: 719px) {
-  .nexum-chat-header,
-  .nexum-chat-toolbar,
   .nexum-chat-body,
   .nexum-chat-composer,
   .nexum-chat-requests,
@@ -945,7 +823,6 @@
   }
 
   .nexum-chat-stream,
-  .nexum-chat-events,
   .nexum-chat-composer-inner,
   .nexum-chat-request-title,
   .nexum-chat-request,
@@ -968,8 +845,6 @@
 /* ===== 断点：紧凑 ≤480px（手机） ===== */
 
 @container (max-width: 480px) {
-  .nexum-chat-header,
-  .nexum-chat-toolbar,
   .nexum-chat-body,
   .nexum-chat-composer,
   .nexum-chat-requests,
@@ -978,20 +853,7 @@
     padding-left: 12px;
   }
 
-  .nexum-chat-toolbar {
-    gap: 8px;
-  }
-
-  .nexum-chat-context-label {
-    display: none;
-  }
-
-  .nexum-chat-tabs button {
-    padding: 6px 10px;
-  }
-
   .nexum-chat-stream,
-  .nexum-chat-events,
   .nexum-chat-composer-inner,
   .nexum-chat-request-title,
   .nexum-chat-request,
@@ -1081,10 +943,6 @@
 
   .nexum-chat-turn-label {
     margin-bottom: 5px;
-  }
-
-  .nexum-chat-kicker {
-    display: none;
   }
 
   .nexum-chat-hint {

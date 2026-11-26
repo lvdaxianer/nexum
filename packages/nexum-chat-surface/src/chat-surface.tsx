@@ -16,7 +16,6 @@ import type {
 import { Marked } from "marked"
 import DOMPurify from "dompurify"
 
-type TimelineEvent = NexumEvent & { readonly localTime: string }
 type ChatStatus = "streaming" | "running" | "waiting" | "completed" | "failed" | "cancelled"
 type PermissionRequest = NexumPermission
 type QuestionRequest = NexumQuestion
@@ -46,7 +45,6 @@ export type ChatSurfaceProps = {
   readonly adapter?: ChatProtocolAdapter
   readonly client?: Parameters<typeof createChatProtocolAdapter>[0]
   readonly class?: string
-  readonly title?: string
   /** 组件根节点的 data-theme 值（如 "dark"），不设置则使用默认亮色。 */
   readonly theme?: string
   /** 宿主注入输入栏的扩展内容（如权限模式入口），渲染在发送键左侧。 */
@@ -85,20 +83,17 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const [prompt, setPrompt] = createSignal("")
   const [status, setStatus] = createSignal<SurfaceStatus>("no session")
   const [chatItems, setChatItems] = createSignal<ChatItem[]>([])
-  const [events, setEvents] = createSignal<TimelineEvent[]>([])
   const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
   const [questions, setQuestions] = createSignal<QuestionRequest[]>([])
   const [questionAnswers, setQuestionAnswers] = createSignal<Record<string, string[][]>>({})
   const [skills, setSkills] = createSignal<readonly NexumSkill[]>([])
   const [activeSkillIDs, setActiveSkillIDs] = createSignal<string[]>([])
   const [contextSources, setContextSources] = createSignal<ContextSource[]>([])
-  const [compactionStatus, setCompactionStatus] = createSignal("idle")
   const [historyBefore, setHistoryBefore] = createSignal<number | undefined>()
   const [historySnapshot, setHistorySnapshot] = createSignal<string | undefined>()
   const [historyHasMore, setHistoryHasMore] = createSignal(false)
   const [historyLoading, setHistoryLoading] = createSignal(false)
   const [historyError, setHistoryError] = createSignal("")
-  const [connected, setConnected] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
   const [pendingDecisionID, setPendingDecisionID] = createSignal("")
   const [pendingQuestionID, setPendingQuestionID] = createSignal("")
@@ -106,7 +101,6 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const [continueBusy, setContinueBusy] = createSignal(false)
   const [cancelBusy, setCancelBusy] = createSignal(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
-  const [view, setView] = createSignal<"chat" | "events">("chat")
   const [notice, setNotice] = createSignal("")
 
   let conversationBody: HTMLDivElement | undefined
@@ -189,7 +183,6 @@ export function ChatSurface(props: ChatSurfaceProps) {
     streamController?.abort()
     const controller = new AbortController()
     streamController = controller
-    setConnected(true)
     try {
       const nextAfterSequence = eventSequences.get(id) ?? afterSequence
       for await (const event of adapter.subscribeEvents({ sessionID: id, afterSequence: nextAfterSequence, signal: controller.signal })) {
@@ -201,19 +194,25 @@ export function ChatSurface(props: ChatSurfaceProps) {
         seen.add(event.eventID)
         seenEventIDs.set(id, seen)
         eventSequences.set(id, event.sequence)
-        setEvents((current) => [...current, { ...event, localTime: formatLocalTime(event.occurredAt) }].slice(-200))
         setChatItems((current) => projectChatEvent(current, event))
         applyEventState(event, id, currentLifecycle)
       }
-      if (!controller.signal.aborted && isCurrent(id, currentLifecycle)) setConnected(false)
+      if (!controller.signal.aborted && isCurrent(id, currentLifecycle)) scheduleReconnect(id, currentLifecycle)
     } catch (error) {
       if (!controller.signal.aborted && isCurrent(id, currentLifecycle)) {
-        setConnected(false)
-        setNotice(messageFrom(error, "事件流已断开，请重新连接"))
+        setNotice(messageFrom(error, "事件流已断开"))
+        scheduleReconnect(id, currentLifecycle)
       }
     } finally {
       if (streamController === controller) streamController = undefined
     }
+  }
+
+  /** 断线后 3s 自动重连；Session 切换或组件卸载后 lifecycle 变化会自动失效。 */
+  function scheduleReconnect(id: string, currentLifecycle: number) {
+    globalThis.setTimeout(() => {
+      if (isCurrent(id, currentLifecycle) && !streamController) void connectEvents(id, currentLifecycle)
+    }, 3000)
   }
 
   function applyState(state: ChatStateSnapshot) {
@@ -235,20 +234,17 @@ export function ChatSurface(props: ChatSurfaceProps) {
     setPrompt("")
     setStatus(id ? "idle" : "no session")
     setChatItems([])
-    setEvents([])
     setPermissions([])
     setQuestions([])
     setQuestionAnswers({})
     setSkills([])
     setActiveSkillIDs([])
     setContextSources([])
-    setCompactionStatus("idle")
     setHistoryBefore(undefined)
     setHistorySnapshot(undefined)
     setHistoryHasMore(false)
     setHistoryLoading(false)
     setHistoryError("")
-    setConnected(false)
     setBusy(false)
     setContinueAvailable(false)
     setContinueBusy(false)
@@ -308,9 +304,6 @@ export function ChatSurface(props: ChatSurfaceProps) {
       setQuestions((current) => current.filter((request) => request.id !== requestID))
       void refreshPending(id)
     }
-    if (event.type === "context.compaction.started") setCompactionStatus("compressing")
-    if (event.type === "context.compaction.completed") setCompactionStatus("completed")
-    if (event.type === "context.compaction.failed") setCompactionStatus("failed")
     if (event.type === "context.project.loaded") setContextSources(sourcesFromEvent(data))
     if (event.type === "skill.activated") {
       const skillID = stringValue(data.skillID)
@@ -511,7 +504,6 @@ export function ChatSurface(props: ChatSurfaceProps) {
   createEffect(() => {
     if (!followTail || !conversationBody) return
     chatItems()
-    events()
     conversationBody.scrollTop = conversationBody.scrollHeight
   })
 
@@ -522,44 +514,14 @@ export function ChatSurface(props: ChatSurfaceProps) {
       data-theme={props.theme}
       ref={(element) => (surfaceRoot = element)}
     >
-      <header class="nexum-chat-header">
-        <div>
-          <span class="nexum-chat-kicker">NEXUM / CHAT</span>
-          <h2>{props.title ?? "Coding Loop"}</h2>
-        </div>
-        <div class="nexum-chat-header-actions">
-          <span class={`nexum-chat-status ${connected() ? "is-online" : "is-offline"}`}>{connected() ? "在线" : "离线"}</span>
-          <button type="button" class="nexum-chat-button" onClick={() => void connectEvents(props.sessionID)} disabled={!props.sessionID || connected()}>
-            重连
-          </button>
-        </div>
-      </header>
-
-      <div class="nexum-chat-toolbar">
-        <div class="nexum-chat-tabs" role="tablist" aria-label="聊天视图">
-          <button type="button" role="tab" aria-selected={view() === "chat"} classList={{ "is-active": view() === "chat" }} onClick={() => setView("chat")}>对话</button>
-          <button type="button" role="tab" aria-selected={view() === "events"} classList={{ "is-active": view() === "events" }} onClick={() => setView("events")}>事件 <span>{events().length}</span></button>
-        </div>
-        <div class="nexum-chat-status-cluster">
-          <span class="nexum-chat-context-label"><span>上下文</span> <strong class="context-value">{compactionStatus()}</strong></span>
-          <span class={`nexum-chat-status-pill pill-${statusPillClass(status())}`}>{statusLabel(status())}</span>
-        </div>
-      </div>
-
       <div class="nexum-chat-body conversation-body" ref={(element) => (conversationBody = element)} onScroll={(event) => handleScroll(event.currentTarget)}>
-        <div class="nexum-chat-stream" role="log" aria-live="polite" classList={{ "is-hidden": view() !== "chat" }}>
+        <div class="nexum-chat-stream" role="log" aria-live="polite">
           <Show when={historyLoading()}><div class="nexum-chat-load-status" role="status">正在加载聊天…</div></Show>
           <Show when={historyError()}>
             <div class="nexum-chat-error" role="alert"><span>{historyError()}</span><button type="button" onClick={() => void initialize(props.sessionID, lifecycle)}>重试</button></div>
           </Show>
           <Show when={chatItems().length > 0} fallback={<div class="nexum-chat-empty"><strong>{props.sessionID ? "Session 已就绪" : "等待 Session"}</strong><p>{props.sessionID ? "在下方输入第一个任务，Agent 的输出会实时显示在这里。" : "宿主传入 sessionID 后即可开始聊天。"}</p></div>}>
             <For each={chatItems()}>{(item) => <ChatItemView item={item} />}</For>
-          </Show>
-        </div>
-        <div class="nexum-chat-events" classList={{ "is-hidden": view() !== "events" }}>
-          <div class="nexum-chat-events-head">事件明细 · {events().length.toString().padStart(2, "0")} 条</div>
-          <Show when={events().length > 0} fallback={<p class="nexum-chat-empty-copy">本轮还没有收到运行事件</p>}>
-            <For each={events()}>{(event) => <article class="nexum-chat-event"><span>{String(event.sequence).padStart(2, "0")}</span><div class="event-body"><strong>{event.type}</strong><small>{event.localTime} · {event.sessionID.slice(0, 8)}</small><Show when={event.data}><pre>{JSON.stringify(event.data, null, 2)}</pre></Show></div></article>}</For>
           </Show>
         </div>
       </div>
@@ -595,12 +557,26 @@ export function ChatSurface(props: ChatSurfaceProps) {
             <Show when={props.composerExtras}>
               <span class="nexum-chat-composer-extras">{props.composerExtras}</span>
             </Show>
+            <Show when={props.sessionID}>
+              <Show
+                when={!cancelConfirmOpen()}
+                fallback={
+                  <span class="nexum-chat-confirm">
+                    <span>确认取消运行？</span>
+                    <button type="button" onClick={() => void cancelRun()} disabled={cancelBusy()}>确认</button>
+                    <button type="button" onClick={() => setCancelConfirmOpen(false)}>返回</button>
+                  </span>
+                }
+              >
+                <button type="button" class="nexum-chat-button is-danger" onClick={() => setCancelConfirmOpen(true)}>取消运行</button>
+              </Show>
+            </Show>
             <button type="button" class="nexum-chat-primary" aria-label="发送 Prompt" disabled={!props.sessionID || !prompt().trim() || busy() || inputLocked()} onClick={() => void sendPrompt()}>{busy() ? "发送中…" : "发送"}</button>
           </div>
         </div>
       </div>
 
-      <div class="nexum-chat-footer"><span>{notice()}</span><Show when={contextSources().length > 0}><span>上下文来源 {contextSources().length}</span><For each={contextSources()}>{(source) => <span class="nexum-chat-context-source">{source.path}</span>}</For></Show><div><Show when={continueAvailable()}><button type="button" class="nexum-chat-button" disabled={continueBusy()} onClick={() => void continueRun()}>继续运行</button></Show><Show when={props.sessionID}><Show when={!cancelConfirmOpen()} fallback={<span class="nexum-chat-confirm"><span>确认取消运行？</span><button type="button" onClick={() => void cancelRun()} disabled={cancelBusy()}>确认</button><button type="button" onClick={() => setCancelConfirmOpen(false)}>返回</button></span>}><button type="button" class="nexum-chat-button is-danger" onClick={() => setCancelConfirmOpen(true)}>取消运行</button></Show></Show></div></div>
+      <div class="nexum-chat-footer"><span>{notice()}</span><Show when={contextSources().length > 0}><span>上下文来源 {contextSources().length}</span><For each={contextSources()}>{(source) => <span class="nexum-chat-context-source">{source.path}</span>}</For></Show><div><span class={`nexum-chat-status-pill pill-${statusPillClass(status())}`}>{statusLabel(status())}</span><Show when={continueAvailable()}><button type="button" class="nexum-chat-button" disabled={continueBusy()} onClick={() => void continueRun()}>继续运行</button></Show></div></div>
     </section>
   )
 }
