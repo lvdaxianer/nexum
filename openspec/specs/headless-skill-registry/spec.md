@@ -1,7 +1,7 @@
 # headless-skill-registry Specification
 
 ## Purpose
-TBD - created by archiving change headless-skill-registry. Update Purpose after archive.
+定义 Nexum Skill 来源的发现、注册、持久化、校验、冲突处理和安全取消注册边界，确保运行时只读取经过授权且可安全验证的本地 Skill 目录。
 
 ## Requirements
 

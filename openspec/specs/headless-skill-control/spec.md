@@ -1,7 +1,7 @@
 # headless-skill-control Specification
 
 ## Purpose
-TBD - created by archiving change headless-skill-registry. Update Purpose after archive.
+为 Nexum 提供稳定、可审计的 Skill 管理控制面，使页面和 Session Agent 能通过安全的 Headless API 完成 Skill 注册、校验、激活和生命周期管理。
 
 ## Requirements
 
