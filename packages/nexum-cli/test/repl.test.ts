@@ -1096,7 +1096,7 @@ test("submitting clears the hints row before the box closes", async () => {
   input.write("\n")
   expect(await line).toBe("/sk")
   // 提交时先还原留白行再下移出框
-  expect(rendered()).toContain("\r\x1b[2K  │ \x1b[2B")
+  expect(rendered()).toContain("\r\x1b[2K  │ \r\x1b[2B")
   source.close()
 })
 
@@ -1113,4 +1113,87 @@ test("plain prompt path never writes hint rows", async () => {
   await new Promise((resolve) => setTimeout(resolve, 30))
   expect(rendered).not.toContain("\x1b[s")
   source.close()
+})
+
+/** 联合屏幕模拟:repl 框输出与 io 输出喂同一屏幕,支持 \r \n EL ED CUU CUD CUB 与光标保存/恢复。 */
+function createScreen() {
+  const rows: string[] = [""]
+  let row = 0
+  let col = 0
+  let savedRow = 0
+  let savedCol = 0
+  const feed = (output: string) => {
+    for (const token of output.match(/\x1b\[[0-9;]*[A-Za-z]|\r|\n|./gsu) ?? []) {
+      if (token === "\r") {
+        col = 0
+        continue
+      }
+      if (token === "\n") {
+        row += 1
+        col = 0
+        if (rows.length <= row) rows.push("")
+        continue
+      }
+      if (token.startsWith("\x1b")) {
+        const match = token.match(/\x1b\[([0-9;]*)([A-Za-z])/)!
+        const param = Number.parseInt(match[1] || "0", 10)
+        const command = match[2]
+        if (command === "K") rows[row] = param === 2 ? "" : (rows[row] ?? "").slice(0, col)
+        if (command === "J") {
+          rows.length = row + 1
+          rows[row] = (rows[row] ?? "").slice(0, col)
+        }
+        if (command === "A") row = Math.max(0, row - Math.max(1, param))
+        if (command === "B") {
+          row += Math.max(1, param)
+          while (rows.length <= row) rows.push("")
+        }
+        if (command === "D") col = Math.max(0, col - Math.max(1, param))
+        if (command === "s") {
+          savedRow = row
+          savedCol = col
+        }
+        if (command === "u") {
+          row = savedRow
+          col = savedCol
+        }
+        continue
+      }
+      const line = rows[row] ?? ""
+      rows[row] = col < line.length ? line.slice(0, col) + token + line.slice(col + 1) : line + " ".repeat(col - line.length) + token
+      col += 1
+    }
+  }
+  return { feed, rows: () => rows }
+}
+
+test("submitting with hints visible keeps the next output line at the margin column", async () => {
+  const screen = createScreen()
+  const input = new PassThrough()
+  const output = new PassThrough()
+  output.on("data", (chunk) => screen.feed(chunk.toString()))
+  const io = createIO({
+    caps: { isTTY: true, color: "ansi16", anim: false, theme: "dark" },
+    out: {
+      write: (text: string) => {
+        screen.feed(text)
+      },
+    },
+    margin: 2,
+  })
+  const box = inputBoxLines(io.caps, 80, io.margin)!
+  const { adapter } = fakeAdapter({})
+  const lineSource = readlineLineSource(() => [], { input, output, box, margin: 2 })
+  const run = runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource, prompter: async () => "" })
+  await waitFor(() => screen.rows().some((row) => row.includes("│ ›")))
+  // 输入命令让提示行可见,然后提交
+  input.write("/events")
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  input.write("\n")
+  await waitFor(() => screen.rows().some((row) => row.includes("本轮还没有事件")))
+  const outputLine = screen.rows().find((row) => row.includes("本轮还没有事件"))!
+  // 首行输出起始于边距列(col 2),不被二次补 pad 顶到 col 6
+  expect(outputLine.startsWith("  本轮还没有事件")).toBe(true)
+  input.write("/quit\n")
+  await run
 })

@@ -168,9 +168,10 @@ export function readlineLineSource(
     // 闭合框在 showPrompt 时已画好;实证(bun terminal 模式):Enter 时 readline 先写 \r\n,
     // 'line' 触发时光标在留白行行首,下移两行(留白→底边→框外),后续输出落在框外下方。
     if (promptActive && box) {
-      // 提交时清掉提示,留白行还原为空(光标恰在留白行行首)
+      // 提交时清掉提示,留白行还原为空(光标恰在留白行行首);末尾 \r 让光标回列首,
+      // 否则 \x1b[2B 保持列不变,下一笔 io 输出会被边距写入器二次补 pad 而错位
       if (hintsShown !== "") {
-        output.write(`\r\x1b[2K${box.spacer}`)
+        output.write(`\r\x1b[2K${box.spacer}\r`)
         hintsShown = ""
       }
       output.write("\x1b[2B")
