@@ -115,8 +115,16 @@ test("continues event sequence after loading the persisted session cursor", asyn
         yield { type: "completed" as const }
       },
     },
-    tool: { async execute() { return { ok: true, output: "" } } },
-    permission: { async evaluate() { return "allow" as const } },
+    tool: {
+      async execute() {
+        return { ok: true, output: "" }
+      },
+    },
+    permission: {
+      async evaluate() {
+        return "allow" as const
+      },
+    },
     sessions,
     events: {
       lastSequence() {
@@ -131,4 +139,66 @@ test("continues event sequence after loading the persisted session cursor", asyn
   await loop.run({ sessionID: session.sessionID, text: "继续" })
 
   expect(events.map((event) => event.sequence)).toEqual([8, 9, 10, 11])
+})
+
+test("uses the EventSink allocator when one is available", async () => {
+  const session: SessionRecord = {
+    sessionID: "session_allocator_001",
+    name: "allocator",
+    directory: "/workspace/allocator",
+    status: "idle",
+    createdAt: "2026-11-22T00:00:00.000Z",
+    updatedAt: "2026-11-22T00:00:00.000Z",
+  }
+  const events: number[] = []
+  let sequence = 40
+  const sessions: NexumSessionService = {
+    async create() {
+      return session
+    },
+    async list() {
+      return [session]
+    },
+    async get() {
+      return session
+    },
+    async update(_sessionID, input) {
+      return { ...session, name: input.name }
+    },
+    async setStatus(_sessionID, status) {
+      return { ...session, status }
+    },
+    async delete() {},
+  }
+  const loop = createNexumCodingLoop({
+    model: {
+      async *prompt() {
+        yield { type: "completed" as const }
+      },
+    },
+    tool: {
+      async execute() {
+        return { ok: true, output: "" }
+      },
+    },
+    permission: {
+      async evaluate() {
+        return "allow" as const
+      },
+    },
+    sessions,
+    events: {
+      async nextSequence() {
+        sequence += 1
+        return sequence
+      },
+      async publish(event) {
+        events.push(event.sequence)
+      },
+    },
+  })
+
+  await loop.run({ sessionID: session.sessionID, text: "使用共享序号" })
+
+  expect(events).toEqual([41, 42, 43])
 })

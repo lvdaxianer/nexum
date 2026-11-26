@@ -251,7 +251,6 @@ export async function validateNexumDirectory(directory: string): Promise<void> {
   if (!isAbsolute(normalized)) {
     throw new NexumSessionError("invalid_directory", "工作目录必须是绝对路径")
   }
-
 }
 
 /**
@@ -455,7 +454,8 @@ export type NexumCodingLoopContinueStart =
 export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCodingLoop {
   const maxSteps = options.maxSteps
   const maxOutputContinuations = Math.max(1, options.maxOutputContinuations ?? 8)
-  const toolTimeoutMs = options.toolTimeoutMs === 0 ? undefined : normalizeTimeout(options.toolTimeoutMs) ?? DEFAULT_TOOL_TIMEOUT_MS
+  const toolTimeoutMs =
+    options.toolTimeoutMs === 0 ? undefined : (normalizeTimeout(options.toolTimeoutMs) ?? DEFAULT_TOOL_TIMEOUT_MS)
   const messageStore = options.messageStore
   const activeRuns = new Map<string, ActiveRun>()
   const continuationAdmissions = new Set<string>()
@@ -507,6 +507,18 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
     const runID = crypto.randomUUID()
     let settled = false
     const publish = async (type: string, data?: Record<string, unknown>) => {
+      if (options.events.nextSequence) {
+        await options.events.publish({
+          eventID: crypto.randomUUID(),
+          runID,
+          sessionID: input.sessionID,
+          type,
+          sequence: await options.events.nextSequence(input.sessionID),
+          occurredAt: new Date().toISOString(),
+          data,
+        })
+        return
+      }
       await seedSessionSequence(input.sessionID)
       const sequence = (sessionSequences.get(input.sessionID) ?? 0) + 1
       sessionSequences.set(input.sessionID, sequence)
@@ -542,7 +554,9 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       return settledEvent
     }
     // canonicalHistory 只保存需要跨 Prompt 恢复的消息；modelMessages 在其基础上临时注入 skill 与项目上下文。
-    let canonicalHistory: ModelMessage[] = continuation ? [...history] : [...history, { role: "user", content: promptText }]
+    let canonicalHistory: ModelMessage[] = continuation
+      ? [...history]
+      : [...history, { role: "user", content: promptText }]
     let modelMessages: ModelMessage[] = [...canonicalHistory]
     let skillSystemMessages: readonly ModelMessage[] = []
     const temporarySourceIDs = new Set<string>()
@@ -565,7 +579,13 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         if (message.role === "system" && message.sourceID) temporarySourceIDs.add(message.sourceID)
       }
       const withTemporarySystemMessages = insertSystemMessages([...roleSystemMessages, ...skillSystemMessages], history)
-      return restoreProjectContext(input.sessionID, withTemporarySystemMessages, options.projectContext, publish, temporarySourceIDs)
+      return restoreProjectContext(
+        input.sessionID,
+        withTemporarySystemMessages,
+        options.projectContext,
+        publish,
+        temporarySourceIDs,
+      )
     }
 
     try {
@@ -605,9 +625,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         prompt = {
           ...prompt,
           text: finalizing ? MAX_STEPS_PROMPT : promptText,
-          messages: finalizing
-            ? [...modelMessages, { role: "user", content: MAX_STEPS_PROMPT }]
-            : modelMessages,
+          messages: finalizing ? [...modelMessages, { role: "user", content: MAX_STEPS_PROMPT }] : modelMessages,
           ...(finalizing
             ? { tools: [], toolChoice: "none" as const }
             : options.tools
@@ -747,7 +765,11 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                   )
                 } catch (error) {
                   const timedOut = runState.timedOut || (error instanceof NexumRunError && error.code === "timeout")
-                  const cancelled = !timedOut && (error instanceof NexumCancellationError || runState.cancelled || runState.controller.signal.aborted)
+                  const cancelled =
+                    !timedOut &&
+                    (error instanceof NexumCancellationError ||
+                      runState.cancelled ||
+                      runState.controller.signal.aborted)
                   await publish("tool.result", {
                     toolCallID,
                     ok: false,
@@ -794,9 +816,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
             modelMessages = await injectTemporaryContext(canonicalHistory)
             prompt = {
               ...prompt,
-              messages: finalizing
-                ? [...modelMessages, { role: "user", content: MAX_STEPS_PROMPT }]
-                : modelMessages,
+              messages: finalizing ? [...modelMessages, { role: "user", content: MAX_STEPS_PROMPT }] : modelMessages,
             }
             assistantText = ""
             assistantReasoning = undefined
@@ -817,10 +837,14 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       if (error instanceof NexumSkillInvocationError) {
         await publish("skill.failed", { skillID: error.skillID, code: error.code })
       }
-      if (!runState.timedOut && (runState.cancelled || runState.controller.signal.aborted || error instanceof NexumCancellationError)) {
+      if (
+        !runState.timedOut &&
+        (runState.cancelled || runState.controller.signal.aborted || error instanceof NexumCancellationError)
+      ) {
         const current = await options.sessions.get(input.sessionID)
         await publishTerminalEvents("session.cancelled", undefined, "cancelled")
-        const cancelled = current?.status === "cancelled" ? current : await options.sessions.setStatus(input.sessionID, "cancelled")
+        const cancelled =
+          current?.status === "cancelled" ? current : await options.sessions.setStatus(input.sessionID, "cancelled")
         return cancelled
       }
       await publishTerminalEvents("session.failed", { message: safeErrorMessage(error) }, "failed")
@@ -834,7 +858,9 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
   const canContinue = async (sessionID: string) => {
     const history = await messageStore.load(sessionID)
     const lastMessage = history.at(-1)
-    return Boolean(lastMessage && (lastMessage.role === "user" || lastMessage.role === "tool") && lastMessage.content.trim())
+    return Boolean(
+      lastMessage && (lastMessage.role === "user" || lastMessage.role === "tool") && lastMessage.content.trim(),
+    )
   }
   const start = (input: NexumCodingLoopExecutionInput): NexumCodingLoopStart => {
     if (activeRuns.has(input.sessionID)) return { accepted: false }
@@ -1383,7 +1409,11 @@ function safeErrorMessage(error: unknown): string {
     return error.code === "timeout" ? "Coding Loop 运行超时" : "Session 没有可继续的上下文"
   }
   if (error instanceof NexumSkillInvocationError) {
-    return error.code === "skill_not_found" ? "Skill 不存在" : error.code === "skill_not_ready" ? "Skill 当前不可用" : "Skill 权限被拒绝"
+    return error.code === "skill_not_found"
+      ? "Skill 不存在"
+      : error.code === "skill_not_ready"
+        ? "Skill 当前不可用"
+        : "Skill 权限被拒绝"
   }
   return "Coding Loop 执行失败"
 }
@@ -1420,6 +1450,8 @@ export interface EventSink {
    * 未提供该能力的旧 sink 仍从 1 开始。
    */
   readonly lastSequence?: (sessionID: string) => number | Promise<number>
+  /** 为指定 Session 原子分配下一个事件序号。 */
+  readonly nextSequence?: (sessionID: string) => number | Promise<number>
 }
 
 /** Nexum Core 的全部外部依赖端口。 */
@@ -1509,7 +1541,12 @@ export type {
 export { NexumModelError } from "./model.js"
 export type { NexumFetch, NexumModelErrorCode, NexumModelErrorDetails } from "./model.js"
 export { createNexumModelProbePort, NexumModelProbeError } from "./model-probe.js"
-export type { NexumModelProbeInput, NexumModelProbeMode, NexumModelProbeResult, NexumModelProbePort } from "./model-probe.js"
+export type {
+  NexumModelProbeInput,
+  NexumModelProbeMode,
+  NexumModelProbeResult,
+  NexumModelProbePort,
+} from "./model-probe.js"
 export type {
   NexumQuestionErrorCode,
   NexumQuestionItem,

@@ -2,8 +2,12 @@ import type { Database } from "bun:sqlite"
 import type { EventSink, RuntimeEvent } from "@nexum/core"
 
 export interface NexumSqliteEventHub extends EventSink {
-  readonly subscribe: (sessionID: string, options?: { readonly afterEventID?: string; readonly afterSequence?: number }) => AsyncIterable<RuntimeEvent>
+  readonly subscribe: (
+    sessionID: string,
+    options?: { readonly afterEventID?: string; readonly afterSequence?: number },
+  ) => AsyncIterable<RuntimeEvent>
   readonly lastSequence: (sessionID: string) => number
+  readonly nextSequence: (sessionID: string) => Promise<number>
   readonly delete: (sessionID: string) => Promise<void>
   readonly ready: () => Promise<void>
 }
@@ -13,14 +17,20 @@ const historyLimit = 256
 export function createSqliteEventHub(database: Database): NexumSqliteEventHub {
   const subscribers = new Map<string, Set<Subscriber>>()
   const history = new Map<string, RuntimeEvent[]>()
-  const rows = database.query("SELECT payload FROM nexum_event ORDER BY session_id, sequence").all() as Array<{ payload: string }>
+  const reservedSequences = new Map<string, number>()
+  const rows = database.query("SELECT payload FROM nexum_event ORDER BY session_id, sequence").all() as Array<{
+    payload: string
+  }>
   rows.map((row) => JSON.parse(row.payload) as RuntimeEvent).forEach((event) => appendHistory(history, event))
 
   const notify = (event: RuntimeEvent): void => {
     for (const subscriber of subscribers.get(event.sessionID) ?? []) subscriber.push(event)
   }
 
-  async function* subscribe(sessionID: string, options?: { readonly afterEventID?: string; readonly afterSequence?: number }): AsyncIterable<RuntimeEvent> {
+  async function* subscribe(
+    sessionID: string,
+    options?: { readonly afterEventID?: string; readonly afterSequence?: number },
+  ): AsyncIterable<RuntimeEvent> {
     const subscriber = createSubscriber()
     const current = subscribers.get(sessionID) ?? new Set<Subscriber>()
     current.add(subscriber)
@@ -35,14 +45,23 @@ export function createSqliteEventHub(database: Database): NexumSqliteEventHub {
   }
 
   const persistEvent = database.transaction((event: RuntimeEvent) => {
-    database.query("INSERT OR REPLACE INTO nexum_event (session_id, sequence, event_id, payload) VALUES ($sessionID, $sequence, $eventID, $payload)").run({
-      $sessionID: event.sessionID,
-      $sequence: event.sequence,
-      $eventID: event.eventID ?? null,
-      $payload: JSON.stringify(event),
-    })
+    database
+      .query(
+        "INSERT OR REPLACE INTO nexum_event (session_id, sequence, event_id, payload) VALUES ($sessionID, $sequence, $eventID, $payload)",
+      )
+      .run({
+        $sessionID: event.sessionID,
+        $sequence: event.sequence,
+        $eventID: event.eventID ?? null,
+        $payload: JSON.stringify(event),
+      })
     appendHistory(history, event)
-    database.query("DELETE FROM nexum_event WHERE session_id = $sessionID AND sequence NOT IN (SELECT sequence FROM nexum_event WHERE session_id = $sessionID ORDER BY sequence DESC LIMIT 256)").run({ $sessionID: event.sessionID })
+    reservedSequences.set(event.sessionID, Math.max(reservedSequences.get(event.sessionID) ?? 0, event.sequence))
+    database
+      .query(
+        "DELETE FROM nexum_event WHERE session_id = $sessionID AND sequence NOT IN (SELECT sequence FROM nexum_event WHERE session_id = $sessionID ORDER BY sequence DESC LIMIT 256)",
+      )
+      .run({ $sessionID: event.sessionID })
     notify(event)
   })
 
@@ -54,9 +73,16 @@ export function createSqliteEventHub(database: Database): NexumSqliteEventHub {
     lastSequence(sessionID) {
       return history.get(sessionID)?.at(-1)?.sequence ?? 0
     },
+    async nextSequence(sessionID) {
+      const current = Math.max(history.get(sessionID)?.at(-1)?.sequence ?? 0, reservedSequences.get(sessionID) ?? 0)
+      const next = current + 1
+      reservedSequences.set(sessionID, next)
+      return next
+    },
     async delete(sessionID) {
       database.query("DELETE FROM nexum_event WHERE session_id = $sessionID").run({ $sessionID: sessionID })
       history.delete(sessionID)
+      reservedSequences.delete(sessionID)
     },
     ready: async () => undefined,
   }
@@ -69,10 +95,17 @@ function appendHistory(history: Map<string, RuntimeEvent[]>, event: RuntimeEvent
   history.set(event.sessionID, events)
 }
 
-function replay(events: readonly RuntimeEvent[], options?: { readonly afterEventID?: string; readonly afterSequence?: number }): RuntimeEvent[] {
-  const index = options?.afterEventID === undefined ? -1 : events.findIndex((event) => event.eventID === options.afterEventID)
+function replay(
+  events: readonly RuntimeEvent[],
+  options?: { readonly afterEventID?: string; readonly afterSequence?: number },
+): RuntimeEvent[] {
+  const index =
+    options?.afterEventID === undefined ? -1 : events.findIndex((event) => event.eventID === options.afterEventID)
   const eventSequence = index < 0 ? undefined : events[index]?.sequence
-  const cursor = eventSequence === undefined ? options?.afterSequence : Math.max(eventSequence, options?.afterSequence ?? eventSequence)
+  const cursor =
+    eventSequence === undefined
+      ? options?.afterSequence
+      : Math.max(eventSequence, options?.afterSequence ?? eventSequence)
   return cursor === undefined ? [...events] : events.filter((event) => event.sequence > cursor)
 }
 

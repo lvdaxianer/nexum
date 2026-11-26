@@ -52,8 +52,20 @@ test("event hub replays history on first subscribe and resumes after a cursor", 
 
 test("deletes one in-memory event history while preserving other sessions", async () => {
   const hub = createNexumEventHub()
-  await hub.publish({ type: "assistant.text", sessionID: "session_delete", sequence: 1, eventID: "delete-memory-1", data: {} })
-  await hub.publish({ type: "assistant.text", sessionID: "session_keep", sequence: 1, eventID: "keep-memory-1", data: {} })
+  await hub.publish({
+    type: "assistant.text",
+    sessionID: "session_delete",
+    sequence: 1,
+    eventID: "delete-memory-1",
+    data: {},
+  })
+  await hub.publish({
+    type: "assistant.text",
+    sessionID: "session_keep",
+    sequence: 1,
+    eventID: "keep-memory-1",
+    data: {},
+  })
 
   await hub.delete("session_delete")
   await hub.delete("missing")
@@ -121,6 +133,22 @@ test("keeps every concurrently published event in the persisted file", async () 
   expect(persistedSequences).toEqual(expected)
   expect(liveSequences).toEqual(expected)
   expect(reopened.lastSequence("session-concurrent-001")).toBe(32)
+})
+
+test("allocates unique session sequences for concurrent publishers", async () => {
+  const hub = createNexumEventHub()
+  const sequences = await Promise.all(Array.from({ length: 32 }, () => hub.nextSequence("session-sequence-001")))
+
+  expect([...sequences].sort((left, right) => left - right)).toEqual(
+    Array.from({ length: 32 }, (_, index) => index + 1),
+  )
+
+  await Promise.all(
+    sequences.map((sequence) =>
+      hub.publish({ type: "assistant.text", sessionID: "session-sequence-001", sequence, data: { sequence } }),
+    ),
+  )
+  expect(hub.lastSequence("session-sequence-001")).toBe(32)
 })
 
 test("leaves a corrupt event file untouched and hides internal paths", async () => {
