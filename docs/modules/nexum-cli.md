@@ -81,6 +81,8 @@ bun run --cwd packages/nexum-cli start -- --help
 
 ## 渲染约定
 
+统一左边距：TTY 下所有输出（横幅、输入框、Agent 文本、表格、卡片、活动行、思考流）内缩 2 列。边距在 IO 写路径由行首状态机注入（[`src/io.ts`](../../packages/nexum-cli/src/io.ts) `createMarginWriter`）：`\n`/`\r`/光标下移后处于行首，行首的擦除序列（`\x1b[2K` 等）先输出、边距补在其后，光标上移不改变状态，因此 LiveLine 原地重绘、思考区收起、markdown 擦除重渲都在边距内原样工作；LiveLine 帧宽、markdown 擦除行数、输入框宽度计算同步扣除边距。输入框走 readline 输出流（不经 IO 注入），边距由 `inputBoxLines` 直接编入框字符串。非 TTY（管道/脚本）不加边距保持可解析；`NO_COLOR` 终端仍加边距（布局与颜色无关）；`~/.nexum/cli.json` 的 `margin` 字段可配（0–8，TTY 默认 2）。
+
 assistant 文本与历史回放经流式 markdown 渲染（[`src/markdown.ts`](../../packages/nexum-cli/src/markdown.ts)）：
 
 - 标题 `#`/`##`/`###` 去掉 `#`，h1 洋红加粗、h2/h3 青色加粗；`**粗体**` 加粗、`*斜体*` 斜体、`` `行内代码` `` 黄色、`[文字](url)` 青色下划线且隐藏 url；表格行原样透传（行内样式仍生效）。

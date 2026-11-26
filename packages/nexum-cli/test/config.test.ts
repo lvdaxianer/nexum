@@ -19,3 +19,9 @@ test("saveCliConfig and loadCliConfig round-trip, missing file returns empty", a
   await saveCliConfig({ theme: "light" }, file)
   expect(await loadCliConfig(file)).toEqual({ theme: "light" })
 })
+
+test("loadCliConfig reads the reserved margin field", async () => {
+  const file = tmp()
+  await saveCliConfig({ margin: 4 }, file)
+  expect((await loadCliConfig(file)).margin).toBe(4)
+})

@@ -892,3 +892,38 @@ test("repl /permissions refreshes only the permission segment, not the model", a
   expect(gets.length).toBe(1)
   expect(lineSource.statuses.at(-1)).toContain("权限:ask")
 })
+
+test("inputBoxLines prefixes the margin and keeps the right edge inside the terminal", () => {
+  const caps = { isTTY: true, color: "ansi16", anim: true, theme: "dark" } as const
+  const strip = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "")
+  const box = inputBoxLines(caps, 80, 2)!
+  for (const part of [box.top, box.hint, box.inputPrefix, box.spacer, box.bottom]) {
+    expect(part.startsWith("  ")).toBe(true)
+  }
+  expect(box.marginPad).toBe("  ")
+  // 右边 = 边距 2 + 框宽 76 = 78,距终端右边 2 列
+  expect(displayWidth(strip(box.top))).toBe(78)
+  expect(displayWidth(strip(inputBoxLines(caps, 120, 2)!.top))).toBe(112)
+  // 无框场景margin 默认 0,字符串不变
+  expect(strip(inputBoxLines(caps, 80)!.top).startsWith("╭")).toBe(true)
+})
+
+test("hint row with status stays right-aligned inside a margined box", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 80, 2)!
+  const source = readlineLineSource(() => [], { input, output, box })
+  source.setStatus?.("deepseek-v4-pro · 权限:ask")
+  source.showPrompt?.()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const hintLine = rendered.split("\n").find((line) => line.includes("输入任务"))!
+  const plainHint = hintLine.replace(/\x1b\[[0-9;]*m/g, "")
+  expect(plainHint.startsWith("  │ ")).toBe(true)
+  expect(plainHint.endsWith("deepseek-v4-pro · 权限:ask")).toBe(true)
+  expect(displayWidth(plainHint)).toBe(displayWidth(box.top.replace(/\x1b\[[0-9;]*m/g, "")))
+  source.close()
+})

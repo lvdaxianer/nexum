@@ -5,29 +5,85 @@ import { SPINNER_INTERVAL_MS } from "./anim"
 
 export type CliIO = {
   readonly caps: TermCaps
+  /** 统一左边距列数(TTY 默认 2,非 TTY 0,上限 8);写路径在行首注入。 */
+  readonly margin: number
   write(text: string): void
   line(text?: string): void
 }
 
-export function createIO(options: { caps?: TermCaps; out?: { write(text: string): unknown } } = {}): CliIO {
-  const caps = options.caps ?? detectCaps()
-  const out = options.out ?? process.stdout
-  return {
-    caps,
-    write: (text) => void out.write(text),
-    line: (text = "") => void out.write(text + "\n"),
+/**
+ * 左边距注入:行首状态机。\n/\r 与光标下移(B)后处于行首,光标上移(A)不改变状态;
+ * 行首的擦除序列(2K/0K/0J/2J)先原样输出,边距补在其后;其余 token(含 SGR)在行首触发一次边距。
+ * margin 0 时原样返回(恒等快速路径)。
+ */
+export function createMarginWriter(write: (text: string) => void, margin: number): (text: string) => void {
+  if (margin <= 0) return write
+  const pad = " ".repeat(margin)
+  let atLineStart = true
+  return (text) => {
+    let out = ""
+    for (const token of text.match(/\x1b\[[0-9;]*[A-Za-z]|\n|\r|./gsu) ?? []) {
+      if (token === "\n" || token === "\r") {
+        out += token
+        atLineStart = true
+        continue
+      }
+      if (token.startsWith("\x1b")) {
+        const command = token.at(-1)
+        if (atLineStart && (token === "\x1b[2K" || token === "\x1b[0K" || token === "\x1b[0J" || token === "\x1b[2J")) {
+          out += token
+          continue
+        }
+        if (command === "B" || command === "H") {
+          out += token
+          atLineStart = true
+          continue
+        }
+        if (command === "A") {
+          out += token
+          continue
+        }
+        if (atLineStart) {
+          out += pad
+          atLineStart = false
+        }
+        out += token
+        continue
+      }
+      if (atLineStart) {
+        out += pad
+        atLineStart = false
+      }
+      out += token
+    }
+    write(out)
   }
 }
 
-export function memoryIO(caps: Partial<TermCaps> = {}) {
+export function createIO(options: { caps?: TermCaps; out?: { write(text: string): unknown }; margin?: number } = {}): CliIO {
+  const caps = options.caps ?? detectCaps()
+  const out = options.out ?? process.stdout
+  const margin = Math.min(8, Math.max(0, options.margin ?? (caps.isTTY ? 2 : 0)))
+  const write = createMarginWriter((text) => void out.write(text), margin)
+  return {
+    caps,
+    margin,
+    write,
+    line: (text = "") => write(text + "\n"),
+  }
+}
+
+export function memoryIO(caps: Partial<TermCaps> = {}, margin = 0) {
   let buffer = ""
+  const write = createMarginWriter((text) => {
+    buffer += text
+  }, margin)
   return {
     caps: { isTTY: true, color: "none", anim: false, theme: "dark", ...caps } as TermCaps,
-    write: (text: string) => {
-      buffer += text
-    },
+    margin,
+    write,
     line: (text = "") => {
-      buffer += text + "\n"
+      write(text + "\n")
     },
     output: () => buffer,
     plain: () => buffer.replace(/\x1b\[[0-9;]*m/g, ""),
@@ -54,7 +110,8 @@ export function createLiveLine(io: CliIO, render: (tick: number) => string, colu
   if (!io.caps.anim) {
     return { settle: (text) => io.line(text), cancel: () => {}, writeAbove: () => {}, collapse: (text) => io.line(text) }
   }
-  const cols = columns ?? process.stdout.columns ?? 80
+  // 帧宽扣除左边距:写路径会在行首注入 margin,帧内容超宽换行会破坏 \r\x1b[2K 的整行擦除
+  const cols = (columns ?? process.stdout.columns ?? 80) - io.margin
   const width = Math.max(1, cols - 1)
   let tick = 0
   let rowsAbove = 0

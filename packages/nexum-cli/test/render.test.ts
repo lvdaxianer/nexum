@@ -440,3 +440,36 @@ test("context.compaction.started mid-reasoning collapses the thinking region bef
   expect(screen).toContain("✓ 上下文压缩完成")
   expect(screen).not.toContain("压缩前的推理行")
 })
+
+test("markdown tail erase accounts for the io margin in row math", () => {
+  const io = memoryIO({ color: "ansi16" }, 2)
+  const renderer = createRenderer({ io })
+  // tail 宽 79(78 字符 + ▍):80 列下 1 行;扣除边距按 78 列计 → 2 行,需逐行上清
+  renderer.event(event("assistant.text", { content: "x".repeat(78) }, 1))
+  renderer.event(event("assistant.text", { content: "y" }, 2))
+  renderer.close()
+  expect(io.output()).toContain("\x1b[1A\r\x1b[2K")
+})
+
+test("margin end-to-end: thinking stream, collapse, tool line and answer all indented with no residue", async () => {
+  const io = memoryIO({ color: "ansi16", anim: true }, 2)
+  const renderer = createRenderer({ io })
+  renderer.event(event("assistant.thinking", { message: "正在思考" }, 1))
+  renderer.event(event("assistant.reasoning", { content: "推理第一行\n推理第二行\n" }, 2))
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  renderer.event(event("assistant.text", { content: "回答内容" }, 3))
+  renderer.event(event("tool.request", { toolCallID: "t1", toolName: "read" }, 4))
+  renderer.event(event("tool.result", { toolCallID: "t1", toolName: "read", ok: true, output: "完成" }, 5))
+  renderer.event(event("run.settled", { result: "completed" }, 6))
+  renderer.close()
+  const lines = emulateScreen(io.output()).filter((line) => line.trim() !== "")
+  for (const line of lines) expect(line.startsWith("  ")).toBe(true)
+  const text = lines.join("\n")
+  expect(text).toContain("  ✓ 思考过程 · 12 字")
+  expect(text).toContain("  回答内容")
+  expect(text).toContain("  ✓ 工具结果 read · 完成")
+  expect(text).toContain("  ✓ 运行完成")
+  // 思考流式行收起后零残留
+  expect(text).not.toContain("推理第一行")
+  expect(text).not.toContain("推理第二行")
+})

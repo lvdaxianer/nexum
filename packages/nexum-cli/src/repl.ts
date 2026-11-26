@@ -38,22 +38,26 @@ export type InputBox = {
   /** 未着色的提示文本与框宽,供状态段右对齐时重新计算留白。 */
   readonly hintText: string
   readonly width: number
+  /** 左边距空格串:提示行右对齐重组时补在行首(readline 流不经过 io 边距注入)。 */
+  readonly marginPad: string
   readonly caps: TermCaps
 }
 
-/** 行式近似的输入框:非 TTY 或无颜色时降级为 undefined(调用方退回普通提示符)。 */
-export function inputBoxLines(caps: TermCaps, columns: number): InputBox | undefined {
+/** 行式近似的输入框:非 TTY 或无颜色时降级为 undefined(调用方退回普通提示符);margin 为统一左边距列数。 */
+export function inputBoxLines(caps: TermCaps, columns: number, margin = 0): InputBox | undefined {
   if (!caps.isTTY || caps.color === "none") return undefined
   const width = Math.max(44, Math.min(columns - 4, 110))
+  const pad = " ".repeat(margin)
   const hintText = "输入任务,Enter 发送 · @ 引用 Skill · /help 命令"
   return {
-    top: paint(caps, "cyan", `╭${"─".repeat(width - 2)}╮`),
-    hint: `${paint(caps, "cyan", "│")} ${paint(caps, "dim", hintText)}`,
-    inputPrefix: `${paint(caps, "cyan", "│")} ${paint(caps, "cyan", "›")} `,
-    spacer: `${paint(caps, "cyan", "│")} `,
-    bottom: paint(caps, "cyan", `╰${"─".repeat(width - 2)}╯`),
+    top: `${pad}${paint(caps, "cyan", `╭${"─".repeat(width - 2)}╮`)}`,
+    hint: `${pad}${paint(caps, "cyan", "│")} ${paint(caps, "dim", hintText)}`,
+    inputPrefix: `${pad}${paint(caps, "cyan", "│")} ${paint(caps, "cyan", "›")} `,
+    spacer: `${pad}${paint(caps, "cyan", "│")} `,
+    bottom: `${pad}${paint(caps, "cyan", `╰${"─".repeat(width - 2)}╯`)}`,
     hintText,
     width,
+    marginPad: pad,
     caps,
   }
 }
@@ -114,7 +118,7 @@ export function readlineLineSource(
     if (status === "") return box.hint
     const pad = box.width - 2 - displayWidth(box.hintText) - displayWidth(status.replace(/\x1b\[[0-9;]*m/g, ""))
     if (pad < 1) return box.hint
-    return `${paint(box.caps, "cyan", "│")} ${paint(box.caps, "dim", box.hintText)}${" ".repeat(pad)}${status}`
+    return `${box.marginPad}${paint(box.caps, "cyan", "│")} ${paint(box.caps, "dim", box.hintText)}${" ".repeat(pad)}${status}`
   }
   rl.on("SIGINT", () => {
     if (sigintHandler) sigintHandler()

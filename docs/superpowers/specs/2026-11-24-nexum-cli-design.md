@@ -102,6 +102,7 @@ packages/nexum-cli/src/
 - 收敛：工具行 spinner → `✓`/`✗`；运行行 spinner → `✓ 运行完成` / `✗ 失败` / `— 已取消`，瞬时行不留在滚动历史。
 - 能力分层：语义内容始终使用 ANSI 16 色；装饰元素（Logo、扫描光、进度条）按 `COLORTERM`/终端能力使用 256/truecolor，降级链 truecolor → 256 → 16 → 静态。
 - 降级：非 TTY（CI、管道）、`TERM=dumb` 或 `--no-anim` 时全部静态输出，不刷帧。
+- 左边距：TTY 下所有输出统一内缩 2 列（IO 写路径行首状态机注入，擦除序列后补边距，动画在边距内原样工作）；非 TTY 不加边距保持可解析；`cli.json` 的 `margin` 字段可配（0–8）。
 
 实现约束：
 

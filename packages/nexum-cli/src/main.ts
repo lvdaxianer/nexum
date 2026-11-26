@@ -102,7 +102,7 @@ export async function run(argv: string[]): Promise<number> {
     return 0
   }
   const config = await loadCliConfig()
-  const io = createIO({ caps: detectCaps({ noAnim: values["no-anim"], theme: resolveTheme(values.theme, config, process.env) }) })
+  const io = createIO({ caps: detectCaps({ noAnim: values["no-anim"], theme: resolveTheme(values.theme, config, process.env) }), margin: config.margin })
   const [command, ...rest] = positionals
   // theme 是纯本地命令:不依赖 server,在 capabilities 探测前短路
   if (command === "theme") {
@@ -126,7 +126,7 @@ export async function run(argv: string[]): Promise<number> {
       io.line(paint(io.caps, "dim", "v0.1.0 · 协议 nexum.runtime.v1"))
       const lineSource = readlineLineSource(
         () => skills.filter((skill) => skill.status === "ready").map((skill) => skill.id),
-        { box: inputBoxLines(io.caps, process.stdout.columns ?? 80) },
+        { box: inputBoxLines(io.caps, process.stdout.columns ?? 80, io.margin) },
       )
       try {
         let sessionID: string | undefined

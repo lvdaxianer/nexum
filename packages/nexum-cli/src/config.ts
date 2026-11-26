@@ -5,7 +5,7 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import type { Theme } from "./term"
 
-export type CliConfig = { readonly theme?: "dark" | "light" | "auto" }
+export type CliConfig = { readonly theme?: "dark" | "light" | "auto"; readonly margin?: number }
 
 export function configPath(): string {
   return join(homedir(), ".nexum", "cli.json")
