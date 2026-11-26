@@ -109,6 +109,7 @@ function App() {
   const [rolePromptState, setRolePromptState] = createSignal<ActionState>("idle")
   const [rolePromptMessage, setRolePromptMessage] = createSignal("")
   const [policyPopoverOpen, setPolicyPopoverOpen] = createSignal(false)
+  const [policyAnchorEl, setPolicyAnchorEl] = createSignal<HTMLElement>()
   const [policyRules, setPolicyRules] = createSignal<PermissionPolicyRule[]>([])
   const [policyBusy, setPolicyBusy] = createSignal(false)
   const [policyError, setPolicyError] = createSignal("")
@@ -908,7 +909,8 @@ function App() {
     <Popover
       open={policyPopoverOpen()}
       onOpenChange={(open) => (open ? openPolicyPopover() : setPolicyPopoverOpen(false))}
-      placement="right-start"
+      anchorRef={policyAnchorEl}
+      placement="top-end"
       gutter={8}
     >
       <main class="app-shell">
@@ -1520,7 +1522,7 @@ function App() {
             onSkillUpdated={scheduleSkillReload}
             onOpenPermissionSettings={openPolicyPopover}
             composerExtras={
-              <button type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>
+              <button ref={setPolicyAnchorEl} type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>
                 <span aria-hidden="true">{permissionModeOption()?.icon ?? "🛡"}</span>
                 <span class="perm-chip-label">{permissionModeOption()?.label ?? "权限策略"}</span>
               </button>
