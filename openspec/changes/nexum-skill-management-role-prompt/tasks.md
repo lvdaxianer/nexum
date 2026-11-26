@@ -25,7 +25,7 @@
 
 - [x] 4.1 在 Core 注册 `skill_registry` builtin tool，定义 list/detail/register/refresh/validate/unregister 输入与安全结果，并在工具描述中禁止 shell 搜索和源文件删除；通过工具 schema 单测验证参数边界。
 - [x] 4.2 在 Adapter 执行 tool operation 到 registry 端口的映射，接入 `skill.manage`/只读权限边界，保留 `skill.use` 激活路径；通过工具执行和权限测试验证允许/拒绝/取消语义。
-- [ ] 4.3 为注册、刷新、校验、取消注册发布安全 registry update event，并接入 Session 事件流；通过事件顺序和敏感信息扫描测试验证 Agent/UI 能看到状态但看不到绝对路径和源文件内容。
+- [x] 4.3 为注册、刷新、校验、取消注册发布安全 registry update event，并接入 Session 事件流；通过事件顺序和敏感信息扫描测试验证 Agent/UI 能看到状态但看不到绝对路径和源文件内容。
 
 ## 5. Web UI 管理入口
 

@@ -14,6 +14,7 @@ import type { EventSink, RuntimeEvent } from "@nexum/core"
 export interface NexumEventHub extends EventSink {
   readonly subscribe: (sessionID: string, options?: NexumEventSubscriptionOptions) => AsyncIterable<RuntimeEvent>
   readonly lastSequence: (sessionID: string) => number
+  readonly nextSequence: (sessionID: string) => Promise<number>
   readonly delete: (sessionID: string) => Promise<void>
   /** 等待持久化事件文件首次加载完成；坏文件会以稳定错误拒绝。 */
   readonly ready?: () => Promise<void>
@@ -57,6 +58,7 @@ export function createNexumEventHub(options: NexumEventHubOptions = {}): NexumEv
   const filePath = options.filePath
   const subscribers = new Map<string, Set<Subscriber>>()
   let history = new Map<string, RuntimeEvent[]>()
+  const reservedSequences = new Map<string, number>()
   let loaded: Promise<void> | undefined
   let writeQueue: Promise<void> = Promise.resolve()
 
@@ -97,6 +99,7 @@ export function createNexumEventHub(options: NexumEventHubOptions = {}): NexumEv
     async publish(event) {
       if (filePath === undefined) {
         history = appendEvent(history, event)
+        reservedSequences.set(event.sessionID, Math.max(reservedSequences.get(event.sessionID) ?? 0, event.sequence))
         notify(event)
         return
       }
@@ -105,6 +108,7 @@ export function createNexumEventHub(options: NexumEventHubOptions = {}): NexumEv
         const next = appendEvent(history, event)
         await persistEvents(filePath, next)
         history = next
+        reservedSequences.set(event.sessionID, Math.max(reservedSequences.get(event.sessionID) ?? 0, event.sequence))
         notify(event)
       })
       writeQueue = operation.then(
@@ -119,11 +123,19 @@ export function createNexumEventHub(options: NexumEventHubOptions = {}): NexumEv
     lastSequence(sessionID) {
       return history.get(sessionID)?.at(-1)?.sequence ?? 0
     },
+    async nextSequence(sessionID) {
+      await load()
+      const current = Math.max(history.get(sessionID)?.at(-1)?.sequence ?? 0, reservedSequences.get(sessionID) ?? 0)
+      const next = current + 1
+      reservedSequences.set(sessionID, next)
+      return next
+    },
     async delete(sessionID) {
       if (filePath === undefined) {
         const next = new Map(history)
         next.delete(sessionID)
         history = next
+        reservedSequences.delete(sessionID)
         return
       }
       const operation = writeQueue.then(async () => {
@@ -132,6 +144,7 @@ export function createNexumEventHub(options: NexumEventHubOptions = {}): NexumEv
         next.delete(sessionID)
         await persistEvents(filePath, next)
         history = next
+        reservedSequences.delete(sessionID)
       })
       writeQueue = operation.then(
         () => undefined,

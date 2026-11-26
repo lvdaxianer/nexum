@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createNexumSkillRegistry } from "@nexum/application"
+import { createNexumEventHub, createNexumSkillRegistry } from "@nexum/application"
 import { createNexumPermissionBroker, createNexumSessionService } from "./test-ports.ts"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
 
@@ -49,14 +49,11 @@ test("exposes safe Skill management and activation routes", async () => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ id: "example-skill" }),
   })
-  const activateRequest = fetch(
-    new URL("/api/nexum/skills/example-skill/activate", server.url),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionID: session.sessionID, text: "执行 @example-skill" }),
-    },
-  )
+  const activateRequest = fetch(new URL("/api/nexum/skills/example-skill/activate", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionID: session.sessionID, text: "执行 @example-skill" }),
+  })
   while ((await permission.list(session.sessionID)).length === 0) await Bun.sleep(1)
   const pending = (await permission.list(session.sessionID))[0]!
   await permission.reply({ sessionID: session.sessionID, requestID: pending.id, decision: "allow_once" })
@@ -106,4 +103,117 @@ test("revalidates the registered source before returning validation status", asy
 
   expect(body.data.valid).toBe(false)
   expect(body.data.data[0]).toMatchObject({ id: "mutable-skill", status: "invalid" })
+})
+
+test("publishes a safe Skill registry event to the Session stream", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-event-"))
+  temporaryDirectories.push(root)
+  const skillRoot = join(root, "event-skill")
+  await mkdir(skillRoot)
+  await writeFile(skillRoot + "/SKILL.md", "---\nname: event-skill\ndescription: event test\n---\n")
+  const registry = createNexumSkillRegistry({ roots: [], filePath: join(root, ".nexum", "skills.json") })
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory: root })
+  const eventHub = createNexumEventHub()
+  const server = await startNexumServer({ port: 0, sessionService: sessions, eventHub, skillRegistry: registry })
+  servers.push(server)
+
+  const eventsResponse = await fetch(new URL(`/api/nexum/session/${session.sessionID}/events`, server.url))
+  const reader = eventsResponse.body?.getReader()
+  if (!reader) throw new Error("SSE 响应缺少可读流")
+  await reader.read()
+  const nextEvent = readSsePayload(reader)
+  const response = await fetch(new URL("/api/nexum/skills/register", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ address: skillRoot }),
+  })
+  const event = await Promise.race([nextEvent, Bun.sleep(50).then(() => undefined)])
+
+  await reader.cancel()
+  await nextEvent.catch(() => undefined)
+  expect(response.status).toBe(200)
+  expect(event).toMatchObject({
+    type: "skill.updated",
+    sessionID: session.sessionID,
+    data: { change: "registered", skillID: "event-skill", status: "ready" },
+  })
+  expect(JSON.stringify(event)).not.toContain(skillRoot)
+})
+
+async function readSsePayload(
+  reader: Pick<ReadableStreamDefaultReader<Uint8Array>, "read">,
+): Promise<Record<string, unknown>> {
+  const decoder = new TextDecoder()
+  let buffer = ""
+  while (true) {
+    const chunk = await reader.read()
+    if (chunk.done) throw new Error("SSE 流提前关闭")
+    buffer += decoder.decode(chunk.value, { stream: true })
+    const frameEnd = buffer.indexOf("\n\n")
+    if (frameEnd === -1) continue
+    const frame = buffer.slice(0, frameEnd)
+    buffer = buffer.slice(frameEnd + 2)
+    const dataLine = frame.split("\n").find((line) => line.startsWith("data: "))
+    if (!dataLine) continue
+    return JSON.parse(dataLine.slice("data: ".length)) as Record<string, unknown>
+  }
+}
+
+test("publishes refresh, validation, and unregister Skill events in order", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-event-sequence-"))
+  temporaryDirectories.push(root)
+  const skillRoot = join(root, "event-sequence-skill")
+  await mkdir(skillRoot)
+  const skillFile = join(skillRoot, "SKILL.md")
+  await writeFile(skillFile, "---\nname: event-sequence-skill\ndescription: event test\n---\n")
+  const registry = createNexumSkillRegistry({ roots: [], filePath: join(root, ".nexum", "skills.json") })
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory: root })
+  const eventHub = createNexumEventHub()
+  const server = await startNexumServer({ port: 0, sessionService: sessions, eventHub, skillRegistry: registry })
+  servers.push(server)
+
+  const stream = eventHub.subscribe(session.sessionID)[Symbol.asyncIterator]()
+  const next = () => stream.next()
+  await fetch(new URL("/api/nexum/skills/register", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ address: skillRoot }),
+  })
+  await writeFile(skillFile, "---\nname: event-sequence-skill\ndescription: changed\n---\n")
+  await fetch(new URL("/api/nexum/skills/refresh", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "event-sequence-skill" }),
+  })
+  await fetch(new URL("/api/nexum/skills/validate", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "event-sequence-skill" }),
+  })
+  await fetch(new URL("/api/nexum/skills/event-sequence-skill", server.url), { method: "DELETE" })
+
+  const events = [(await next()).value, (await next()).value, (await next()).value, (await next()).value]
+  await stream.return?.()
+
+  expect(events).toMatchObject([
+    {
+      type: "skill.updated",
+      sequence: 1,
+      data: { change: "registered", skillID: "event-sequence-skill", status: "ready" },
+    },
+    {
+      type: "skill.updated",
+      sequence: 2,
+      data: { change: "refreshed", skillID: "event-sequence-skill", status: "ready" },
+    },
+    {
+      type: "skill.updated",
+      sequence: 3,
+      data: { change: "validated", skillID: "event-sequence-skill", status: "ready" },
+    },
+    { type: "skill.updated", sequence: 4, data: { change: "unregistered", skillID: "event-sequence-skill" } },
+  ])
+  expect(JSON.stringify(events)).not.toContain(root)
 })

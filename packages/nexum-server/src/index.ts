@@ -41,15 +41,17 @@ import {
   type McpRegistry,
   type McpServerConfigStore,
   type McpServerConfig,
+  type RuntimeEvent,
 } from "@nexum/core"
 import {
   NEXUM_EVENT_TYPES,
   NEXUM_EXPERIMENTAL_API_PREFIX,
   type NexumMessage,
+  type NexumSkillRegistryUpdateEventData,
   type NexumSessionMessages,
 } from "@nexum/protocol"
 import { resolve } from "node:path"
-import { createHash, timingSafeEqual } from "node:crypto"
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto"
 import type { NexumEventHub } from "./events.ts"
 import { createNexumLogger, withNexumLogContext, type NexumLogger } from "./logger.ts"
 
@@ -78,15 +80,77 @@ const NEXUM_CAPABILITIES = [
   { id: "tool", version: "1", status: "enabled", operations: ["execute"] },
   { id: "permission", version: "1", status: "enabled", operations: ["evaluate"] },
   { id: "interaction", version: "1", status: "enabled", operations: ["request", "reply"] },
-  { id: "session", version: "1", status: "enabled", operations: ["create", "list", "get", "update", "delete", "continue"] },
+  {
+    id: "session",
+    version: "1",
+    status: "enabled",
+    operations: ["create", "list", "get", "update", "delete", "continue"],
+  },
   { id: "context", version: "1", status: "enabled", operations: ["load", "compact"] },
-  { id: "skill", version: "1", status: "enabled", operations: ["list", "detail", "register", "refresh", "validate", "unregister", "activate"] },
+  {
+    id: "skill",
+    version: "1",
+    status: "enabled",
+    operations: ["list", "detail", "register", "refresh", "validate", "unregister", "activate"],
+  },
   { id: "role_prompt", version: "1", status: "enabled", operations: ["get", "update", "reset"] },
   { id: "memory", version: "1", status: "disabled", operations: ["search", "upsert", "remove"] },
-  { id: "mcp", version: "1", status: "disabled", operations: ["listServers", "listTools", "listResources", "listPrompts", "callTool", "authorize", "authorizationStatus", "completeAuthorization", "cancelAuthorization"] },
+  {
+    id: "mcp",
+    version: "1",
+    status: "disabled",
+    operations: [
+      "listServers",
+      "listTools",
+      "listResources",
+      "listPrompts",
+      "callTool",
+      "authorize",
+      "authorizationStatus",
+      "completeAuthorization",
+      "cancelAuthorization",
+    ],
+  },
   { id: "host", version: "1", status: "enabled", operations: ["readText", "writeText", "runShell"] },
   { id: "event", version: "1", status: "enabled", operations: ["publish"] },
 ] as const
+
+type PublishSkillUpdate = (data: NexumSkillRegistryUpdateEventData) => Promise<void>
+
+function createSkillUpdatePublisher(
+  sessionService: NexumSessionService,
+  eventHub: NexumEventHub,
+  logger: NexumLogger,
+): PublishSkillUpdate {
+  let queue = Promise.resolve()
+  return (data) => {
+    const operation = queue.then(async () => {
+      const sessions = await sessionService.list()
+      const runID = `skill-registry:${randomUUID()}`
+      await Promise.all(
+        sessions.map(async (session) => {
+          const event: RuntimeEvent = {
+            eventID: randomUUID(),
+            runID,
+            type: "skill.updated",
+            sessionID: session.sessionID,
+            sequence: await eventHub.nextSequence(session.sessionID),
+            occurredAt: new Date().toISOString(),
+            data,
+          }
+          await eventHub.publish(event)
+        }),
+      )
+    })
+    queue = operation.then(
+      () => undefined,
+      () => undefined,
+    )
+    return operation.catch((error) => {
+      logger.error("nexum.skill_update_publish_failed", { change: data.change, skillID: data.skillID }, error)
+    })
+  }
+}
 
 /** Nexum Service 的监听配置。 */
 export interface NexumServerOptions {
@@ -149,29 +213,31 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   assertPort(port)
   assertHostSecurity(hostname, authToken)
   const interactionStore = options.interactionStore
-  const runtime = options.runtime ?? await createSqliteRuntime({
-    ...(options.sessionService ? { sessions: options.sessionService } : {}),
-    ...(options.sessionStore ? { sessionStore: options.sessionStore } : {}),
-    ...(options.modelConfigStore ? { modelConfig: options.modelConfigStore } : {}),
-    ...(options.rolePromptStore ? { rolePrompt: options.rolePromptStore } : {}),
-    ...(options.rolePromptFile ? { rolePromptFile: options.rolePromptFile } : {}),
-    ...(options.messageStore ? { messageStore: options.messageStore } : {}),
-    ...(interactionStore ? { interactionStore } : {}),
-    ...(options.eventHub ? { eventHub: options.eventHub } : {}),
-    ...(options.permissionBroker ? { permissionBroker: options.permissionBroker } : {}),
-    ...(options.permissionPolicyStore ? { permissionPolicyStore: options.permissionPolicyStore } : {}),
-    ...(options.questionPort ? { questionPort: options.questionPort } : {}),
-    ...(options.modelProbe ? { modelProbe: options.modelProbe } : {}),
-    ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
-    ...(options.skillRegistryFile ? { skillRegistryFile: options.skillRegistryFile } : {}),
-    ...(options.skillInvocation ? { skillInvocation: options.skillInvocation } : {}),
-    ...(options.codingLoop ? { codingLoop: options.codingLoop } : {}),
-    ...(options.mcp ? { mcp: options.mcp } : {}),
-    ...(options.mcpOAuth ? { mcpOAuth: options.mcpOAuth } : {}),
-    ...(options.persistence ? { persistence: options.persistence } : {}),
-    ...(options.databasePath ? { databasePath: options.databasePath } : {}),
-    skillRoots: options.skillRoots ?? [resolve(process.cwd(), "skills")],
-  })
+  const runtime =
+    options.runtime ??
+    (await createSqliteRuntime({
+      ...(options.sessionService ? { sessions: options.sessionService } : {}),
+      ...(options.sessionStore ? { sessionStore: options.sessionStore } : {}),
+      ...(options.modelConfigStore ? { modelConfig: options.modelConfigStore } : {}),
+      ...(options.rolePromptStore ? { rolePrompt: options.rolePromptStore } : {}),
+      ...(options.rolePromptFile ? { rolePromptFile: options.rolePromptFile } : {}),
+      ...(options.messageStore ? { messageStore: options.messageStore } : {}),
+      ...(interactionStore ? { interactionStore } : {}),
+      ...(options.eventHub ? { eventHub: options.eventHub } : {}),
+      ...(options.permissionBroker ? { permissionBroker: options.permissionBroker } : {}),
+      ...(options.permissionPolicyStore ? { permissionPolicyStore: options.permissionPolicyStore } : {}),
+      ...(options.questionPort ? { questionPort: options.questionPort } : {}),
+      ...(options.modelProbe ? { modelProbe: options.modelProbe } : {}),
+      ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
+      ...(options.skillRegistryFile ? { skillRegistryFile: options.skillRegistryFile } : {}),
+      ...(options.skillInvocation ? { skillInvocation: options.skillInvocation } : {}),
+      ...(options.codingLoop ? { codingLoop: options.codingLoop } : {}),
+      ...(options.mcp ? { mcp: options.mcp } : {}),
+      ...(options.mcpOAuth ? { mcpOAuth: options.mcpOAuth } : {}),
+      ...(options.persistence ? { persistence: options.persistence } : {}),
+      ...(options.databasePath ? { databasePath: options.databasePath } : {}),
+      skillRoots: options.skillRoots ?? [resolve(process.cwd(), "skills")],
+    }))
   const ownsRuntime = options.runtime === undefined
   const sessionService = runtime.sessionService
   const messageStore = runtime.messageStore
@@ -191,6 +257,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const mcp = options.mcp ?? runtime.mcp
   const mcpOAuth = options.mcpOAuth ?? runtime.mcpOAuth
   const mcpConfigStore = options.mcpConfigStore ?? runtime.mcpConfigStore
+  const publishSkillUpdate = createSkillUpdatePublisher(sessionService, eventHub, logger)
   if (options.sessionStore) await options.sessionStore.list()
   if (runtimeInteractionStore) await runtimeInteractionStore.list()
 
@@ -204,28 +271,30 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
       const path = new URL(request.url).pathname
       return withNexumLogContext(traceId, async () => {
         try {
-          const response = isPublicPath(path) || isAuthorizedRequest(request, authToken)
-            ? await handleRequest(
-                request,
-                sessionService,
-                eventHub,
-                messageStore,
-                runtimeInteractionStore,
-                codingLoop,
-                permissionBroker,
-                questionPort,
-                modelConfigStore,
-                rolePromptStore,
-                modelProbe,
-                skillRegistry,
-                skillInvocation,
-                mcp,
-                mcpOAuth,
-                mcpConfigStore,
-                traceId,
-                logger,
-              )
-            : errorResponse(401, "NEXUM_AUTH_REQUIRED", "请求需要有效的 Bearer token", traceId)
+          const response =
+            isPublicPath(path) || isAuthorizedRequest(request, authToken)
+              ? await handleRequest(
+                  request,
+                  sessionService,
+                  eventHub,
+                  messageStore,
+                  publishSkillUpdate,
+                  runtimeInteractionStore,
+                  codingLoop,
+                  permissionBroker,
+                  questionPort,
+                  modelConfigStore,
+                  rolePromptStore,
+                  modelProbe,
+                  skillRegistry,
+                  skillInvocation,
+                  mcp,
+                  mcpOAuth,
+                  mcpConfigStore,
+                  traceId,
+                  logger,
+                )
+              : errorResponse(401, "NEXUM_AUTH_REQUIRED", "请求需要有效的 Bearer token", traceId)
           return withCorsHeaders(response, request, corsOrigins)
         } catch (error) {
           logRequestFailure(logger, request, traceId, error)
@@ -284,7 +353,8 @@ const MAX_JSON_BODY_BYTES = 1_048_576
 /** 在 JSON 解析前限制请求体大小，避免无界 body 占用服务内存。 */
 async function readJsonRequest(request: Request): Promise<unknown | undefined> {
   const contentLength = request.headers.get("content-length")
-  if (contentLength !== null && (!/^\d+$/.test(contentLength.trim()) || Number(contentLength) > MAX_JSON_BODY_BYTES)) return undefined
+  if (contentLength !== null && (!/^\d+$/.test(contentLength.trim()) || Number(contentLength) > MAX_JSON_BODY_BYTES))
+    return undefined
   if (!request.body) return undefined
 
   const reader = request.body.getReader()
@@ -327,6 +397,7 @@ async function handleRequest(
   sessionService: NexumSessionService,
   eventHub: NexumEventHub,
   messageStore: MessageStore,
+  publishSkillUpdate: PublishSkillUpdate,
   interactionStore: NexumInteractionStore | undefined,
   codingLoop?: NexumCodingLoop,
   permissionBroker?: NexumPermissionBroker,
@@ -378,24 +449,23 @@ async function handleRequest(
     return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 或 POST 请求", traceId)
   }
 
-  const mcpOAuthAuthorizeMatch = url.pathname.match(new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/mcp/([^/]+)/oauth/authorize$`))
+  const mcpOAuthAuthorizeMatch = url.pathname.match(
+    new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/mcp/([^/]+)/oauth/authorize$`),
+  )
   if (mcpOAuthAuthorizeMatch) {
     if (request.method !== "POST") return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
-    return startMcpOAuth(
-      request,
-      decodeURIComponent(mcpOAuthAuthorizeMatch[1]!),
-      mcp,
-      mcpOAuth,
-      traceId,
-    )
+    return startMcpOAuth(request, decodeURIComponent(mcpOAuthAuthorizeMatch[1]!), mcp, mcpOAuth, traceId)
   }
 
-  const mcpOAuthAttemptMatch = url.pathname.match(new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/mcp/oauth/([^/]+)(?:/(complete|cancel))?$`))
+  const mcpOAuthAttemptMatch = url.pathname.match(
+    new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/mcp/oauth/([^/]+)(?:/(complete|cancel))?$`),
+  )
   if (mcpOAuthAttemptMatch) {
     const attemptID = decodeURIComponent(mcpOAuthAttemptMatch[1]!)
     const operation = mcpOAuthAttemptMatch[2]
     if (!operation && request.method === "GET") return getMcpOAuthStatus(attemptID, mcpOAuth, traceId)
-    if (operation === "complete" && request.method === "POST") return completeMcpOAuth(request, attemptID, mcpOAuth, traceId)
+    if (operation === "complete" && request.method === "POST")
+      return completeMcpOAuth(request, attemptID, mcpOAuth, traceId)
     if (operation === "cancel" && request.method === "POST") return cancelMcpOAuth(attemptID, mcpOAuth, traceId)
     return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "MCP OAuth 操作方法不匹配", traceId)
   }
@@ -423,37 +493,20 @@ async function handleRequest(
     return createSession(request, sessionService, traceId)
   }
 
-  const continueMatch = url.pathname.match(
-    new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/session/([^/]+)/continue$`),
-  )
+  const continueMatch = url.pathname.match(new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/session/([^/]+)/continue$`))
   if (continueMatch) {
     if (request.method !== "POST") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
-    return continueSession(
-      request,
-      decodeURIComponent(continueMatch[1]!),
-      sessionService,
-      codingLoop,
-      traceId,
-      logger,
-    )
+    return continueSession(request, decodeURIComponent(continueMatch[1]!), sessionService, codingLoop, traceId, logger)
   }
 
-  const messagesMatch = url.pathname.match(
-    new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/session/([^/]+)/messages$`),
-  )
+  const messagesMatch = url.pathname.match(new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/session/([^/]+)/messages$`))
   if (messagesMatch) {
     if (request.method !== "GET") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
     }
-    return listSessionMessages(
-      url,
-      decodeURIComponent(messagesMatch[1]!),
-      sessionService,
-      messageStore,
-      traceId,
-    )
+    return listSessionMessages(url, decodeURIComponent(messagesMatch[1]!), sessionService, messageStore, traceId)
   }
 
   const updateSessionMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)$/)
@@ -461,7 +514,12 @@ async function handleRequest(
     const sessionID = decodeURIComponent(updateSessionMatch[1]!)
     if (request.method === "PUT") return updateSession(request, sessionID, sessionService, traceId)
     if (request.method === "DELETE") {
-      return deleteSession(request, { sessionID, messageStore, interactionStore, eventHub, sessionService }, traceId, logger)
+      return deleteSession(
+        request,
+        { sessionID, messageStore, interactionStore, eventHub, sessionService },
+        traceId,
+        logger,
+      )
     }
     return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 PUT 或 DELETE 请求", traceId)
   }
@@ -497,21 +555,21 @@ async function handleRequest(
     if (request.method !== "POST") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
-    return registerSkill(request, skillRegistry, traceId)
+    return registerSkill(request, skillRegistry, publishSkillUpdate, traceId)
   }
 
   if (url.pathname === "/api/nexum/skills/refresh") {
     if (request.method !== "POST") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
-    return refreshSkills(request, skillRegistry, traceId)
+    return refreshSkills(request, skillRegistry, publishSkillUpdate, traceId)
   }
 
   if (url.pathname === "/api/nexum/skills/validate") {
     if (request.method !== "POST") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
-    return validateSkills(request, skillRegistry, traceId)
+    return validateSkills(request, skillRegistry, publishSkillUpdate, traceId)
   }
 
   const skillActivateMatch = url.pathname.match(/^\/api\/nexum\/skills\/([^/]+)\/activate$/)
@@ -526,7 +584,7 @@ async function handleRequest(
   if (skillDetailMatch) {
     const skillID = decodeURIComponent(skillDetailMatch[1]!)
     if (request.method === "GET") return detailSkill(skillID, skillRegistry, traceId)
-    if (request.method === "DELETE") return unregisterSkill(skillID, skillRegistry, traceId)
+    if (request.method === "DELETE") return unregisterSkill(skillID, skillRegistry, publishSkillUpdate, traceId)
     return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 或 DELETE 请求", traceId)
   }
 
@@ -603,9 +661,7 @@ async function handleRequest(
     return listPermissions(decodeURIComponent(permissionListMatch[1]!), sessionService, permissionBroker, traceId)
   }
 
-  const permissionReplyMatch = url.pathname.match(
-    /^\/api\/nexum\/session\/([^/]+)\/permission\/([^/]+)\/reply$/,
-  )
+  const permissionReplyMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)\/permission\/([^/]+)\/reply$/)
   if (permissionReplyMatch) {
     if (request.method !== "POST") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
@@ -628,9 +684,7 @@ async function handleRequest(
     return listQuestions(decodeURIComponent(questionListMatch[1]!), sessionService, questionPort, traceId)
   }
 
-  const questionReplyMatch = url.pathname.match(
-    /^\/api\/nexum\/session\/([^/]+)\/question\/([^/]+)\/reply$/,
-  )
+  const questionReplyMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)\/question\/([^/]+)\/reply$/)
   if (questionReplyMatch) {
     if (request.method !== "POST") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
@@ -645,9 +699,7 @@ async function handleRequest(
     )
   }
 
-  const questionCancelMatch = url.pathname.match(
-    /^\/api\/nexum\/session\/([^/]+)\/question\/([^/]+)\/cancel$/,
-  )
+  const questionCancelMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)\/question\/([^/]+)\/cancel$/)
   if (questionCancelMatch) {
     if (request.method !== "POST") {
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
@@ -713,6 +765,7 @@ async function detailSkill(
 async function registerSkill(
   request: Request,
   skillRegistry: NexumSkillRegistry | undefined,
+  publishSkillUpdate: PublishSkillUpdate,
   traceId: string,
 ): Promise<Response> {
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
@@ -722,6 +775,7 @@ async function registerSkill(
   }
   try {
     const data = await skillRegistry.register(payload.address)
+    await publishSkillUpdate({ change: "registered", skillID: data.id, status: data.status })
     return jsonResponse({ data }, traceId)
   } catch {
     return errorResponse(400, "NEXUM_SKILL_REGISTER_FAILED", "Skill 地址无法注册", traceId)
@@ -740,6 +794,7 @@ async function registerSkill(
 async function refreshSkills(
   request: Request,
   skillRegistry: NexumSkillRegistry | undefined,
+  publishSkillUpdate: PublishSkillUpdate,
   traceId: string,
 ): Promise<Response> {
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
@@ -748,7 +803,12 @@ async function refreshSkills(
     return errorResponse(400, "NEXUM_INVALID_REQUEST", "id 必须是字符串", traceId)
   }
   await skillRegistry.refresh(payload.id)
-  return listSkills(skillRegistry, traceId)
+  const data = await skillRegistry.list()
+  const updated = payload.id === undefined ? data : data.filter((skill) => skill.id === payload.id)
+  await Promise.all(
+    updated.map((skill) => publishSkillUpdate({ change: "refreshed", skillID: skill.id, status: skill.status })),
+  )
+  return jsonResponse({ data }, traceId)
 }
 
 /**
@@ -763,11 +823,13 @@ async function refreshSkills(
 async function unregisterSkill(
   skillID: string,
   skillRegistry: NexumSkillRegistry | undefined,
+  publishSkillUpdate: PublishSkillUpdate,
   traceId: string,
 ): Promise<Response> {
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
   try {
     await skillRegistry.unregister(skillID)
+    await publishSkillUpdate({ change: "unregistered", skillID })
     return jsonResponse({ data: { id: skillID, deleted: true } }, traceId)
   } catch {
     return errorResponse(404, "NEXUM_SKILL_NOT_FOUND", "Skill 未注册", traceId)
@@ -787,6 +849,7 @@ async function unregisterSkill(
 async function validateSkills(
   request: Request,
   skillRegistry: NexumSkillRegistry | undefined,
+  publishSkillUpdate: PublishSkillUpdate,
   traceId: string,
 ): Promise<Response> {
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
@@ -797,6 +860,9 @@ async function validateSkills(
   await skillRegistry.refresh(payload.id)
   const summaries = await skillRegistry.list()
   const data = payload.id === undefined ? summaries : summaries.filter((item) => item.id === payload.id)
+  await Promise.all(
+    data.map((skill) => publishSkillUpdate({ change: "validated", skillID: skill.id, status: skill.status })),
+  )
   return jsonResponse(
     { data: { valid: data.length > 0 && data.every((item) => item.status === "ready"), data } },
     traceId,
@@ -1073,8 +1139,12 @@ function parseMcpServerConfig(payload: Record<string, unknown>): McpServerConfig
     typeof payload.name !== "string" ||
     typeof payload.url !== "string" ||
     (payload.disabled !== undefined && typeof payload.disabled !== "boolean") ||
-    (payload.timeoutMs !== undefined && (typeof payload.timeoutMs !== "number" || !Number.isFinite(payload.timeoutMs))) ||
-    (payload.protocol !== undefined && payload.protocol !== "legacy" && payload.protocol !== "auto" && payload.protocol !== "2026-07-28")
+    (payload.timeoutMs !== undefined &&
+      (typeof payload.timeoutMs !== "number" || !Number.isFinite(payload.timeoutMs))) ||
+    (payload.protocol !== undefined &&
+      payload.protocol !== "legacy" &&
+      payload.protocol !== "auto" &&
+      payload.protocol !== "2026-07-28")
   ) {
     return undefined
   }
@@ -1084,7 +1154,9 @@ function parseMcpServerConfig(payload: Record<string, unknown>): McpServerConfig
     id: payload.id,
     name: payload.name,
     url: payload.url,
-    ...(payload.headers ? { headers: Object.fromEntries(Object.entries(payload.headers).map(([key, value]) => [key, value as string])) } : {}),
+    ...(payload.headers
+      ? { headers: Object.fromEntries(Object.entries(payload.headers).map(([key, value]) => [key, value as string])) }
+      : {}),
     ...(payload.disabled !== undefined ? { disabled: payload.disabled } : {}),
     ...(payload.timeoutMs !== undefined ? { timeoutMs: payload.timeoutMs } : {}),
     ...(payload.protocol !== undefined ? { protocol: payload.protocol } : {}),
@@ -1246,9 +1318,7 @@ function publicMessage(message: ModelMessage): NexumMessage {
   }
   return {
     role: "assistant",
-    ...(message.content !== undefined
-      ? { content: redactNexumSensitiveValue(message.content) as string }
-      : {}),
+    ...(message.content !== undefined ? { content: redactNexumSensitiveValue(message.content) as string } : {}),
     ...(message.reasoningContent !== undefined
       ? { reasoningContent: redactNexumSensitiveValue(message.reasoningContent) as string }
       : {}),
@@ -1303,7 +1373,11 @@ async function probeModel(
   }
 
   try {
-    const data = await modelProbe.probe({ mode: mode as NexumModelProbeMode, signal: request.signal, timeoutMs: MODEL_PROBE_TIMEOUT_MS })
+    const data = await modelProbe.probe({
+      mode: mode as NexumModelProbeMode,
+      signal: request.signal,
+      timeoutMs: MODEL_PROBE_TIMEOUT_MS,
+    })
     return jsonResponse({ data }, traceId)
   } catch (error) {
     if (error instanceof NexumModelError && error.code === "authentication_failed") {
@@ -1469,7 +1543,13 @@ function continueAdmissionError(
  * @returns accepted 响应或同步启动错误响应
  * @author lvdaxianer@yeah.net
  */
-async function startContinue(request: Request, codingLoop: NexumCodingLoop, sessionID: string, traceId: string, logger?: NexumLogger): Promise<Response> {
+async function startContinue(
+  request: Request,
+  codingLoop: NexumCodingLoop,
+  sessionID: string,
+  traceId: string,
+  logger?: NexumLogger,
+): Promise<Response> {
   try {
     const started = await codingLoop.continueStart!(sessionID)
     if (!started.accepted) return continueAdmissionResponse(started.reason, traceId)
@@ -1478,13 +1558,15 @@ async function startContinue(request: Request, codingLoop: NexumCodingLoop, sess
       await started.admission
     } catch (error) {
       void started.promise.catch(() => undefined)
-      if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError)) logRequestFailure(logger, request, traceId, error)
+      if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError))
+        logRequestFailure(logger, request, traceId, error)
       return continueErrorResponse(error, traceId)
     }
     void started.promise.catch(() => undefined)
     return jsonResponse({ data: { status: "accepted" } }, traceId)
   } catch (error) {
-    if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError)) logRequestFailure(logger, request, traceId, error)
+    if (!(error instanceof NexumSessionError) && !(error instanceof NexumRunError))
+      logRequestFailure(logger, request, traceId, error)
     return continueErrorResponse(error, traceId)
   }
 }
@@ -1576,15 +1658,17 @@ async function streamEvents(
   }
 
   const encoder = new TextEncoder()
-  const iterator = eventHub.subscribe(
-    sessionID,
-    afterEventID || afterSequence !== undefined
-      ? {
-          ...(afterEventID ? { afterEventID } : {}),
-          ...(afterSequence !== undefined ? { afterSequence } : {}),
-        }
-      : undefined,
-  )[Symbol.asyncIterator]()
+  const iterator = eventHub
+    .subscribe(
+      sessionID,
+      afterEventID || afterSequence !== undefined
+        ? {
+            ...(afterEventID ? { afterEventID } : {}),
+            ...(afterSequence !== undefined ? { afterSequence } : {}),
+          }
+        : undefined,
+    )
+    [Symbol.asyncIterator]()
   let closed = false
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -2142,7 +2226,12 @@ type NexumSessionDeleteInput = {
  * @author lvdaxianer@yeah.net
  * @date 2026-11-23
  */
-async function deleteSession(request: Request, input: NexumSessionDeleteInput, traceId: string, logger?: NexumLogger): Promise<Response> {
+async function deleteSession(
+  request: Request,
+  input: NexumSessionDeleteInput,
+  traceId: string,
+  logger?: NexumLogger,
+): Promise<Response> {
   try {
     await input.sessionService.delete(input.sessionID, async () => {
       await input.messageStore.delete(input.sessionID)
@@ -2168,10 +2257,7 @@ function deleteSessionError(error: unknown, traceId: string): Response {
 }
 
 /** 返回当前模型配置的安全视图。 */
-async function getModelConfig(
-  modelConfigStore: NexumModelConfigStore | undefined,
-  traceId: string,
-): Promise<Response> {
+async function getModelConfig(modelConfigStore: NexumModelConfigStore | undefined, traceId: string): Promise<Response> {
   if (!modelConfigStore) {
     return errorResponse(503, "NEXUM_MODEL_CONFIG_NOT_CONFIGURED", "Nexum Model Config 尚未配置", traceId)
   }
@@ -2220,10 +2306,7 @@ async function updateModelConfig(
 }
 
 /** 返回当前默认角色提示词。 */
-async function getRolePrompt(
-  rolePromptStore: NexumRolePromptStore | undefined,
-  traceId: string,
-): Promise<Response> {
+async function getRolePrompt(rolePromptStore: NexumRolePromptStore | undefined, traceId: string): Promise<Response> {
   if (!rolePromptStore) {
     return errorResponse(503, "NEXUM_ROLE_PROMPT_NOT_CONFIGURED", "默认角色提示词尚未配置", traceId)
   }
@@ -2254,10 +2337,7 @@ async function updateRolePrompt(
 }
 
 /** 恢复内置默认角色提示词。 */
-async function resetRolePrompt(
-  rolePromptStore: NexumRolePromptStore | undefined,
-  traceId: string,
-): Promise<Response> {
+async function resetRolePrompt(rolePromptStore: NexumRolePromptStore | undefined, traceId: string): Promise<Response> {
   if (!rolePromptStore) {
     return errorResponse(503, "NEXUM_ROLE_PROMPT_NOT_CONFIGURED", "默认角色提示词尚未配置", traceId)
   }
@@ -2372,7 +2452,13 @@ function assertHostSecurity(hostname: string, authToken: string | undefined): vo
  */
 function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname.trim().toLowerCase()
-  return normalized === "localhost" || normalized === "::1" || normalized === "0:0:0:0:0:0:0:1" || normalized === "127.0.0.1" || normalized.startsWith("127.")
+  return (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized === "0:0:0:0:0:0:0:1" ||
+    normalized === "127.0.0.1" ||
+    normalized.startsWith("127.")
+  )
 }
 
 /**
@@ -2420,9 +2506,13 @@ function traceIdFrom(value: string | null): string {
 /** 记录统一 HTTP 异常边界的安全诊断上下文，同时保持响应 caller-safe。 */
 function logRequestFailure(logger: NexumLogger | undefined, request: Request, traceId: string, error: unknown): void {
   const requestLogger = logger ?? createNexumLogger()
-  requestLogger.error("nexum.request_failed", {
-    traceId,
-    method: request.method,
-    path: new URL(request.url).pathname,
-  }, error)
+  requestLogger.error(
+    "nexum.request_failed",
+    {
+      traceId,
+      method: request.method,
+      path: new URL(request.url).pathname,
+    },
+    error,
+  )
 }
