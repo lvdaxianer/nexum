@@ -17,7 +17,7 @@
 
 ## 4. Integration
 
-- [ ] 4.1 通过 `openspec validate --strict`，完成 review/audit，提交并合并到 `dev-v0.0.1`。
+- [x] 4.1 通过 `openspec validate --strict`，完成 review/audit，提交并合并到 `dev-v0.0.1`。
 
 ## Workflow follow-up
 
