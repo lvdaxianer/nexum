@@ -18,6 +18,7 @@
 
 不要从模块表开始拼 Runtime，先选择一个完整案例：[Nexum 组合案例](examples/README.md)。
 
+- [手把手构建一个完整 Agent 应用](examples/full-stack-chat.md)：面向第一次使用 Nexum 的开发者，从 SQLite 后端、HTTP/SSE Server 到 Client 和 Chat Surface 一步完成接入。
 - [在应用内嵌入 Agent](examples/embedded-runtime.md)：最简单的进程内组合。
 - [本地文件持久化](examples/local-file-runtime.md)：保存 Session，重启后继续使用。
 - [SQLite + HTTP/SSE 服务](examples/sqlite-http-runtime.md)：让 Web、桌面端或其他语言接入。

@@ -4,6 +4,7 @@
 
 | 案例                                             | 适合谁                         | 组合内容                                           |
 | ------------------------------------------------ | ------------------------------ | -------------------------------------------------- |
+| [手把手构建完整 Agent 应用](full-stack-chat.md)  | 第一次使用 Nexum 的开发者      | SQLite + Server + Client + Chat Surface            |
 | [在应用内嵌入 Agent](embedded-runtime.md)        | 想在自己的程序里直接调用 Agent | Application + Core + 内存 Persistence + Model      |
 | [本地文件持久化](local-file-runtime.md)          | 想保存 Session，重启后继续使用 | Application + File Persistence + Model             |
 | [SQLite + HTTP/SSE 服务](sqlite-http-runtime.md) | 想让 Web、桌面端或其他语言接入 | Application + SQLite + Server + Protocol + Client  |
@@ -11,6 +12,7 @@
 
 ## 怎么选择
 
+- 第一次使用 Nexum，想看完整前后端链路：从[手把手构建完整 Agent 应用](full-stack-chat.md)开始。
 - 先验证 Agent 能力：从[应用内嵌 Agent](embedded-runtime.md)开始。
 - 需要保存会话：选择[本地文件持久化](local-file-runtime.md)。
 - 需要独立服务或多端接入：选择[SQLite + HTTP/SSE 服务](sqlite-http-runtime.md)。
