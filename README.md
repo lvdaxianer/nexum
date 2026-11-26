@@ -28,7 +28,7 @@ import { createFilePersistence } from "nexum/persistence/file"
 
 如果你是第一次使用 Nexum，建议先完成这个案例：后端使用 SQLite 保存数据，Server 提供 HTTP/SSE，前端使用 Nexum 的 Client、Surface Adapter 和 Chat Surface 展示聊天界面。
 
-完整案例见[手把手构建一个完整 Agent 应用](docs/examples/full-stack-chat.md)。教程会从 SQLite 后端开始，逐步讲解 Server、Client、Session 列表、Session 切换回显和 Chat Surface；每个模块的参数也会链接到对应文档。
+完整案例见[手把手构建一个完整 Agent 应用](docs/examples/full-stack-chat.md)。教程会从 SQLite 后端开始，逐步讲解 Server、Client 和 Chat Surface；Session 的查询、切换、历史、重命名、删除、取消和继续统一见 [Session 会话能力](docs/capabilities/session.md)。
 
 ## Nexum 解决什么问题
 
