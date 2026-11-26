@@ -881,3 +881,14 @@ test("composed model + permission status stays on the hint row at 80 columns", a
   expect(displayWidth(plainHint)).toBe(displayWidth(box.top.replace(/\x1b\[[0-9;]*m/g, "")))
   source.close()
 })
+
+test("repl /permissions refreshes only the permission segment, not the model", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  const { client, gets } = modelClient(null)
+  const lineSource = statusLineSource(["/permissions", "/quit"])
+  await runRepl({ adapter, client, io, sessionID: session.id, lineSource, prompter: async () => "" })
+  // 权限命令不改变模型配置:模型 GET 只有启动时的一次
+  expect(gets.length).toBe(1)
+  expect(lineSource.statuses.at(-1)).toContain("权限:ask")
+})

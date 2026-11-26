@@ -460,7 +460,6 @@ export async function runRepl(options: ReplOptions): Promise<void> {
             } else if (command === "permissions") {
               await cmdPermission(client, io, rest)
               await refreshPermission()
-              await refreshModel()
             }
             else if (command === "clear") {
               io.write("\x1b[2J\x1b[H")
