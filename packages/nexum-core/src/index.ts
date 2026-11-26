@@ -208,6 +208,18 @@ export interface NexumExecutionStore {
 /** Nexum Session 的状态类型。 */
 export type NexumSessionStatus = SessionRecord["status"]
 
+/**
+ * 判断 Session 当前是否允许取消正在运行的任务。
+ *
+ * @param status - Session 当前生命周期状态
+ * @returns 当前状态是否允许取消运行
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-26
+ */
+export function canCancelSessionStatus(status: NexumSessionStatus): boolean {
+  return status === "running"
+}
+
 /** 可由 Nexum Session Service 返回的领域错误类型。 */
 export type NexumSessionErrorCode =
   | "invalid_directory"
@@ -215,6 +227,7 @@ export type NexumSessionErrorCode =
   | "session_not_found"
   | "invalid_transition"
   | "session_busy"
+  | "session_not_cancellable"
 
 /** Nexum Session 创建请求。 */
 export interface NexumSessionCreateInput {
@@ -1015,6 +1028,10 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       if (!current) {
         throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
       }
+      // 只有运行中的 Session 存在可取消的活动任务，空闲和终态都不能伪造取消成功。
+      if (!canCancelSessionStatus(current.status)) {
+        throw new NexumSessionError("session_not_cancellable", "Session 当前状态不允许取消", sessionID)
+      }
       const active = activeRuns.get(sessionID)
       if (active) {
         active.cancelled = true
@@ -1026,7 +1043,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       if (!latest) {
         throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
       }
-      if (latest.status === "idle" || latest.status === "running") {
+      if (canCancelSessionStatus(latest.status)) {
         return options.sessions.setStatus(sessionID, "cancelled")
       }
       return latest

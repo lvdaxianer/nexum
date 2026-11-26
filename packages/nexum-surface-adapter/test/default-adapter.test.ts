@@ -97,6 +97,7 @@ function responseData(request: Request) {
       pendingPermissions: [],
       pendingQuestions: [],
       canContinue: false,
+      canCancel: false,
       lastSequence: 7,
     }
   }

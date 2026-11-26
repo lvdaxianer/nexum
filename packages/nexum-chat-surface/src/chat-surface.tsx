@@ -157,6 +157,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const [pendingDecisionID, setPendingDecisionID] = createSignal("")
   const [pendingQuestionID, setPendingQuestionID] = createSignal("")
   const [continueAvailable, setContinueAvailable] = createSignal(false)
+  const [canCancel, setCanCancel] = createSignal(false)
   const [continueBusy, setContinueBusy] = createSignal(false)
   const [cancelBusy, setCancelBusy] = createSignal(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
@@ -281,6 +282,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
   function applyState(state: ChatStateSnapshot) {
     setStatus(state.session.status)
     setContinueAvailable(state.canContinue)
+    setCanCancel(state.canCancel)
     setPermissions([...state.pendingPermissions])
     setQuestions([...state.pendingQuestions])
     setChatItems((current) => mergePendingChatItems(current, state))
@@ -311,6 +313,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
     setHistoryError("")
     setBusy(false)
     setContinueAvailable(false)
+    setCanCancel(false)
     setContinueBusy(false)
     setCancelBusy(false)
     setCancelConfirmOpen(false)
@@ -324,12 +327,19 @@ export function ChatSurface(props: ChatSurfaceProps) {
 
   function applyEventState(event: NexumEvent, id: string, currentLifecycle: number) {
     const data = eventDataOf(event.data)
-    if (event.type === "model.attempt") setStatus("running")
-    if (event.type === "model.retry") setStatus("retrying")
+    if (event.type === "model.attempt") {
+      setStatus("running")
+      setCanCancel(true)
+    }
+    if (event.type === "model.retry") {
+      setStatus("retrying")
+      setCanCancel(true)
+    }
     if (event.type === "run.settled") {
       const result = runResultFromEvent(data)
       if (result) {
         setStatus(result)
+        setCanCancel(false)
         setContinueAvailable(result === "failed")
         setContinueBusy(false)
         setNotice(result === "failed" ? "本轮运行失败，可以继续运行" : result === "completed" ? "本轮运行已完成" : "本轮运行已取消")
@@ -338,30 +348,38 @@ export function ChatSurface(props: ChatSurfaceProps) {
     }
     if (event.type === "session.completed") {
       setStatus("completed")
+      setCanCancel(false)
       setContinueAvailable(false)
       props.onSessionStatusChange?.(id, "completed")
     }
     if (event.type === "session.failed") {
       setStatus("failed")
+      setCanCancel(false)
       props.onSessionStatusChange?.(id, "failed")
     }
     if (event.type === "session.cancelled") {
       setStatus("cancelled")
+      setCanCancel(false)
       setContinueAvailable(false)
       setCancelBusy(false)
       props.onSessionStatusChange?.(id, "cancelled")
     }
-    if (["assistant.thinking", "assistant.reasoning", "assistant.text", "tool.result"].includes(event.type)) setStatus("running")
+    if (["assistant.thinking", "assistant.reasoning", "assistant.text", "tool.request", "tool.result"].includes(event.type)) {
+      setStatus("running")
+      setCanCancel(true)
+    }
     if (event.type === "permission.requested") {
       const request = permissionFromEvent(data, id)
       if (request) setPermissions((current) => upsertRequest(current, request))
       setStatus("awaiting permission")
+      setCanCancel(true)
       void refreshPending(id)
     }
     if (event.type === "question.request") {
       const request = questionFromEvent(data, id)
       if (request) setQuestions((current) => upsertRequest(current, request))
       setStatus("awaiting question")
+      setCanCancel(true)
       void refreshPending(id)
     }
     if (event.type === "question.result" || event.type === "question.cancelled") {
@@ -422,6 +440,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
     setActiveSkillIDs(skillIDsFromText(text))
     setStatus("running")
     setContinueAvailable(false)
+    setCanCancel(true)
     try {
       await adapter.sendMessage({ sessionID: id, text: finalText })
       setPrompt("")
@@ -435,6 +454,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
       }, 50)
     } catch (error) {
       setStatus("failed")
+      setCanCancel(false)
       setChatItems((current) => [...current.filter((item) => item.id !== thinkingID), failureChatItem(messageFrom(error, "消息发送失败"))])
       setNotice(messageFrom(error, "消息发送失败，请重试"))
     } finally {
@@ -513,23 +533,26 @@ export function ChatSurface(props: ChatSurfaceProps) {
     if (!id || !continueAvailable() || continueBusy()) return
     setContinueBusy(true)
     setStatus("running")
+    setCanCancel(true)
     try {
       await adapter.continueRun(id)
       setNotice("正在继续运行")
     } catch (error) {
       setContinueBusy(false)
       setStatus("failed")
+      setCanCancel(false)
       setNotice(messageFrom(error, "继续运行失败，请重试"))
     }
   }
 
   async function cancelRun() {
     const id = props.sessionID
-    if (!id || cancelBusy()) return
+    if (!id || !canCancel() || cancelBusy()) return
     setCancelBusy(true)
     try {
       await adapter.cancelRun(id)
       setStatus("cancelled")
+      setCanCancel(false)
       setNotice("已请求取消运行")
     } catch (error) {
       setCancelBusy(false)
@@ -719,7 +742,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
             <Show when={props.composerExtras}>
               <span class="nexum-chat-composer-extras">{props.composerExtras}</span>
             </Show>
-            <Show when={props.sessionID}>
+            <Show when={props.sessionID && canCancel()}>
               <Show
                 when={!cancelConfirmOpen()}
                 fallback={

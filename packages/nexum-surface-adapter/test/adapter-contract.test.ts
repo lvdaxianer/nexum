@@ -29,6 +29,7 @@ test("ChatProtocolAdapter exposes the complete chat protocol boundary", () => {
       pendingPermissions: [],
       pendingQuestions: [],
       canContinue: false,
+      canCancel: false,
       lastSequence: 0,
     }),
     subscribeEvents: async function* () {},

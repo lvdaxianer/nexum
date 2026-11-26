@@ -547,7 +547,9 @@ describe.serial("Nexum UI smoke", () => {
   test.serial("asks for confirmation before cancelling a run", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
-    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin] })
+    const eventHub = createNexumEventHub()
+    const sessions = createNexumSessionService({ store: createInMemorySessionStore() })
+    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin], eventHub, sessionService: sessions })
     uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
     directory = await mkdtemp(join(tmpdir(), "nexum-ui-cancel-"))
 
@@ -556,6 +558,21 @@ describe.serial("Nexum UI smoke", () => {
     await page.getByLabel("工作目录").fill(directory)
     await page.getByRole("button", { name: "保存并创建 Session" }).click()
     await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+    const sessionList = (await (await fetch(`http://127.0.0.1:${apiPort}/api/nexum/session`)).json()) as { readonly data: readonly { readonly id: string }[] }
+    const sessionID = sessionList.data.at(-1)!.id
+    await sessions.setStatus(sessionID, "running")
+    await expect(page.getByRole("button", { name: "取消运行" })).toHaveCount(0)
+
+    await eventHub.publish({
+      eventID: "cancel-active-run",
+      runID: "cancel-active-run",
+      sessionID,
+      type: "model.attempt",
+      sequence: 1,
+      occurredAt: "2026-11-26T00:00:00.000Z",
+      data: { attempt: 1, maxRetries: 0 },
+    })
+    await expect(page.getByRole("button", { name: "取消运行" })).toBeVisible()
 
     await page.getByRole("button", { name: "取消运行" }).click()
     await expect(page.getByText("确认取消运行？", { exact: true })).toBeVisible()
@@ -568,6 +585,51 @@ describe.serial("Nexum UI smoke", () => {
     await page.getByRole("button", { name: "确认" }).click()
     await expect(page.getByText("已请求取消运行", { exact: true })).toBeVisible()
     await expect(page.locator(".pill-cancelled")).toBeVisible()
+    await expect(page.getByRole("button", { name: "取消运行" })).toHaveCount(0)
+  })
+
+  test.serial("hides the cancel action after a run completes", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    const eventHub = createNexumEventHub()
+    const sessions = createNexumSessionService({ store: createInMemorySessionStore() })
+    apiServer = await startNexumServer({ port: apiPort, corsOrigins: [uiOrigin], eventHub, sessionService: sessions })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+    directory = await mkdtemp(join(tmpdir(), "nexum-ui-complete-cancel-"))
+
+    await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(directory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+    const sessionList = (await (await fetch(`http://127.0.0.1:${apiPort}/api/nexum/session`)).json()) as { readonly data: readonly { readonly id: string }[] }
+    const sessionID = sessionList.data.at(-1)!.id
+    const runID = "completed-cancel-run"
+    await sessions.setStatus(sessionID, "running")
+
+    await sessions.setStatus(sessionID, "completed")
+    await eventHub.publish({
+      eventID: "completed-cancel-attempt",
+      runID,
+      sessionID,
+      type: "model.attempt",
+      sequence: 1,
+      occurredAt: "2026-11-26T00:00:00.000Z",
+      data: { attempt: 1, maxRetries: 0 },
+    })
+    await expect(page.getByRole("button", { name: "取消运行" })).toBeVisible()
+
+    await eventHub.publish({
+      eventID: "completed-cancel-settled",
+      runID,
+      sessionID,
+      type: "run.settled",
+      sequence: 2,
+      occurredAt: "2026-11-26T00:00:01.000Z",
+      data: { result: "completed" },
+    })
+    await expect(page.locator(".pill-completed")).toBeVisible()
+    await expect(page.getByRole("button", { name: "取消运行" })).toHaveCount(0)
   })
 
   test.serial("ignores a stale session snapshot when switching sessions quickly", { timeout: 15_000 }, async () => {
@@ -663,6 +725,7 @@ describe.serial("Nexum UI smoke", () => {
 
       await expect(page.locator(".pill-failed")).toBeVisible()
       await expect(page.locator(".nexum-chat-status-item").filter({ hasText: "运行失败" })).toBeVisible()
+      await expect(page.getByRole("button", { name: "取消运行" })).toHaveCount(0)
       await expect(page.getByRole("button", { name: "拒绝" })).toHaveCount(0)
       expect(await Bun.file(join(directory, "denied.txt")).exists()).toBe(false)
     },
