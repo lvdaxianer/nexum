@@ -105,6 +105,46 @@ test("repl answers permission requests through the prompter", async () => {
   expect(io.plain()).toContain("权限已通过")
 })
 
+test("repl keeps the permission prompt usable when thinking heartbeats arrive", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const source = readlineLineSource(() => [], { input, output })
+  const io = createIO({ caps: { isTTY: true, color: "ansi16", anim: true, theme: "dark" }, out: output })
+  const { adapter, calls, queued } = fakeAdapter({
+    onSend: () => [
+      makeEvent("tool.request", { toolCallID: "t1", toolName: "read" }, 1),
+      makeEvent("permission.requested", { requestID: "p1", action: "read", resource: "README.md" }, 2),
+    ],
+  })
+  adapter.replyPermission = async () => {
+    calls.push("replyPermission")
+    queued.push(
+      makeEvent("tool.result", { toolCallID: "t1", toolName: "read", ok: true, output: "完成" }, 5),
+      makeEvent("run.settled", { result: "completed" }, 6),
+    )
+  }
+  const run = runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: source, prompter: source.prompter })
+  await waitFor(() => rendered.includes("nexum ▸"))
+  input.write("改文件\n")
+  await waitFor(() => rendered.includes("选择 ›"))
+  queued.push(
+    makeEvent("assistant.thinking", { message: "正在思考" }, 3),
+    makeEvent("assistant.reasoning", { content: "不应覆盖审批输入" }, 4),
+  )
+  await waitFor(() => queued.length === 0)
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(rendered).not.toContain("正在思考")
+  input.write("1\n")
+  await waitFor(() => rendered.includes("✓ 运行完成"))
+  input.write("/quit\n")
+  await run
+  expect(calls).toContain("replyPermission")
+})
+
 test("repl prints the permission outcome before replying and resumes the tool line", async () => {
   const io = memoryIO({ anim: true })
   const { adapter, calls, queued } = fakeAdapter({

@@ -95,7 +95,7 @@ A Nexum UI SHALL be able to reconstruct reasoning, tool activity and final text 
 
 ### Requirement: Runtime status SHALL distinguish model thinking from tool execution
 
-运行时状态 SHALL 区分模型请求、工具执行、工具等待权限、工具超时、工具失败和取消；工具执行期间不得仅显示模型正在思考来代替真实状态。
+运行时状态 SHALL 区分模型请求、工具执行、工具等待权限、工具超时、工具失败和取消；工具执行期间不得仅显示模型正在思考来代替真实状态。进入工具等待权限或 Question 等待状态后，后续模型 thinking/reasoning 心跳 MUST NOT 重新启动或覆盖交互输入提示，直到对应决定或回答提交。
 
 #### Scenario: Shell is running
 
@@ -111,3 +111,8 @@ A Nexum UI SHALL be able to reconstruct reasoning, tool activity and final text 
 
 - **WHEN** 用户取消正在执行的 Shell
 - **THEN** 页面 SHALL 显示取消已确认，并允许用户继续当前 Session 或重新提交任务
+
+#### Scenario: Permission input remains usable during thinking heartbeat
+
+- **WHEN** UI 已进入工具等待权限状态，随后又收到 `assistant.thinking` 或 `assistant.reasoning` 心跳
+- **THEN** UI SHALL 保持权限交互提示和可输入状态，不得重新绘制思考动画覆盖权限选项
