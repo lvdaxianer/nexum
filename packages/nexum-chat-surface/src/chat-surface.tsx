@@ -34,6 +34,7 @@ export type ChatItem = {
   readonly kind: ChatItemKind
   readonly title: string
   readonly content?: string
+  readonly sourceContent?: string
   readonly detail?: string
   readonly thinking?: boolean
   readonly thinkingStatus?: string
@@ -289,7 +290,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
     setHistoryBefore(history.nextBefore)
     setHistorySnapshot(history.snapshotID)
     setHistoryHasMore(history.hasMore)
-    setChatItems((current) => [...historyItemsFromMessages(history.messages), ...current])
+    setChatItems((current) => mergeHistoryItems(current, historyItemsFromMessages(history.messages)))
   }
 
   function resetState(id: string) {
@@ -392,7 +393,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
       if (id !== props.sessionID) return
       setHistoryBefore(history.nextBefore)
       setHistoryHasMore(history.hasMore)
-      setChatItems((current) => prependHistoryItems(current, historyItemsFromMessages(history.messages)))
+      setChatItems((current) => mergeHistoryItems(current, historyItemsFromMessages(history.messages)))
       queueMicrotask(() => (element.scrollTop += element.scrollHeight - previousHeight))
     } catch (error) {
       if (isSnapshotError(error)) {
@@ -636,7 +637,9 @@ export function ChatSurface(props: ChatSurfaceProps) {
   createEffect(() => {
     if (!followTail() || !conversationBody) return
     chatItems()
-    conversationBody.scrollTop = conversationBody.scrollHeight
+    queueMicrotask(() => {
+      if (followTail() && conversationBody) conversationBody.scrollTop = conversationBody.scrollHeight
+    })
   })
 
   return (
@@ -862,6 +865,7 @@ function userChatItem(content: string, id: string, localTime: string): ChatItem 
     kind: "user",
     title: "你",
     content: display.text,
+    sourceContent: content,
     ...(display.fileName ? { attachmentName: display.fileName } : {}),
     skillIDs: skillIDsFromText(display.text),
     status: "completed",
@@ -898,6 +902,24 @@ export function mergePendingChatItems(items: readonly ChatItem[], state: ChatSta
   const existingIDs = new Set(items.map((item) => item.id))
   const pending = [...state.pendingPermissions.map(permissionChatItem), ...state.pendingQuestions.map(questionChatItem)]
   return [...items, ...pending.filter((item) => !existingIDs.has(item.id))]
+}
+
+export function mergeHistoryItems(current: readonly ChatItem[], incoming: readonly ChatItem[]): ChatItem[] {
+  const existingIDs = new Set(current.map((item) => item.id))
+  const currentUserContent = new Map<string, number>()
+  current.forEach((item) => {
+    if (item.kind !== "user" || !item.id.startsWith("user:") || item.sourceContent === undefined) return
+    currentUserContent.set(item.sourceContent, (currentUserContent.get(item.sourceContent) ?? 0) + 1)
+  })
+  const history = incoming.filter((item) => {
+    if (existingIDs.has(item.id)) return false
+    if (item.kind !== "user" || item.sourceContent === undefined) return true
+    const count = currentUserContent.get(item.sourceContent) ?? 0
+    if (count === 0) return true
+    currentUserContent.set(item.sourceContent, count - 1)
+    return false
+  })
+  return [...history, ...current]
 }
 
 export function projectChatEvent(items: ChatItem[], event: NexumEvent): ChatItem[] {
@@ -1036,11 +1058,6 @@ function isQuestionOption(value: unknown): value is { readonly label: string; re
 function upsertRequest<T extends { readonly id: string }>(requests: readonly T[], request: T): T[] {
   const existing = requests.some((item) => item.id === request.id)
   return existing ? requests.map((item) => item.id === request.id ? request : item) : [...requests, request]
-}
-
-function prependHistoryItems(current: ChatItem[], incoming: ChatItem[]): ChatItem[] {
-  const existing = new Set(current.map((item) => item.id))
-  return [...incoming.filter((item) => !existing.has(item.id)), ...current]
 }
 
 function updateChatItem(items: ChatItem[], id: string, patch: Partial<ChatItem>): ChatItem[] {
