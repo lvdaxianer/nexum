@@ -22,15 +22,7 @@ import { Nexum } from "nexum/client"
 import { createFilePersistence } from "nexum/persistence/file"
 ```
 
-完整入口和每个模块的使用说明见[模块文档索引](docs/modules/README.md)。下面的 `bun install`、源码路径和 `bun run --cwd` 命令只属于 Nexum 贡献者的 workspace 开发流程。
-
-## GitHub 项目简介（中文）
-
-Nexum 是一个面向多场景 Agent 应用的可组合运行时。它将 Coding Loop、Session、上下文压缩、权限、Skill、Memory 和 MCP 等稳定运行语义沉淀在 UI 无关的 Core 中，通过 Persistence 和 Integrations 接入存储、模型、文件系统和宿主能力，再由 Application 组合运行时，并以协议层连接 Web、Desktop、TUI、CLI 及企业应用。Nexum 关注最小功能单元、清晰分层、长任务可恢复和 UI/运行时解耦，让同一套 Agent 能力可以被不同产品安全复用。
-
-## GitHub Project Description (English)
-
-Nexum is a composable, UI-agnostic Agent Runtime for Web, Desktop, TUI, CLI, and enterprise applications. It isolates durable runtime semantics—coding loops, sessions, context compaction, permissions, skills, memory, and MCP—in a replaceable Core, while adapters provide models, storage, filesystem, and host capabilities. A versioned protocol connects the runtime to any surface and supports observable, resumable long-running tasks.
+完整入口和每个模块的使用说明见[模块文档索引](docs/modules/README.md)。
 
 ## Nexum 解决什么问题
 
@@ -62,47 +54,6 @@ Nexum 当前提供以下运行时能力：
 - **持久化与恢复**：Session、消息、交互、事件、权限和执行状态可保存并在重启后恢复。
 
 这些能力可以用于编码 Agent、企业内部助手、自动化工作台、长任务执行器、终端 Agent 或嵌入式聊天组件。UI 不需要复制这些状态机，只需要消费 Protocol/Client 暴露的状态和事件。
-
-## 先跑起来
-
-### 贡献者安装 workspace
-
-```bash
-bun install
-```
-
-### Test Workbench：验证完整链路
-
-Test Workbench 组合 Server、Runtime、Client 和参考 Surface，适合第一次了解 Nexum 或验证持久化/恢复链路：
-
-```bash
-bun run dev
-```
-
-打开 <http://127.0.0.1:5173>，可以验证：
-
-1. 创建和恢复 Session；
-2. 配置模型并探测能力；
-3. 提交长任务 Prompt；
-4. 观察文本、工具、权限、反问、Skill、上下文和终态事件；
-5. 刷新页面或重启服务后恢复历史状态。
-
-### HTTP/SSE Server 与 CLI
-
-先启动本地 Server：
-
-```bash
-bun run dev:server
-```
-
-Server 默认监听 `http://127.0.0.1:4097`，本地运行时使用当前工作目录下的 `.nexum/` 文件存储。再打开另一个终端启动 CLI：
-
-```bash
-bun run cli
-bun run cli -- --help
-```
-
-CLI 通过 `@nexum/client` 消费 HTTP/SSE 协议；它不直接依赖 Core 的执行实现。详细命令见 [`@nexum/cli`](packages/nexum-cli/README.md)。
 
 ## 怎么组合
 
@@ -337,25 +288,6 @@ Core 产生运行事实，Protocol 表达事实，Surface 决定呈现：
 - [`@nexum/cli`](packages/nexum-cli/README.md)
 - [`@nexum/surfaces`](packages/nexum-surfaces/README.md)
 - [`@nexum/test`](packages/nexum-test/README.md)
-
-## 验证与开发
-
-完整检查从仓库根目录执行：
-
-```bash
-bun run check
-```
-
-测试不要从根目录执行；应进入目标包目录，例如：
-
-```bash
-cd packages/nexum-core && bun test && bun run typecheck:tsc
-cd ../nexum-application && bun test && bun run typecheck:tsc
-cd ../nexum-server && bun test && bun run typecheck:tsc
-cd ../nexum-client && bun test && bun run typecheck
-```
-
-更多包级验证命令见 [`packages/README.md`](packages/README.md)。
 
 ## 项目状态
 
