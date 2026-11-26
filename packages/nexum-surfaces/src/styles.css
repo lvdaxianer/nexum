@@ -1318,16 +1318,11 @@ input[aria-invalid="true"]:focus {
 
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   flex: 1;
   min-height: 0;
-  margin-top: 14px;
   align-items: stretch;
-}
-
-.chat-surface-host {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .chat-surface-host > .nexum-chat-surface {
@@ -2233,16 +2228,6 @@ input[aria-invalid="true"]:focus {
   font-size: 10px;
 }
 
-.status-rail {
-  display: grid;
-  gap: 14px;
-  min-height: 0;
-  align-content: start;
-  overflow-y: auto;
-  scrollbar-color: #cbd7df transparent;
-  scrollbar-width: thin;
-}
-
 .rail-panel {
   padding: 16px;
 }
@@ -2547,15 +2532,13 @@ footer {
 
 .app-sidebar::-webkit-scrollbar,
 .conversation-body::-webkit-scrollbar,
-.timeline::-webkit-scrollbar,
-.status-rail::-webkit-scrollbar {
+.timeline::-webkit-scrollbar {
   width: 8px;
 }
 
 .app-sidebar::-webkit-scrollbar-thumb,
 .conversation-body::-webkit-scrollbar-thumb,
-.timeline::-webkit-scrollbar-thumb,
-.status-rail::-webkit-scrollbar-thumb {
+.timeline::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: #ccd7e0;
 }
@@ -2568,10 +2551,6 @@ footer {
   .app-main {
     padding-right: 22px;
     padding-left: 22px;
-  }
-
-  .main-grid {
-    grid-template-columns: minmax(0, 1fr) 280px;
   }
 }
 
@@ -2587,12 +2566,7 @@ footer {
   }
 
   .main-grid {
-    grid-template-columns: 1fr;
     flex: none;
-  }
-
-  .status-rail {
-    overflow: visible;
   }
 
   .conversation-panel {
@@ -2636,10 +2610,6 @@ footer {
 
   .act-desc {
     display: none;
-  }
-
-  .status-rail {
-    grid-template-columns: 1fr;
   }
 
   .conversation-panel {
