@@ -1025,7 +1025,7 @@ describe.serial("Nexum UI smoke", () => {
       skillRegistry: registry,
     })
     uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
-    await page.route("**/api/nexum/skills", async (route) => {
+    await page.route("**/api/nexum/skills**", async (route) => {
       if (route.request().method() !== "GET" || !delaySkillList) {
         await route.continue()
         return
@@ -1064,6 +1064,121 @@ describe.serial("Nexum UI smoke", () => {
     await closeDrawer(page)
     await page.getByPlaceholder("描述下一步 Coding 任务…").fill("@live")
     await expect(page.getByRole("option", { name: "@live-skill" })).toBeVisible()
+  })
+
+  test.serial("registers, inspects, validates, refreshes, and unregisters a Skill from the drawer", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    skillRoot = await mkdtemp(join(tmpdir(), "nexum-ui-skill-management-root-"))
+    const skillDirectory = join(skillRoot, "managed-skill")
+    await mkdir(skillDirectory)
+    await writeFile(
+      join(skillDirectory, "SKILL.md"),
+      "---\nname: managed-skill\ndescription: Managed test skill\nversion: 1.2.3\n---\n\n# Managed Skill\n",
+    )
+    apiServer = await startNexumServer({
+      port: apiPort,
+      corsOrigins: [uiOrigin],
+      skillRegistry: createNexumSkillRegistry({ roots: [] }),
+    })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+
+    await page.goto(uiOrigin)
+    await openDrawer(page, /Skills/)
+    await expect(page.getByText("暂无已发现的项目 Skill", { exact: true })).toBeVisible()
+    await page.getByLabel("Skill 目录地址").fill(skillDirectory)
+    await page.getByRole("button", { name: "注册 Skill" }).click()
+    await expect(page.getByText("managed-skill", { exact: true }).first()).toBeVisible()
+    await expect(page.getByText(/已注册 managed-skill/)).toBeVisible()
+
+    const skillRow = page.locator(".skill-row").filter({ hasText: "managed-skill" })
+    await skillRow.getByRole("button", { name: "详情" }).click()
+    await expect(skillRow.getByText("SKILL.md", { exact: false })).toBeVisible()
+    await expect(skillRow.getByText("Managed test skill", { exact: true }).first()).toBeVisible()
+    await page.getByRole("button", { name: "刷新" }).click()
+    await expect(page.getByText("Skill 目录已刷新", { exact: true })).toBeVisible()
+    await skillRow.getByRole("button", { name: "校验" }).click()
+    await expect(skillRow.getByText("validated / ready", { exact: true })).toBeVisible()
+
+    await closeDrawer(page)
+    directory = await mkdtemp(join(tmpdir(), "nexum-ui-skill-management-session-"))
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(directory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+    await page.getByPlaceholder("描述下一步 Coding 任务…").fill("@managed")
+    await expect(page.getByRole("option", { name: "@managed-skill" })).toBeVisible()
+    await page.getByRole("option", { name: "@managed-skill" }).click()
+    await expect(page.locator(".skill-chip")).toContainText("managed-skill")
+
+    await openDrawer(page, /Skills/)
+    const managedSkillRow = page.locator(".skill-row").filter({ hasText: "managed-skill" })
+    await managedSkillRow.getByRole("button", { name: "取消注册" }).click()
+    await expect(page.getByRole("alertdialog")).toContainText("managed-skill")
+    await page.getByRole("button", { name: "返回" }).click()
+    await expect(managedSkillRow).toBeVisible()
+    await managedSkillRow.getByRole("button", { name: "取消注册" }).click()
+    await page.getByRole("button", { name: "确认取消注册" }).click()
+    await expect(page.getByText("managed-skill", { exact: true })).toHaveCount(0)
+    await expect(Bun.file(join(skillDirectory, "SKILL.md")).exists()).resolves.toBe(true)
+  })
+
+  test.serial("keeps Skill and role prompt drafts visible while loading or saving fails", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    apiServer = await startNexumServer({
+      port: apiPort,
+      corsOrigins: [uiOrigin],
+      skillRegistry: createNexumSkillRegistry({ roots: [] }),
+    })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+    let failRolePromptSave = true
+    let failedSkillRequests = 0
+    await page.route("**/*", async (route) => {
+      const pathname = new URL(route.request().url()).pathname
+      if (pathname === "/api/nexum/role-prompt" && route.request().method() === "PUT" && failRolePromptSave) {
+        failRolePromptSave = false
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ errorCode: "NEXUM_TEST_ROLE_PROMPT_UNAVAILABLE", message: "角色提示词服务暂时不可用" }),
+        })
+        return
+      }
+      if (pathname === "/api/nexum/skills" && route.request().method() === "GET" && failedSkillRequests < 4) {
+        failedSkillRequests += 1
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ errorCode: "NEXUM_TEST_SKILL_UNAVAILABLE", message: "Skill 列表服务暂时不可用" }),
+        })
+        return
+      }
+      if (pathname !== "/api/nexum/skills/refresh" || route.request().method() !== "POST") {
+        await route.continue()
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      await route.continue()
+    })
+    await page.goto(uiOrigin)
+    await openDrawer(page, /Skills/)
+    await expect(page.getByRole("dialog", { name: "Skills" }).getByRole("alert")).toContainText("Skill 列表服务暂时不可用")
+    await page.getByRole("button", { name: "刷新" }).click()
+    await expect(page.getByRole("button", { name: "刷新中…" })).toBeVisible()
+    await expect(page.getByText("暂无已发现的项目 Skill", { exact: true })).toBeVisible()
+    await closeDrawer(page)
+    await openDrawer(page, /角色提示词/)
+    const rolePrompt = page.getByRole("textbox", { name: "默认角色提示词" })
+    await rolePrompt.fill("失败后仍然保留的中文提示词")
+    await page.getByRole("button", { name: "保存角色提示词" }).click()
+    await expect(page.locator('p[role="status"]').filter({ hasText: "角色提示词服务暂时不可用" })).toBeVisible()
+    await expect(rolePrompt).toHaveValue("失败后仍然保留的中文提示词")
+    await expect(page.getByRole("button", { name: "保存角色提示词" })).toBeEnabled()
+    await page.getByRole("button", { name: "保存角色提示词" }).click()
+    await expect(page.getByText("默认角色提示词已保存；下一次模型调用会使用最新内容", { exact: true })).toBeVisible()
+    await page.getByRole("button", { name: "恢复内置默认" }).click()
+    await expect(page.getByText("已恢复内置默认角色提示词", { exact: true })).toBeVisible()
   })
 
   test.serial("controls model probe and restores the selected session from the page", { timeout: 15_000 }, async () => {

@@ -85,11 +85,17 @@ function App() {
   const [sessionEditName, setSessionEditName] = createSignal("")
   const [skillsDrawerOpen, setSkillsDrawerOpen] = createSignal(false)
   const [skills, setSkills] = createSignal<SkillSummary[]>([])
+  const [skillLoading, setSkillLoading] = createSignal(false)
+  const [skillError, setSkillError] = createSignal("")
   const [skillBusy, setSkillBusy] = createSignal(false)
   const [skillAddress, setSkillAddress] = createSignal("")
   const [skillRegisterState, setSkillRegisterState] = createSignal<ActionState>("idle")
   const [skillRegisterMessage, setSkillRegisterMessage] = createSignal("")
   const [skillValidation, setSkillValidation] = createSignal<Record<string, string>>({})
+  const [skillDetailID, setSkillDetailID] = createSignal("")
+  const [skillDetail, setSkillDetail] = createSignal<SkillSummary | undefined>()
+  const [skillDetailBusy, setSkillDetailBusy] = createSignal(false)
+  const [skillDetailError, setSkillDetailError] = createSignal("")
   const [skillUnregisterID, setSkillUnregisterID] = createSignal("")
   const [skillUnregisterBusy, setSkillUnregisterBusy] = createSignal(false)
   const [skillUnregisterConfirmOpen, setSkillUnregisterConfirmOpen] = createSignal(false)
@@ -99,6 +105,7 @@ function App() {
   const [mcpActionID, setMcpActionID] = createSignal("")
   const [rolePrompt, setRolePrompt] = createSignal<NexumRolePrompt | undefined>()
   const [rolePromptDraft, setRolePromptDraft] = createSignal("")
+  const [rolePromptDirty, setRolePromptDirty] = createSignal(false)
   const [rolePromptBusy, setRolePromptBusy] = createSignal(false)
   const [rolePromptState, setRolePromptState] = createSignal<ActionState>("idle")
   const [rolePromptMessage, setRolePromptMessage] = createSignal("")
@@ -365,11 +372,19 @@ function App() {
    */
   async function loadSkills() {
     const loadSequence = ++skillLoadSequence
+    setSkillLoading(true)
+    setSkillError("")
     try {
       const nextSkills = [...(await client.experimental.nexum.skill.list()).data]
       if (loadSequence === skillLoadSequence) setSkills(nextSkills)
     } catch (error) {
-      if (loadSequence === skillLoadSequence) setNotice(messageFrom(error, "Skill 目录暂时不可用"))
+      if (loadSequence === skillLoadSequence) {
+        const message = messageFrom(error, "Skill 目录暂时不可用")
+        setSkillError(message)
+        setNotice(message)
+      }
+    } finally {
+      if (loadSequence === skillLoadSequence) setSkillLoading(false)
     }
   }
 
@@ -451,7 +466,7 @@ function App() {
     try {
       const current = await client.experimental.nexum.rolePrompt.get()
       setRolePrompt(current.data)
-      setRolePromptDraft(current.data.prompt)
+      if (!rolePromptDirty()) setRolePromptDraft(current.data.prompt)
     } catch (error) {
       setRolePromptMessage(messageFrom(error, "默认角色提示词暂时不可用"))
       setRolePromptState("error")
@@ -476,6 +491,7 @@ function App() {
         return [...withoutSameID, registered.data]
       })
       setSkillAddress("")
+      setSkillError("")
       setSkillRegisterState("success")
       setSkillRegisterMessage(`已注册 ${registered.data.id}，状态：${registered.data.status}`)
       setNotice(`Skill ${registered.data.id} 已注册`)
@@ -500,11 +516,34 @@ function App() {
     try {
       setSkills([...(await client.experimental.nexum.skill.refresh()).data])
       setSkillValidation({})
+      setSkillError("")
       setNotice("Skill 目录已刷新")
     } catch (error) {
-      setNotice(messageFrom(error, "Skill 刷新失败，请稍后重试"))
+      const message = messageFrom(error, "Skill 刷新失败，请稍后重试")
+      setSkillError(message)
+      setNotice(message)
     } finally {
       setSkillBusy(false)
+    }
+  }
+
+  async function showSkillDetail(skillID: string) {
+    if (skillDetailID() === skillID) {
+      setSkillDetailID("")
+      setSkillDetail(undefined)
+      setSkillDetailError("")
+      return
+    }
+    setSkillDetailID(skillID)
+    setSkillDetail(undefined)
+    setSkillDetailError("")
+    setSkillDetailBusy(true)
+    try {
+      setSkillDetail((await client.experimental.nexum.skill.detail({ id: skillID })).data)
+    } catch (error) {
+      setSkillDetailError(messageFrom(error, "Skill 详情暂时不可用"))
+    } finally {
+      setSkillDetailBusy(false)
     }
   }
 
@@ -575,6 +614,7 @@ function App() {
       const saved = await client.experimental.nexum.rolePrompt.update({ prompt: rolePromptDraft() })
       setRolePrompt(saved.data)
       setRolePromptDraft(saved.data.prompt)
+      setRolePromptDirty(false)
       setRolePromptState("success")
       setRolePromptMessage("默认角色提示词已保存；下一次模型调用会使用最新内容")
       setNotice("默认角色提示词已保存")
@@ -597,6 +637,7 @@ function App() {
       const reset = await client.experimental.nexum.rolePrompt.reset()
       setRolePrompt(reset.data)
       setRolePromptDraft(reset.data.prompt)
+      setRolePromptDirty(false)
       setRolePromptState("success")
       setRolePromptMessage("已恢复内置默认角色提示词")
       setNotice("默认角色提示词已恢复")
@@ -1032,6 +1073,16 @@ function App() {
                 {skillBusy() ? "刷新中…" : "刷新"}
               </button>
             </div>
+            <Show when={skillLoading()}>
+              <p class="loading-copy" role="status" aria-live="polite">
+                正在加载 Skills…
+              </p>
+            </Show>
+            <Show when={skillError()}>
+              <p class="field-error" role="alert">
+                {skillError()}
+              </p>
+            </Show>
             <div class="skill-register-form">
               <label class="form-field">
                 <span>Skill 目录地址 <span class="required-mark">必填</span></span>
@@ -1060,7 +1111,7 @@ function App() {
               </Show>
             </div>
             <div class="skill-list" aria-live="polite">
-              <Show when={skills().length > 0} fallback={<p class="empty-copy">暂无已发现的项目 Skill</p>}>
+              <Show when={!skillLoading() && !skillError() && skills().length > 0} fallback={<Show when={!skillLoading() && !skillError()}><p class="empty-copy">暂无已发现的项目 Skill</p></Show>}>
                 <For each={skills()}>
                   {(skill) => (
                     <article class={`skill-row skill-row-${skill.status}`}>
@@ -1074,6 +1125,9 @@ function App() {
                           {skill.fileCount} 个文件 · {skill.digest.slice(0, 10)}
                         </small>
                       </div>
+                      <button class="skill-detail" onClick={() => void showSkillDetail(skill.id)} disabled={skillDetailBusy() && skillDetailID() === skill.id}>
+                        {skillDetailBusy() && skillDetailID() === skill.id ? "加载中…" : skillDetailID() === skill.id ? "收起详情" : "详情"}
+                      </button>
                       <button class="skill-validate" onClick={() => validateSkill(skill.id)} disabled={skillBusy()}>
                         校验
                       </button>
@@ -1087,6 +1141,26 @@ function App() {
                       >
                         取消注册
                       </button>
+                      <Show when={skillDetailID() === skill.id}>
+                        <div class="skill-detail-panel" aria-live="polite">
+                          <Show when={skillDetailError()}>
+                            <p class="field-error" role="alert">{skillDetailError()}</p>
+                          </Show>
+                          <Show when={skillDetail()}>
+                            {(detail) => (
+                              <>
+                                <p>{detail().description || "暂无描述"}</p>
+                                <small>{detail().files.length} 个文件：{detail().files.join(", ")}</small>
+                                <Show when={detail().diagnostics.length > 0}>
+                                  <ul>
+                                    <For each={detail().diagnostics}>{(diagnostic) => <li>{diagnostic}</li>}</For>
+                                  </ul>
+                                </Show>
+                              </>
+                            )}
+                          </Show>
+                        </div>
+                      </Show>
                     </article>
                   )}
                 </For>
@@ -1118,6 +1192,7 @@ function App() {
                 value={rolePromptDraft()}
                 onInput={(event) => {
                   setRolePromptDraft(event.currentTarget.value)
+                  setRolePromptDirty(true)
                   setRolePromptState("idle")
                   setRolePromptMessage("")
                 }}
