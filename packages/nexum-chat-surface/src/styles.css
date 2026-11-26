@@ -91,6 +91,20 @@
   opacity: 0.54;
 }
 
+/* ===== 标头 ===== */
+
+.nexum-chat-header {
+  flex: 0 0 auto;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--nexum-chat-border);
+}
+
+.nexum-chat-header h2 {
+  max-width: 1240px;
+  margin: 0 auto;
+  font-size: 13px;
+}
+
 /* ===== 状态徽章与底栏 ===== */
 
 .nexum-chat-footer,
@@ -176,6 +190,33 @@
 }
 
 /* ===== 消息体 ===== */
+
+.nexum-chat-body-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.nexum-chat-jump {
+  position: absolute;
+  right: 28px;
+  bottom: 16px;
+  z-index: 3;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid var(--nexum-chat-border);
+  border-radius: 999px;
+  background: var(--nexum-chat-bg);
+  color: var(--nexum-chat-text);
+  font-size: var(--nexum-chat-fs-meta);
+  box-shadow: 0 6px 16px var(--nexum-chat-shadow);
+}
+
+.nexum-chat-jump:hover {
+  border-color: var(--nexum-chat-accent);
+  color: var(--nexum-chat-accent);
+}
 
 .nexum-chat-body {
   min-height: 0;
@@ -814,6 +855,7 @@
 /* ===== 断点：平板 481–719px ===== */
 
 @container (min-width: 481px) and (max-width: 719px) {
+  .nexum-chat-header,
   .nexum-chat-body,
   .nexum-chat-composer,
   .nexum-chat-requests,
@@ -845,6 +887,7 @@
 /* ===== 断点：紧凑 ≤480px（手机） ===== */
 
 @container (max-width: 480px) {
+  .nexum-chat-header,
   .nexum-chat-body,
   .nexum-chat-composer,
   .nexum-chat-requests,

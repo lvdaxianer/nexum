@@ -1515,6 +1515,7 @@ function App() {
           <ChatSurface
             sessionID={sessionID()}
             client={{ baseUrl: apiBaseUrl }}
+            title={sessions().find((session) => session.id === sessionID())?.name ?? ""}
             onSessionStatusChange={(id, status) => setSessions((current) => mergeSessionStatus(current, id, status))}
             onSkillUpdated={scheduleSkillReload}
             onOpenPermissionSettings={openPolicyPopover}

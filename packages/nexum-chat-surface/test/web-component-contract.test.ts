@@ -20,5 +20,5 @@ test("nexum-chat observes the embeddable attributes including theme", () => {
 
   defineChatSurfaceElement(registry)
 
-  expect(elementClass?.observedAttributes).toEqual(["session-id", "api-base-url", "theme"])
+  expect(elementClass?.observedAttributes).toEqual(["session-id", "api-base-url", "title", "theme"])
 })

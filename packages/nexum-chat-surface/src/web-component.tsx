@@ -8,10 +8,11 @@ export function defineChatSurfaceElement(registry: CustomElementRegistry = globa
   if (registry.get("nexum-chat")) return
 
   class NexumChatElement extends HTMLElement {
-    static observedAttributes = ["session-id", "api-base-url", "theme"]
+    static observedAttributes = ["session-id", "api-base-url", "title", "theme"]
     private adapterValue: ChatProtocolAdapter | undefined
     private dispose: (() => void) | undefined
     private setSessionID: ((value: string) => void) | undefined
+    private setTitle: ((value: string) => void) | undefined
     private setTheme: ((value: string | undefined) => void) | undefined
 
     get adapter() {
@@ -31,6 +32,7 @@ export function defineChatSurfaceElement(registry: CustomElementRegistry = globa
       this.dispose?.()
       this.dispose = undefined
       this.setSessionID = undefined
+      this.setTitle = undefined
       this.setTheme = undefined
       this.replaceChildren()
     }
@@ -38,6 +40,7 @@ export function defineChatSurfaceElement(registry: CustomElementRegistry = globa
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
       if (oldValue === newValue) return
       if (name === "session-id") this.setSessionID?.(newValue ?? "")
+      if (name === "title") this.setTitle?.(newValue ?? "")
       if (name === "theme") this.setTheme?.(newValue ?? undefined)
       if (name === "api-base-url" && this.isConnected) this.mount()
     }
@@ -53,9 +56,11 @@ export function defineChatSurfaceElement(registry: CustomElementRegistry = globa
       const composerExtras = slotted.length > 0 ? extrasHolder : undefined
       this.replaceChildren()
       const [sessionID, setSessionID] = createSignal(this.getAttribute("session-id") ?? "")
+      const [title, setTitle] = createSignal(this.getAttribute("title") ?? undefined)
       const [theme, setTheme] = createSignal(this.getAttribute("theme") ?? undefined)
       const [adapter] = createSignal<ChatProtocolAdapter | undefined>(this.adapterValue)
       this.setSessionID = setSessionID
+      this.setTitle = setTitle
       this.setTheme = setTheme
       const client = this.getAttribute("api-base-url") ? { baseUrl: this.getAttribute("api-base-url")! } satisfies NonNullable<ChatSurfaceProps["client"]> : undefined
       this.dispose = render(
@@ -64,6 +69,7 @@ export function defineChatSurfaceElement(registry: CustomElementRegistry = globa
             sessionID={sessionID()}
             adapter={adapter()}
             client={client}
+            title={title()}
             theme={theme()}
             composerExtras={composerExtras}
             onOpenPermissionSettings={() => this.dispatchEvent(new CustomEvent("permission-settings", { bubbles: true, composed: true }))}

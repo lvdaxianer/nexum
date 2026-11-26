@@ -45,6 +45,8 @@ export type ChatSurfaceProps = {
   readonly adapter?: ChatProtocolAdapter
   readonly client?: Parameters<typeof createChatProtocolAdapter>[0]
   readonly class?: string
+  /** 标头标题（如当前 Session 名称）；不设置则不渲染标头。 */
+  readonly title?: string
   /** 组件根节点的 data-theme 值（如 "dark"），不设置则使用默认亮色。 */
   readonly theme?: string
   /** 宿主注入输入栏的扩展内容（如权限模式入口），渲染在发送键左侧。 */
@@ -106,10 +108,10 @@ export function ChatSurface(props: ChatSurfaceProps) {
   let conversationBody: HTMLDivElement | undefined
   let streamController: AbortController | undefined
   let lifecycle = 0
-  let followTail = true
   let promptSequence = 0
   let skillLoadSequence = 0
   let surfaceRoot: HTMLElement | undefined
+  const [followTail, setFollowTail] = createSignal(true)
   const seenEventIDs = new Map<string, Set<string>>()
   const eventSequences = new Map<string, number>()
 
@@ -234,6 +236,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
     setPrompt("")
     setStatus(id ? "idle" : "no session")
     setChatItems([])
+    setFollowTail(true)
     setPermissions([])
     setQuestions([])
     setQuestionAnswers({})
@@ -345,6 +348,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
     const text = prompt().trim()
     if (!id || !text || busy() || inputLocked()) return
     setBusy(true)
+    setFollowTail(true)
     const thinkingID = `thinking:${id}:${Date.now()}:${promptSequence++}`
     setChatItems((current) => [
       ...current,
@@ -497,12 +501,18 @@ export function ChatSurface(props: ChatSurfaceProps) {
   }
 
   function handleScroll(element: HTMLDivElement) {
-    followTail = element.scrollHeight - element.scrollTop - element.clientHeight < 96
+    setFollowTail(element.scrollHeight - element.scrollTop - element.clientHeight < 96)
     if (element.scrollTop <= 96 && historyHasMore() && !historyLoading()) void loadEarlierHistory(element)
   }
 
+  /** 回到最新消息：跳到底部并恢复生成时的自动跟随。 */
+  function jumpToBottom() {
+    setFollowTail(true)
+    if (conversationBody) conversationBody.scrollTop = conversationBody.scrollHeight
+  }
+
   createEffect(() => {
-    if (!followTail || !conversationBody) return
+    if (!followTail() || !conversationBody) return
     chatItems()
     conversationBody.scrollTop = conversationBody.scrollHeight
   })
@@ -514,16 +524,26 @@ export function ChatSurface(props: ChatSurfaceProps) {
       data-theme={props.theme}
       ref={(element) => (surfaceRoot = element)}
     >
-      <div class="nexum-chat-body conversation-body" ref={(element) => (conversationBody = element)} onScroll={(event) => handleScroll(event.currentTarget)}>
-        <div class="nexum-chat-stream" role="log" aria-live="polite">
-          <Show when={historyLoading()}><div class="nexum-chat-load-status" role="status">正在加载聊天…</div></Show>
-          <Show when={historyError()}>
-            <div class="nexum-chat-error" role="alert"><span>{historyError()}</span><button type="button" onClick={() => void initialize(props.sessionID, lifecycle)}>重试</button></div>
-          </Show>
-          <Show when={chatItems().length > 0} fallback={<div class="nexum-chat-empty"><strong>{props.sessionID ? "Session 已就绪" : "等待 Session"}</strong><p>{props.sessionID ? "在下方输入第一个任务，Agent 的输出会实时显示在这里。" : "宿主传入 sessionID 后即可开始聊天。"}</p></div>}>
-            <For each={chatItems()}>{(item) => <ChatItemView item={item} />}</For>
-          </Show>
+      <Show when={props.title}>
+        <header class="nexum-chat-header">
+          <h2>{props.title}</h2>
+        </header>
+      </Show>
+      <div class="nexum-chat-body-wrap">
+        <div class="nexum-chat-body conversation-body" ref={(element) => (conversationBody = element)} onScroll={(event) => handleScroll(event.currentTarget)}>
+          <div class="nexum-chat-stream" role="log" aria-live="polite">
+            <Show when={historyLoading()}><div class="nexum-chat-load-status" role="status">正在加载聊天…</div></Show>
+            <Show when={historyError()}>
+              <div class="nexum-chat-error" role="alert"><span>{historyError()}</span><button type="button" onClick={() => void initialize(props.sessionID, lifecycle)}>重试</button></div>
+            </Show>
+            <Show when={chatItems().length > 0} fallback={<div class="nexum-chat-empty"><strong>{props.sessionID ? "Session 已就绪" : "等待 Session"}</strong><p>{props.sessionID ? "在下方输入第一个任务，Agent 的输出会实时显示在这里。" : "宿主传入 sessionID 后即可开始聊天。"}</p></div>}>
+              <For each={chatItems()}>{(item) => <ChatItemView item={item} />}</For>
+            </Show>
+          </div>
         </div>
+        <Show when={!followTail()}>
+          <button type="button" class="nexum-chat-jump" onClick={jumpToBottom} aria-label="回到底部">↓ 回到底部</button>
+        </Show>
       </div>
 
       <Show when={permissions().length > 0}>
