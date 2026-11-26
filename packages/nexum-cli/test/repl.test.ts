@@ -163,6 +163,7 @@ test("repl slash commands: /skills lists ready skills, /cancel calls cancelRun, 
   ]
   await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: arrayLineSource(["/skills", "/cancel", "/nope", "/quit"]), prompter: async () => "" })
   expect(io.plain()).toContain("@tdd")
+  expect(io.plain()).not.toContain("测试驱动")
   expect(io.plain()).not.toContain("@broken")
   expect(calls).toContain("cancelRun")
   expect(io.plain()).toContain("未知命令")
@@ -700,4 +701,100 @@ test("repl locked warning collapses the live thinking region before printing", a
   const out = io.plain()
   expect(out).toContain("✓ 思考过程 · 8 字")
   expect(out.indexOf("✓ 思考过程")).toBeLessThan(out.indexOf("Agent 正在回复,/cancel 取消本轮"))
+})
+
+test("readlineLineSource completes slash command names with prefix and fuzzy matching", async () => {
+  // 前缀补全:/sk → /skills
+  {
+    const { input, source } = ttySource()
+    const line = source.next()
+    input.write("/sk\t")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    input.write("\n")
+    expect(await line).toBe("/skills ")
+    source.close()
+  }
+  // 前缀补全:/perm → /permissions
+  {
+    const { input, source } = ttySource()
+    const line = source.next()
+    input.write("/perm\t")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    input.write("\n")
+    expect(await line).toBe("/permissions ")
+    source.close()
+  }
+  // 模糊补全(非前缀子串):/xpand → /expand
+  {
+    const { input, source } = ttySource()
+    const line = source.next()
+    input.write("/xpand\t")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    input.write("\n")
+    expect(await line).toBe("/expand ")
+    source.close()
+  }
+  // / + Tab 列出全部命令(公共前缀无进展时再按一次 Tab 打印候选列表)
+  {
+    const { input, source, rendered } = ttySource()
+    void source.next()
+    input.write("/\t")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    input.write("\t")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const out = rendered()
+    for (const name of ["/help", "/sessions", "/skills", "/permissions", "/thinking", "/expand", "/quit"]) expect(out).toContain(name)
+    source.close()
+  }
+  // 非命令上下文(@skill)不受影响
+  {
+    const { input, source } = ttySource(["tdd"])
+    const line = source.next()
+    input.write("用 @td\t")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    input.write("\n")
+    expect(await line).toBe("用 @tdd ")
+    source.close()
+  }
+})
+
+test("readlineLineSource completes subcommands for /permissions and /thinking only", async () => {
+  {
+    const { input, source } = ttySource()
+    const line = source.next()
+    input.write("/thinking l\t")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    input.write("\n")
+    expect(await line).toBe("/thinking live ")
+    source.close()
+  }
+  {
+    const { input, source } = ttySource()
+    const line = source.next()
+    input.write("/permissions mo\t")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    input.write("\n")
+    expect(await line).toBe("/permissions mode ")
+    source.close()
+  }
+  // 无子命令的命令不补全第二个 token
+  {
+    const { input, source } = ttySource()
+    const line = source.next()
+    input.write("/skills x\t")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    input.write("\n")
+    expect(await line).toBe("/skills x")
+    source.close()
+  }
+})
+
+test("repl /help lists every slash command", async () => {
+  const io = memoryIO()
+  const { adapter } = fakeAdapter({})
+  await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: arrayLineSource(["/help", "/quit"]), prompter: async () => "" })
+  const out = io.plain()
+  for (const name of ["help", "new", "sessions", "use", "resume", "status", "skills", "mcp", "model", "theme", "permissions", "events", "clear", "cancel", "continue", "thinking", "expand", "quit"]) {
+    expect(out).toContain(`/${name}`)
+  }
 })

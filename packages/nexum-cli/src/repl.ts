@@ -77,6 +77,23 @@ export function readlineLineSource(
     // 注入测试流时强制终端模式,补全器才会在 Tab 时触发;生产路径保持默认(随 stdout.isTTY)。
     ...(options.input ? { terminal: true } : {}),
     completer: (line: string): [string[], string] => {
+      // slash 命令名补全:行首 / 且光标仍在命令名 token 内;前缀优先,无命中退回子串模糊
+      const command = line.match(/^\/(\S*)$/)
+      if (command) {
+        const query = command[1]!.toLowerCase()
+        const names = SLASH_COMMANDS.map((cmd) => cmd.name)
+        const prefix = names.filter((name) => name.startsWith(query))
+        const hits = prefix.length > 0 ? prefix : names.filter((name) => name.includes(query))
+        return [hits.map((name) => `/${name} `), line]
+      }
+      // 子命令补全:已完成的命令 + 空格后的第二个 token
+      const sub = line.match(/^\/(\S+)\s+(\S*)$/)
+      if (sub) {
+        const cmd = SLASH_COMMANDS.find((entry) => entry.name === sub[1])
+        if (!cmd?.subcommands) return [[], line]
+        const hits = cmd.subcommands.filter((name) => name.startsWith(sub[2]!.toLowerCase()))
+        return [hits.map((name) => `${name} `), sub[2]!]
+      }
       const match = line.match(/(?:^|\s)@([a-z0-9-]*)$/i)
       if (!match) return [[], line]
       const query = match[1]?.toLowerCase() ?? ""
@@ -160,17 +177,56 @@ export function readlineLineSource(
   }
 }
 
-const HELP = `可用命令:
-  /help        显示帮助          /new [名称]   新会话(首条消息时创建)
-  /sessions    列出会话          /use <id>     切换会话
-  /resume      交互式恢复会话    /status       连接与配置总览
-  /skills      列出可用 Skill    /mcp          MCP 列表
-  /model       当前模型          /theme        查看/切换主题
-  /permissions 查看/切换权限    /events       最近事件
-  /clear       清屏
-  /cancel      取消当前运行      /continue     继续上次运行
-  /thinking    live|summary|full /expand       展开最近思考
-  /quit        退出`
+/** slash 命令清单:HELP 与 Tab 补全的单一数据源;solo 表示在 HELP 中独占一行(不与下一条同行)。 */
+type SlashCommand = {
+  readonly name: string
+  readonly args?: string
+  readonly desc: string
+  readonly subcommands?: readonly string[]
+  readonly solo?: boolean
+}
+
+const SLASH_COMMANDS: readonly SlashCommand[] = [
+  { name: "help", desc: "显示帮助" },
+  { name: "new", args: "[名称]", desc: "新会话(首条消息时创建)" },
+  { name: "sessions", desc: "列出会话" },
+  { name: "use", args: "<id>", desc: "切换会话" },
+  { name: "resume", desc: "交互式恢复会话" },
+  { name: "status", desc: "连接与配置总览" },
+  { name: "skills", desc: "列出可用 Skill" },
+  { name: "mcp", desc: "MCP 列表" },
+  { name: "model", desc: "当前模型" },
+  { name: "theme", desc: "查看/切换主题" },
+  { name: "permissions", desc: "查看/切换权限", subcommands: ["mode", "allow", "deny", "remove"] },
+  { name: "events", desc: "最近事件" },
+  { name: "clear", desc: "清屏", solo: true },
+  { name: "cancel", desc: "取消当前运行" },
+  { name: "continue", desc: "继续上次运行" },
+  { name: "thinking", args: "live|summary|full", desc: "", subcommands: ["live", "summary", "full"] },
+  { name: "expand", desc: "展开最近思考" },
+  { name: "quit", desc: "退出", solo: true },
+]
+
+/** 两列 HELP:命令段补齐到 13 列,描述段补齐到 18 列(与既有手写排版一致);无描述的条目(如 /thinking)只占命令段。 */
+const HELP = (() => {
+  const cell = (cmd: SlashCommand) => {
+    const label = `/${cmd.name}${cmd.args ? ` ${cmd.args}` : ""}`
+    return label + " ".repeat(Math.max(1, 13 - displayWidth(label)))
+  }
+  const descCell = (cmd: SlashCommand) => (cmd.desc === "" ? "" : cmd.desc + " ".repeat(Math.max(1, 18 - displayWidth(cmd.desc))))
+  const lines = ["可用命令:"]
+  for (let index = 0; index < SLASH_COMMANDS.length; index++) {
+    const cmd = SLASH_COMMANDS[index]!
+    const next = SLASH_COMMANDS[index + 1]
+    if (cmd.solo || !next || next.solo) {
+      lines.push(`  ${cell(cmd)}${cmd.desc}`.trimEnd())
+      continue
+    }
+    lines.push(`  ${cell(cmd)}${descCell(cmd)}${cell(next)}${next.desc}`.trimEnd())
+    index += 1
+  }
+  return lines.join("\n")
+})()
 
 export type ReplOptions = {
   readonly adapter: ChatProtocolAdapter
@@ -357,7 +413,7 @@ export async function runRepl(options: ReplOptions): Promise<void> {
               const skills = await adapter.listSkills()
               const ready = skills.filter((skill) => skill.status === "ready")
               if (ready.length === 0) io.line(paint(io.caps, "dim", "暂无可用 Skill"))
-              for (const skill of ready) io.line(`${paint(io.caps, "cyan", `@${skill.id}`)} ${paint(io.caps, "dim", skill.description)}`)
+              for (const skill of ready) io.line(paint(io.caps, "cyan", `@${skill.id}`))
             } else if (command === "new") {
               // 回到待创建状态:不立即建会话,名称留给首条消息。
               pendingName = rest.join(" ") || undefined
