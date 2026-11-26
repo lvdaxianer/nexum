@@ -164,6 +164,51 @@ describe.serial("Nexum UI smoke", () => {
     await expect(page.getByRole("heading", { name: "Skills" })).toBeVisible()
   })
 
+  test.serial("reads a local Markdown file into the submitted Prompt", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    const sessionService = createNexumSessionService({ store: createInMemorySessionStore() })
+    directory = await mkdtemp(join(tmpdir(), "nexum-ui-file-context-"))
+    apiServer = await startNexumServer({
+      port: apiPort,
+      corsOrigins: [uiOrigin],
+      sessionService,
+      codingLoop: {
+        async run(input) {
+          return (await sessionService.get(input.sessionID))!
+        },
+        async continueStart(sessionID) {
+          const admission = sessionService.setStatus(sessionID, "running")
+          return { accepted: true, admission, promise: admission.then(() => sessionService.get(sessionID).then((value) => value!)) }
+        },
+        async cancel(sessionID) {
+          return sessionService.setStatus(sessionID, "cancelled")
+        },
+      },
+    })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+
+    await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(directory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.getByRole("heading", { name: /nexum-ui-file-context-/ })).toBeVisible()
+    await page.getByLabel("Coding Prompt").fill("请总结文件")
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "notes.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# 标题\n正文"),
+    })
+    await expect(page.locator(".nexum-chat-file-name")).toHaveText(/notes\.md/)
+
+    const promptRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().includes("/prompt"))
+    await page.getByRole("button", { name: "发送 Prompt" }).click()
+    const requestBody = (await promptRequest).postDataJSON() as { text: string }
+    expect(requestBody.text).toBe("请总结文件\n\n【文件：notes.md】\n# 标题\n正文\n【文件结束】")
+    await expect(page.getByLabel("Coding Prompt")).toHaveValue("")
+    await expect(page.locator(".nexum-chat-file-name")).toHaveCount(0)
+  })
+
   test.serial("offers one continue action after a settled failed run", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
