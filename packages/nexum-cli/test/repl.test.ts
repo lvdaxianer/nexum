@@ -647,3 +647,15 @@ test("repl /thinking switches between live, summary and full modes", async () =>
   // 显式 live 与缺省参数都切到 live
   expect(out.match(/思考展示:live/g)?.length).toBe(2)
 })
+
+test("repl slash commands collapse the live thinking region before printing", async () => {
+  const io = memoryIO({ anim: true })
+  const { adapter } = fakeAdapter({
+    onSend: () => [makeEvent("assistant.reasoning", { content: "推理行一\n推理行二\n" }, 1)],
+  })
+  await runRepl({ adapter, client: fakeClient(), io, sessionID: session.id, lineSource: slowLineSource(["你好", "/events", "/quit"]), prompter: async () => "" })
+  const out = io.plain()
+  // 思考区先收起为摘要,/events 输出完整落在区域外
+  expect(out).toContain("✓ 思考过程 · 10 字")
+  expect(out.indexOf("✓ 思考过程")).toBeLessThan(out.indexOf("assistant.reasoning"))
+})

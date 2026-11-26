@@ -73,15 +73,29 @@ test("writeAbove erases the live row, inserts the line and redraws the live row"
   live.cancel()
 })
 
-test("collapse erases the live row plus wrap-aware writeAbove rows before printing", () => {
+test("collapse erases the live row plus one row per writeAbove call before printing", () => {
   const io = memoryIO({ color: "ansi16", anim: true })
   const live = createLiveLine(io, () => "⠋ 思考", 20)
-  live.writeAbove("短行") // 宽 4 → 1 行
-  live.writeAbove(paint(io.caps, "dim", "长".repeat(15))) // 宽 30(ANSI 序列不计) → columns=20 折算 2 行
+  live.writeAbove("短行")
+  live.writeAbove(paint(io.caps, "dim", "长".repeat(15))) // 超宽行被截断到单行,行数恒为调用次数
   live.collapse("✓ 思考过程")
   const out = io.output()
-  expect(out).toContain("\x1b[3A\x1b[0J")
+  expect(out).toContain("\x1b[2A\x1b[0J")
   expect(out.endsWith("✓ 思考过程\n")).toBe(true)
+})
+
+test("writeAbove truncates overwide CJK lines to columns - 1 so collapse leaves no residue", () => {
+  const io = memoryIO({ color: "none", anim: true })
+  const live = createLiveLine(io, () => "⠋ 思考", 20)
+  // 显示宽 40 且 CJK 骑跨换行边界:不截断时实际占 3 行,行数折算会低估
+  live.writeAbove("a" + "汉".repeat(19) + "b")
+  live.collapse("✓ 思考过程")
+  const out = io.output()
+  const inserted = out.split("\r\x1b[2K")[2]!.replace(/\n[\s\S]*$/, "")
+  expect(displayWidth(inserted)).toBeLessThanOrEqual(19)
+  expect(inserted.endsWith("…")).toBe(true)
+  // 每次 writeAbove 恒占 1 行
+  expect(out).toContain("\x1b[1A\x1b[0J")
 })
 
 test("collapse without writeAbove rows skips the cursor-up sequence", () => {

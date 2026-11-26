@@ -75,9 +75,10 @@ export function createLiveLine(io: CliIO, render: (tick: number) => string, colu
     },
     cancel: stop,
     writeAbove: (text) => {
-      // 插入行可能携带 ANSI 样式,行数统计按剥离样式后的显示宽度折算换行行数
-      rowsAbove += Math.max(1, Math.ceil(displayWidth(text.replace(/\x1b\[[0-9;]*m/g, "")) / cols))
-      io.write(`\r\x1b[2K${text}\n`)
+      // 插入行截断到列宽内(与帧截断同逻辑):整行恒占 1 行,从根上消灭换行行数折算;
+      // 流式行是瞬态(收起即擦除),全文由 /expand 保留
+      rowsAbove += 1
+      io.write(`\r\x1b[2K${truncateFrame(text, width)}\n`)
       draw()
     },
     collapse: (text) => {

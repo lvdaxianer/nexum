@@ -16,6 +16,8 @@ export type Renderer = {
   thinkingMode(): ThinkingMode
   setThinkingMode(mode: ThinkingMode): void
   expandLastReasoning(): void
+  /** 思考 live 区域打开时立即收起(live 模式即 collapse);无打开区域时 no-op。slash 等区域内打印前调用。 */
+  flushThinking(): void
   /** 权限/问题等待结束后恢复被冻结的工具活动行;未暂停时为空操作。 */
   resumeTool(): void
   close(): void
@@ -238,10 +240,12 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
       case "model.attempt":
         status = "running"
         markRunStarted()
+        closeReasoning()
         io.line(paint(caps, "dim", `模型尝试 · 第 ${String(record.attempt ?? "?")} 次调用`))
         return
       case "model.retry":
         status = "retrying"
+        closeReasoning()
         io.line(paint(caps, "yellow", `模型重试 · ${String(record.delayMs ?? 0)}ms 后重试`))
         return
       case "coding-loop.limit.reached":
@@ -298,6 +302,9 @@ export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }):
       eraseCursor()
       io.line(paint(caps, "dim", "思考全文"))
       io.line(paint(caps, "dim", lastReasoning))
+    },
+    flushThinking: () => {
+      if (liveKind === "thinking") closeReasoning()
     },
     resumeTool: () => {
       if (!pausedToolName) return

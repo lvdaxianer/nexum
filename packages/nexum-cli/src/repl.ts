@@ -335,6 +335,8 @@ export async function runRepl(options: ReplOptions): Promise<void> {
             continue
           }
           if (text.startsWith("/")) {
+            // slash 输出落在思考 live 区域外:先收起区域,避免 collapse 上移擦除吞掉插入行
+            renderer.flushThinking()
             const [command, ...rest] = text.slice(1).split(/\s+/)
             if (command === "quit" || command === "exit") return
             if (command === "help") io.line(HELP)
