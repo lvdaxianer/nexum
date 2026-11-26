@@ -337,6 +337,19 @@
   overflow-wrap: anywhere;
 }
 
+.nexum-chat-user-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 5px 9px;
+  border: 1px solid var(--nexum-chat-bubble-border);
+  border-radius: 999px;
+  background: var(--nexum-chat-bg);
+  color: var(--nexum-chat-muted);
+  font-size: var(--nexum-chat-fs-meta);
+}
+
 .nexum-chat-user-meta {
   padding-right: 4px;
   color: var(--nexum-chat-muted);
