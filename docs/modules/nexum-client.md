@@ -56,6 +56,22 @@ const session = await client.experimental.nexum.session.create({
 
 `session.id` 是 `create()` 和 `list()` 返回的字段；Client 方法的输入字段叫 `sessionID`，调用方需要显式传入它。`session.prompt({ text })` 的 `text` 是用户本轮输入，默认角色提示词通过 `client.experimental.nexum.rolePrompt.update({ prompt })` 单独配置。
 
+典型的 Session 列表和切换流程如下：
+
+```ts
+const sessions = await client.experimental.nexum.session.list()
+const selectedSessionID = sessions[0]?.id
+
+if (selectedSessionID) {
+  const history = await client.experimental.nexum.session.messages({
+    sessionID: selectedSessionID,
+    limit: 50,
+  })
+}
+```
+
+列表中的 `id` 是稳定标识。用户点击其他列表项时，把新的 `id` 传给 `ChatSurface` 的 `sessionID` 参数即可；ChatSurface 会自动加载目标 Session 的状态、历史和事件。只有在自定义 UI 时，才需要自己组合 `state()`、`messages()` 和 `events()`。
+
 ### Role Prompt 方法
 
 | 方法                            | 参数          | 说明                          |

@@ -127,41 +127,104 @@ const session = await client.experimental.nexum.session.create({
 
 Session 的创建、查询、Prompt、历史和恢复见 [Session 会话能力](../capabilities/session.md)。
 
-## 第 6 步：使用 Chat Surface 显示聊天界面
+## 第 6 步：查询和切换已有 Session
 
-在前端页面中引入我们提供的聊天组件：
+真实应用通常会在左侧显示 Session 列表。列表数据来自后端 SQLite，不需要前端直接读取数据库：
 
 ```tsx
-import { createSignal, onMount, Show } from "solid-js"
+import { For, Show, createSignal, onMount } from "solid-js"
+import { Nexum, type NexumSession } from "nexum/client"
+
+const API_BASE_URL = "http://127.0.0.1:4097"
+
+export function SessionPicker(props: { onSelect: (sessionID: string) => void }) {
+  const client = Nexum.make({ baseUrl: API_BASE_URL })
+  const [sessions, setSessions] = createSignal<readonly NexumSession[]>([])
+  const [selectedSessionID, setSelectedSessionID] = createSignal<string>()
+
+  onMount(async () => {
+    const nextSessions = await client.experimental.nexum.session.list()
+    setSessions(nextSessions)
+    if (nextSessions[0]) {
+      setSelectedSessionID(nextSessions[0].id)
+      props.onSelect(nextSessions[0].id)
+    }
+  })
+
+  async function createSession() {
+    const session = await client.experimental.nexum.session.create({
+      directory: "/workspace/demo",
+      name: `新的 Agent ${sessions().length + 1}`,
+    })
+    setSessions((current) => [session, ...current])
+    setSelectedSessionID(session.id)
+    props.onSelect(session.id)
+  }
+
+  return (
+    <aside>
+      <button type="button" onClick={() => void createSession()}>
+        新建 Session
+      </button>
+      <For each={sessions()} fallback={<p>还没有 Session</p>}>
+        {(session) => (
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedSessionID(session.id)
+              props.onSelect(session.id)
+            }}
+          >
+            {session.name} · {session.status}
+          </button>
+        )}
+      </For>
+      <Show when={selectedSessionID()}>{(sessionID) => <p>当前 Session：{sessionID()}</p>}</Show>
+    </aside>
+  )
+}
+```
+
+这里最重要的是两个值：
+
+| 值                  | 作用                                            |
+| ------------------- | ----------------------------------------------- |
+| `sessions`          | 后端返回的 Session 列表，用来渲染左侧会话列表   |
+| `selectedSessionID` | 用户当前选中的 Session ID，用来驱动右侧聊天区域 |
+
+如果需要刷新列表，再次调用 `session.list()` 即可。Session API 的入口在 `client.experimental.nexum.session`，参数和返回值见 [Client Session 方法](../modules/nexum-client.md#session-方法参数)。
+
+## 第 7 步：切换 Session 后回显聊天内容
+
+把选中的 `sessionID` 传给 Chat Surface。当用户点击另一个 Session 时，只需要更新这个值：
+
+```tsx
+import { Show, createSignal } from "solid-js"
 import { ChatSurface } from "nexum/chat-surface"
-import { Nexum } from "nexum/client"
 import "nexum/chat-surface/styles.css"
 
 const API_BASE_URL = "http://127.0.0.1:4097"
 
 export function App() {
-  const [sessionID, setSessionID] = createSignal<string>()
-  const client = Nexum.make({ baseUrl: API_BASE_URL })
-
-  onMount(async () => {
-    const session = await client.experimental.nexum.session.create({
-      directory: "/workspace/demo",
-      name: "我的第一个 Agent",
-    })
-    setSessionID(session.id)
-  })
+  const [selectedSessionID, setSelectedSessionID] = createSignal<string>()
 
   return (
-    <Show when={sessionID()} fallback={<p>正在创建 Session...</p>}>
-      <ChatSurface sessionID={sessionID()!} client={{ baseUrl: API_BASE_URL }} title="我的 Agent" />
-    </Show>
+    <div>
+      <SessionPicker onSelect={setSelectedSessionID} />
+      <main>
+        <Show when={selectedSessionID()} fallback={<p>请先选择一个 Session</p>}>
+          <ChatSurface sessionID={selectedSessionID()!} client={{ baseUrl: API_BASE_URL }} title="我的 Agent" />
+        </Show>
+      </main>
+    </div>
   )
 }
 ```
 
-Chat Surface 会自动完成这些事情：
+实际页面通常把 `SessionPicker` 和上面的聊天区域放在同一个父组件中，并把 `setSelectedSessionID` 作为 `onSelect` 传给列表。切换 `sessionID` 后，Chat Surface 会自动：
 
 - 加载 Session 历史；
+- 加载 Session 当前状态；
 - 订阅 SSE 事件；
 - 显示流式文本和工具调用；
 - 展示 Permission 请求并提交用户决定；
@@ -171,7 +234,28 @@ Chat Surface 会自动完成这些事情：
 
 UI 不需要自己实现 Coding Loop，也不需要解析模型文本来判断运行状态。组件通过 [Surface Adapter](../modules/nexum-surface-adapter.md) 消费 [Protocol](../modules/nexum-protocol.md) 和 [Client](../modules/nexum-client.md) 的数据。
 
-## 第 7 步：理解一次请求是怎么走的
+如果你不使用 Chat Surface，而是自己实现聊天 UI，就需要手动读取目标 Session：
+
+```ts
+const state = await client.experimental.nexum.session.state({
+  sessionID,
+})
+const history = await client.experimental.nexum.session.messages({
+  sessionID,
+  limit: 50,
+})
+
+for await (const event of client.experimental.nexum.session.events(
+  { sessionID },
+  { afterSequence: state.lastSequence },
+)) {
+  console.log(event.type, event.data)
+}
+```
+
+`state()` 用来恢复状态，`messages()` 用来恢复聊天历史，`events()` 用来接收实时变化。完整字段说明见 [Session 会话能力](../capabilities/session.md) 和 [ChatSurface 参数](../modules/nexum-chat-surface.md#chatsurface-参数)。
+
+## 第 8 步：理解一次请求是怎么走的
 
 当用户在聊天框输入“总结项目结构”并发送时，数据会按下面的顺序流动：
 
