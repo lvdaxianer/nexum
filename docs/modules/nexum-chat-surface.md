@@ -54,6 +54,18 @@ Web Component 接入：
 
 Web Component 使用对应的 `session-id`、`api-base-url` 和 `title` 属性。组件会自动加载 Session 状态、历史和事件；宿主不需要自己复制 Session 事件处理逻辑。
 
+### 切换 Session 并回显
+
+`sessionID` 是响应式的。用户从会话列表中选择另一个 `id` 后，更新传给 `ChatSurface` 的值即可：
+
+```tsx
+<ChatSurface sessionID={selectedSessionID()} client={{ baseUrl: "http://127.0.0.1:4097" }} />
+```
+
+组件会停止旧 Session 的事件订阅，清空当前投影，然后重新读取新 Session 的 `state` 和 `messages`，最后从对应的事件序号继续订阅 SSE。宿主不需要手动拼接历史，也不应该把 Session 名称代替 `sessionID` 传入。
+
+会话列表和切换的完整示例见[手把手构建一个完整 Agent 应用](../examples/full-stack-chat.md#第-6-步查询和切换已有-session)。
+
 ## 协议适配边界
 
 协议适配契约已迁至 [`@nexum/surface-adapter`](./nexum-surface-adapter.md)，本包 re-export `ChatProtocolAdapter`、`createChatProtocolAdapter`、`ChatProtocolError` 等符号保持兼容。`ChatProtocolAdapter` 是 UI 与传输之间的稳定边界：默认适配器使用 `@nexum/client`，宿主也可以注入自定义适配器。适配器必须覆盖：

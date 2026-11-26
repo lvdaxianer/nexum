@@ -54,6 +54,8 @@ for await (const event of client.experimental.nexum.session.events({
 
 下面的 Client 方法都位于 `client.experimental.nexum.session`。HTTP/SSE 调用方可以在 [Nexum Runtime API](../../apis/nexum.md) 中查询对应的 URL、请求体、响应和错误码。
 
+如果页面需要显示会话列表，先调用 `list()`；用户点击某个会话后，把返回的 `id` 保存为当前 `sessionID`，再交给 [ChatSurface](../modules/nexum-chat-surface.md) 或自定义聊天页面。不要把 `name` 当作唯一标识，切换和后续请求都使用 `id`。
+
 | 方法                     | 参数                                                   | 返回值                      | 用途                                              |
 | ------------------------ | ------------------------------------------------------ | --------------------------- | ------------------------------------------------- |
 | `create(input)`          | `directory` 必填；`name` 可选                          | `NexumSession`              | 创建一个绑定工作目录的会话                        |
@@ -150,7 +152,25 @@ Session 删除是组合清理：先拒绝正在运行的 Session，再删除消�
 
 `state` 和 history 是两个独立读取模型：state 表示当前快照，history 表示可见对话，SSE 表示运行过程。不要用“最后一段文本”推断 Session 是否完成，也不要把事件流当作唯一历史来源。
 
-## 7. Continue、Cancel 与失败处理
+## 7. 查询列表和切换回显
+
+使用 ChatSurface 时，切换回显的最小流程是：
+
+```text
+session.list()
+      ↓
+用户点击某个 session.id
+      ↓
+selectedSessionID 更新
+      ↓
+ChatSurface(sessionID={selectedSessionID})
+      ↓
+自动读取 state + messages，并订阅 events
+```
+
+如果页面自己渲染消息，则需要分别调用 `state({ sessionID })`、`messages({ sessionID })` 和 `events({ sessionID }, { afterSequence })`。`state`、历史和事件是三个不同的读取模型，不能只靠 `list()` 的 Session 元数据回显聊天内容。
+
+## 8. Continue、Cancel 与失败处理
 
 - `canContinue` 只有在最后一条 canonical 消息是非空 `user` 或 `tool` 消息时才为真。
 - Continue 是实验性操作；Session 正在运行时返回 `NEXUM_SESSION_RUN_CONFLICT`，没有可恢复上下文时返回 `NEXUM_SESSION_NOT_CONTINUABLE`。
@@ -158,11 +178,14 @@ Session 删除是组合清理：先拒绝正在运行的 Session，再删除消�
 - 已完成或已失败的 Session 不会因为普通 Cancel 被伪造为取消；调用方应以最终状态和事件为准。
 - 重启后文件 Store 会把遗留的 `running` Session 恢复为 `idle`，避免把进程死亡误认为仍有活动运行；事件和 canonical history 仍可按各自 Store 的持久化能力恢复。
 
-## 8. 相关入口
+## 9. 相关入口
 
 - [事件与 SSE 能力](events.md)
 - [Runtime 运行流程](../architecture/runtime-flow.md)
 - [UI 状态与恢复](../ui/states.md)
+- [完整前后端案例](../examples/full-stack-chat.md)
+- [Client Session 方法](../modules/nexum-client.md#session-方法参数)
+- [ChatSurface 参数](../modules/nexum-chat-surface.md#chatsurface-参数)
 - [Nexum HTTP API](../../apis/nexum.md)
 - [Session Core 测试](../../packages/nexum-core/test/session.test.ts)
 - [Server Session/历史测试](../../packages/nexum-server/test/server.test.ts)
