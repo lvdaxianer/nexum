@@ -28,77 +28,7 @@ import { createFilePersistence } from "nexum/persistence/file"
 
 如果你是第一次使用 Nexum，建议先完成这个案例：后端使用 SQLite 保存数据，Server 提供 HTTP/SSE，前端使用 Nexum 的 Client、Surface Adapter 和 Chat Surface 展示聊天界面。
 
-完整代码见[手把手构建一个完整 Agent 应用](docs/examples/full-stack-chat.md)。这里先看整体步骤：
-
-### 1. 安装公共包
-
-```bash
-npm install nexum
-```
-
-### 2. 后端创建 SQLite Runtime
-
-```ts
-import { createSqliteRuntime } from "nexum/application"
-
-const runtime = await createSqliteRuntime({
-  databasePath: ".nexum/nexum.db",
-})
-```
-
-SQLite 负责保存 Session、消息、事件和配置。`databasePath` 是数据库文件位置，不是 Agent 的工作目录。
-
-### 3. 配置模型和角色提示词
-
-```ts
-await runtime.modelConfig.update({
-  baseUrl: "https://api.example.com/v1",
-  model: "example-model",
-  credentialRef: "MODEL_API_KEY",
-})
-
-await runtime.rolePrompt.update("你是一个可靠的项目助手，不要编造执行结果。")
-```
-
-模型地址是模型服务的地址；角色提示词是 Runtime 级配置，不需要随着每次用户 Prompt 重复传入。
-
-### 4. 启动 Nexum Server
-
-```ts
-import { startNexumServer } from "nexum/server"
-
-const server = await startNexumServer({
-  runtime,
-  hostname: "127.0.0.1",
-  port: 4097,
-})
-```
-
-Server 负责 HTTP/SSE 和事件传输，Agent 的实际运行仍由 Runtime 完成。
-
-### 5. 前端创建 Session
-
-```ts
-import { Nexum } from "nexum/client"
-
-const client = Nexum.make({ baseUrl: "http://127.0.0.1:4097" })
-const session = await client.experimental.nexum.session.create({
-  directory: "/workspace/demo",
-  name: "我的第一个 Agent",
-})
-```
-
-`directory` 是后端机器上的 Agent 工作目录，`session.id` 是这次会话的标识。
-
-### 6. 前端显示 Chat UI
-
-```tsx
-import { ChatSurface } from "nexum/chat-surface"
-import "nexum/chat-surface/styles.css"
-;<ChatSurface sessionID={session.id} client={{ baseUrl: "http://127.0.0.1:4097" }} title="我的 Agent" />
-```
-
-Chat Surface 会自动处理历史、流式事件、工具调用、权限、Question、取消和继续。完整的参数解释和数据流见[完整教程](docs/examples/full-stack-chat.md)。
+完整案例见[手把手构建一个完整 Agent 应用](docs/examples/full-stack-chat.md)。教程会从 SQLite 后端开始，逐步讲解 Server、Client、Session 列表、Session 切换回显和 Chat Surface；每个模块的参数也会链接到对应文档。
 
 ## Nexum 解决什么问题
 
