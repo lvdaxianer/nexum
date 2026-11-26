@@ -12,6 +12,7 @@ import {
   type EventSink,
   type NexumCodingLoop,
   type NexumInteractionStore,
+  type NexumExecutionStore,
   type NexumModelConfigStore,
   type NexumSessionService,
   type NexumSkillInvocationPort,
@@ -85,6 +86,7 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly sessions?: NexumSessionService
   readonly sessionStore?: SessionStore
   readonly messageStore?: MessageStore
+  readonly executionStore?: NexumExecutionStore
   readonly interactionStore?: NexumInteractionStore
   readonly eventHub?: NexumEventHub
   readonly permissionBroker?: NexumPermissionBroker
@@ -121,6 +123,7 @@ export interface NexumDefaultRuntime extends NexumRuntime {
   readonly questionPort: NexumQuestionPort
   readonly modelProbe: NexumModelProbePort
   readonly codingLoop: NexumCodingLoop
+  readonly executionStore: NexumExecutionStore
   readonly mcpReady?: Promise<void>
   readonly mcpConfigStore?: McpServerConfigStore
   readonly persistence: NexumPersistence
@@ -130,8 +133,10 @@ const MCP_OAUTH_REDIRECT_URL = "http://127.0.0.1/oauth/callback"
 
 export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumDefaultRuntime {
   const persistence = options.persistence ?? createMemoryPersistence()
+  const executionStore = options.executionStore ?? persistence.executionStore
   const sessions = options.sessions ?? createNexumSessionService({
     store: options.sessionStore ?? persistence.sessionStore,
+    executionStore,
     directoryValidator: createLocalDirectoryValidator(),
     ...(persistence.atomicDelete ? { atomicDelete: persistence.atomicDelete } : {}),
   })
@@ -175,6 +180,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     sessions,
     events: eventHub,
     messageStore,
+    executionStore,
     tools: tools.definitions,
     question,
     skills: skillInvocation,
@@ -216,6 +222,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     questionPort: question,
     modelProbe,
     codingLoop: runtimeLoop,
+    executionStore,
     persistence,
     ...(mcpReady ? { mcpReady } : {}),
     ...(options.mcpConfigStore ? { mcpConfigStore: options.mcpConfigStore } : {}),
@@ -247,6 +254,7 @@ export function createLocalRuntime(options: NexumRuntimeOptions = {}): NexumDefa
     memoryFile: options.memoryFile,
     mcpConfigFile: options.mcpConfigFile,
     mcpCredentialFile: options.mcpCredentialFile,
+    executionFile: options.executionFile,
   })
   const localMcp = options.mcp ? undefined : createLocalMcpRuntime({
     ...options,

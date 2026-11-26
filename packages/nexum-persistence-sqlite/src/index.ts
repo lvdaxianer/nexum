@@ -9,6 +9,7 @@ export type { NexumSqlitePersistenceErrorCode } from "./errors.ts"
 export { createSqliteEventHub } from "./events.ts"
 export type { NexumSqliteEventHub } from "./events.ts"
 export {
+  createSqliteExecutionStore,
   createSqliteInteractionStore,
   createSqliteMcpCredentialStore,
   createSqliteMcpServerConfigStore,

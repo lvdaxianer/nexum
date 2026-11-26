@@ -163,6 +163,44 @@ export interface SessionStore {
   readonly delete: (sessionID: string) => Promise<void>
 }
 
+/** Coding Loop 一次执行的持久化声明。 */
+export interface NexumExecutionRecord {
+  readonly executionID: string
+  readonly sessionID: string
+  readonly mode: "prompt" | "continue" | "recovery"
+  readonly status:
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "recovery_waiting"
+    | "recovery_exhausted"
+  readonly attempt: number
+  readonly maxAttempts: number
+  readonly recoverable: boolean
+  readonly createdAt: string
+  readonly updatedAt: string
+  readonly errorCode?: "not_continuable" | "attempt_limit" | "session_not_found"
+}
+
+/** 执行声明持久化端口。 */
+export interface NexumExecutionStore {
+  readonly list: () => Promise<readonly NexumExecutionRecord[]>
+  readonly get: (executionID: string) => Promise<NexumExecutionRecord | undefined>
+  readonly claim: (input: {
+    readonly executionID: string
+    readonly sessionID: string
+    readonly mode: NexumExecutionRecord["mode"]
+    readonly maxAttempts: number
+  }) => Promise<NexumExecutionRecord>
+  readonly settle: (
+    executionID: string,
+    status: Extract<NexumExecutionRecord["status"], "completed" | "failed" | "cancelled" | "recovery_waiting" | "recovery_exhausted">,
+    errorCode?: NexumExecutionRecord["errorCode"],
+  ) => Promise<NexumExecutionRecord>
+  readonly deleteSession: (sessionID: string) => Promise<void>
+}
+
 /** Nexum Session 的状态类型。 */
 export type NexumSessionStatus = SessionRecord["status"]
 
@@ -203,6 +241,7 @@ export interface NexumSessionService {
 /** Nexum Session Service 的依赖配置。 */
 export interface NexumSessionServiceOptions {
   readonly store: SessionStore
+  readonly executionStore?: NexumExecutionStore
   readonly directoryValidator?: NexumDirectoryValidator
   readonly atomicDelete?: (sessionID: string) => Promise<void>
 }
@@ -347,9 +386,11 @@ export function createNexumSessionService(options: NexumSessionServiceOptions): 
         }
         if (options.atomicDelete) {
           await options.atomicDelete(sessionID)
+          await options.executionStore?.deleteSession(sessionID)
           return
         }
         await beforeDelete?.()
+        await options.executionStore?.deleteSession(sessionID)
         await store.delete(sessionID)
       })
     },
@@ -392,6 +433,7 @@ export interface NexumCodingLoopOptions {
   readonly sessions: NexumSessionService
   readonly events: EventSink
   readonly messageStore: MessageStore
+  readonly executionStore?: NexumExecutionStore
   readonly tools?: readonly ModelToolDefinition[]
   readonly contextCompaction?: ContextCompactionPort
   readonly projectContext?: ProjectContextPort
@@ -414,6 +456,7 @@ export interface NexumCodingLoopOptions {
   /** 模型无增量输出时仍向交互层发送思考心跳；设为 0 可关闭。 */
   readonly thinkingHeartbeatMs?: number
   readonly maxOutputContinuations?: number
+  readonly maxRecoveryAttempts?: number
 }
 
 /** 单 Agent Nexum Coding Loop。 */
@@ -424,9 +467,12 @@ export interface NexumCodingLoop {
   readonly continueStart?: (sessionID: string) => Promise<NexumCodingLoopContinueStart>
   readonly continue?: (sessionID: string) => Promise<SessionRecord>
   readonly cancel: (sessionID: string) => Promise<SessionRecord>
+  readonly recover?: () => Promise<readonly NexumExecutionRecord[]>
 }
 
-type NexumCodingLoopExecutionInput = NexumCodingLoopInput | { readonly sessionID: string; readonly mode: "continue" }
+type NexumCodingLoopExecutionInput =
+  | (NexumCodingLoopInput & { readonly executionID?: string })
+  | { readonly sessionID: string; readonly mode: "continue" | "recovery"; readonly executionID: string }
 
 /** 用于在 HTTP admission 与异步执行之间保持同一 Session 的运行占用。 */
 export type NexumCodingLoopStart =
@@ -454,6 +500,7 @@ export type NexumCodingLoopContinueStart =
 export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCodingLoop {
   const maxSteps = options.maxSteps
   const maxOutputContinuations = Math.max(1, options.maxOutputContinuations ?? 8)
+  const maxRecoveryAttempts = Math.max(1, Math.floor(options.maxRecoveryAttempts ?? 3))
   const toolTimeoutMs =
     options.toolTimeoutMs === 0 ? undefined : (normalizeTimeout(options.toolTimeoutMs) ?? DEFAULT_TOOL_TIMEOUT_MS)
   const messageStore = options.messageStore
@@ -461,6 +508,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
   const continuationAdmissions = new Set<string>()
   const sessionSequences = new Map<string, number>()
   const sessionSequenceSeeds = new Map<string, Promise<void>>()
+  let recoveryPromise: Promise<readonly NexumExecutionRecord[]> | undefined
 
   /**
    * 首次为 Session 发布事件前读取 EventSink 已有的最后序号，跨服务重启延续编号。
@@ -484,6 +532,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
   }
 
   const execute = async (input: NexumCodingLoopExecutionInput, runState: ActiveRun) => {
+    const executionID = runState.executionID
     const session = await options.sessions.get(input.sessionID).catch((error) => {
       if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
       throw error
@@ -494,7 +543,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
     }
 
     const history = await messageStore.load(input.sessionID)
-    const continuation = "mode" in input && input.mode === "continue"
+    const continuation = "mode" in input && (input.mode === "continue" || input.mode === "recovery")
     const lastMessage = history.at(-1)
     if (continuation && (!lastMessage || (lastMessage.role !== "user" && lastMessage.role !== "tool"))) {
       throw new NexumRunError("not_continuable", "Session 没有可继续的上下文", input.sessionID)
@@ -504,7 +553,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       throw new NexumRunError("not_continuable", "Session 没有可继续的上下文", input.sessionID)
     }
 
-    const runID = crypto.randomUUID()
+    const runID = executionID
     let settled = false
     const publish = async (type: string, data?: Record<string, unknown>) => {
       if (options.events.nextSequence) {
@@ -673,6 +722,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 await persist()
                 await publishTerminalEvents("session.completed", undefined, "completed")
                 const completed = await options.sessions.setStatus(input.sessionID, "completed")
+                await settleExecution(executionID, "completed")
                 return completed
               }
 
@@ -681,6 +731,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 await persist()
                 await publishTerminalEvents("session.completed", undefined, "completed")
                 const completed = await options.sessions.setStatus(input.sessionID, "completed")
+                await settleExecution(executionID, "completed")
                 return completed
               }
 
@@ -831,6 +882,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         await persist()
         await publishTerminalEvents("session.completed", undefined, "completed")
         const completed = await options.sessions.setStatus(input.sessionID, "completed")
+        await settleExecution(executionID, "completed")
         return completed
       }
     } catch (error) {
@@ -845,15 +897,25 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         await publishTerminalEvents("session.cancelled", undefined, "cancelled")
         const cancelled =
           current?.status === "cancelled" ? current : await options.sessions.setStatus(input.sessionID, "cancelled")
+        await settleExecution(executionID, "cancelled")
         return cancelled
       }
       await publishTerminalEvents("session.failed", { message: safeErrorMessage(error) }, "failed")
       await options.sessions.setStatus(input.sessionID, "failed")
+      await settleExecution(executionID, "failed")
       throw error
     } finally {
       if (runState.timeoutTimer) clearTimeout(runState.timeoutTimer)
       if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
     }
+  }
+  const settleExecution = async (
+    executionID: string,
+    status: Extract<NexumExecutionRecord["status"], "completed" | "failed" | "cancelled">,
+    errorCode?: NexumExecutionRecord["errorCode"],
+  ) => {
+    if (!options.executionStore) return
+    await options.executionStore.settle(executionID, status, errorCode)
   }
   const canContinue = async (sessionID: string) => {
     const history = await messageStore.load(sessionID)
@@ -864,10 +926,13 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
   }
   const start = (input: NexumCodingLoopExecutionInput): NexumCodingLoopStart => {
     if (activeRuns.has(input.sessionID)) return { accepted: false }
+    const executionID = input.executionID ?? crypto.randomUUID()
+    const executionInput = { ...input, executionID } as NexumCodingLoopExecutionInput
     const runState: ActiveRun = {
       controller: new AbortController(),
       cancelled: false,
       timedOut: false,
+      executionID,
     }
     const timeoutMs = normalizeTimeout(options.runTimeoutMs)
     if (timeoutMs !== undefined) {
@@ -877,8 +942,26 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       }, timeoutMs)
     }
     activeRuns.set(input.sessionID, runState)
-    const admission = options.sessions.setStatus(input.sessionID, "running")
-    const promise = admission.then(() => execute(input, runState))
+    const sessionAdmission = options.sessions.setStatus(input.sessionID, "running")
+    const admission = (async () => {
+      try {
+        await options.executionStore?.claim({
+          executionID,
+          sessionID: input.sessionID,
+          mode: "mode" in input ? input.mode : "prompt",
+          maxAttempts: maxRecoveryAttempts,
+        })
+        return await sessionAdmission
+      } catch (error) {
+        if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
+        await sessionAdmission.then(
+          (session) => session.status === "running" ? options.sessions.setStatus(input.sessionID, "failed") : session,
+          () => undefined,
+        )
+        throw error
+      }
+    })()
+    const promise = admission.then(() => execute(executionInput, runState))
     runState.promise = promise
     const cleanup = () => {
       if (runState.timeoutTimer) clearTimeout(runState.timeoutTimer)
@@ -907,7 +990,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       continuationAdmissions.add(sessionID)
       try {
         if (!(await canContinue(sessionID))) return { accepted: false, reason: "not_continuable" }
-        const started = start({ sessionID, mode: "continue" })
+        const started = start({ sessionID, mode: "continue", executionID: crypto.randomUUID() })
         if (!started.accepted) return { accepted: false, reason: "session_busy" }
         return started
       } finally {
@@ -944,10 +1027,43 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       }
       return latest
     },
+    recover() {
+      if (recoveryPromise) return recoveryPromise
+      recoveryPromise = recoverPendingExecutions()
+      return recoveryPromise
+    },
+  }
+
+  async function recoverPendingExecutions(): Promise<readonly NexumExecutionRecord[]> {
+    if (!options.executionStore) return []
+    const records = await options.executionStore.list()
+    const stale = records.filter((record) => record.status === "running")
+    const recovered = await Promise.all(stale.map(async (record) => recoverExecution(record)))
+    return recovered
+  }
+
+  async function recoverExecution(record: NexumExecutionRecord): Promise<NexumExecutionRecord> {
+    try {
+      const session = await options.sessions.get(record.sessionID)
+      if (!session) return options.executionStore!.settle(record.executionID, "recovery_waiting", "session_not_found")
+      if (record.attempt >= Math.min(record.maxAttempts, maxRecoveryAttempts)) {
+        return options.executionStore!.settle(record.executionID, "recovery_exhausted", "attempt_limit")
+      }
+      if (!(await canContinue(record.sessionID))) {
+        return options.executionStore!.settle(record.executionID, "recovery_waiting", "not_continuable")
+      }
+      const started = start({ sessionID: record.sessionID, mode: "recovery", executionID: record.executionID })
+      if (!started.accepted) return record
+      void started.promise.catch(() => undefined)
+      return (await options.executionStore!.get(record.executionID)) ?? record
+    } catch {
+      return (await options.executionStore?.get(record.executionID)) ?? record
+    }
   }
 }
 
 interface ActiveRun {
+  readonly executionID: string
   readonly controller: AbortController
   promise?: Promise<SessionRecord>
   cancelled: boolean

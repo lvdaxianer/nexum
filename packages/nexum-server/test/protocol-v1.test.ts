@@ -3,6 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { NEXUM_EVENT_TYPES } from "@nexum/protocol"
+import { createEmbeddedRuntime } from "@nexum/application"
+import { createMemoryPersistence } from "@nexum/persistence-memory"
 import { createNexumSessionService } from "./test-ports.ts"
 import { createNexumEventHub } from "../src/events.ts"
 import { startNexumServer, type NexumServer } from "../src/index.ts"
@@ -97,4 +99,39 @@ test("emits SSE event and id fields and replays after Last-Event-ID", async () =
   expect(text).toContain("id: event_001")
   expect(text).toContain('"eventID":"event_001"')
   await reader.cancel()
+})
+
+test("returns safe execution recovery status for a session", async () => {
+  const persistence = createMemoryPersistence()
+  const directory = await mkdtemp(join(tmpdir(), "nexum-protocol-v1-recovery-"))
+  directories.push(directory)
+  const bootstrapSessions = createNexumSessionService({ store: persistence.sessionStore })
+  const session = await bootstrapSessions.create({ directory })
+  await persistence.messageStore.save(session.sessionID, [{ role: "assistant", content: "已完成" }])
+  await persistence.executionStore.claim({
+    executionID: "exec_safe",
+    sessionID: session.sessionID,
+    mode: "prompt",
+    maxAttempts: 3,
+  })
+  const runtime = createEmbeddedRuntime({
+    persistence,
+    model: {
+      async *prompt() {
+        yield { type: "completed" }
+      },
+    },
+  })
+  const server = await startNexumServer({ port: 0, runtime })
+  servers.push(server)
+
+  const response = await fetch(new URL(`/api/nexum/session/${session.sessionID}/recovery`, server.url))
+  const body = (await response.json()) as {
+    data: readonly [{ executionID: string; status: string; errorCode?: string; directory?: string }]
+  }
+
+  expect(response.status).toBe(200)
+  expect(body.data[0]).toMatchObject({ executionID: "exec_safe", status: "recovery_waiting", errorCode: "not_continuable" })
+  expect(body.data[0]?.directory).toBeUndefined()
+  await runtime.close()
 })

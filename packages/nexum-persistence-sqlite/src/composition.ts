@@ -3,6 +3,7 @@ import { openNexumSqliteDatabase, type NexumSqliteDatabase } from "./database.ts
 import { createSqliteEventHub } from "./events.ts"
 import {
   createSqliteInteractionStore,
+  createSqliteExecutionStore,
   createSqliteMcpCredentialStore,
   createSqliteMcpServerConfigStore,
   createSqliteMemory,
@@ -33,6 +34,7 @@ function composeSqlitePersistence(database: NexumSqliteDatabase): SqlitePersiste
   return {
     databasePath: database.databasePath,
     close: database.close,
+    executionStore: createSqliteExecutionStore(database.database),
     sessionStore: createSqliteSessionStore(database.database),
     messageStore: createSqliteMessageStore(database.database),
     interactionStore: createSqliteInteractionStore(database.database),
@@ -46,7 +48,7 @@ function composeSqlitePersistence(database: NexumSqliteDatabase): SqlitePersiste
     mcpCredentialStore: createSqliteMcpCredentialStore(database.database),
     atomicDelete: async (sessionID) => {
       database.transaction(() => {
-        database.database.query("DELETE FROM nexum_record WHERE (namespace IN ('session', 'message') AND record_key = $sessionID) OR (namespace = 'interaction' AND json_extract(payload, '$.sessionID') = $sessionID)").run({ $sessionID: sessionID })
+        database.database.query("DELETE FROM nexum_record WHERE (namespace IN ('session', 'message') AND record_key = $sessionID) OR (namespace IN ('interaction', 'execution') AND (record_key = $sessionID OR json_extract(payload, '$.sessionID') = $sessionID))").run({ $sessionID: sessionID })
         void eventHub.delete(sessionID)
       })
     },
