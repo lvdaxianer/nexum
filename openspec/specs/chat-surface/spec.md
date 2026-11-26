@@ -21,7 +21,7 @@ ChatSurface SHALL require a Session ID and SHALL not create, select, rename or d
 
 ### Requirement: ChatSurface SHALL provide complete chat runtime interactions
 
-ChatSurface SHALL expose the existing Protocol operations needed to load paginated history, send Prompt, continue or cancel a run, subscribe to ordered events, recover after reconnect, and surface stable errors. A submitted user Prompt SHALL remain rendered while asynchronous state, history, or event responses are applied. The cancel operation SHALL be visible and actionable only when the Protocol Session State declares `canCancel` true.
+ChatSurface SHALL expose the existing Protocol operations needed to load paginated history, send Prompt, continue or cancel a run, subscribe to ordered events, recover after reconnect, and surface stable errors. A submitted user Prompt SHALL remain rendered while asynchronous state, history, or event responses are applied.
 
 #### Scenario: Submit a prompt
 
@@ -42,6 +42,10 @@ ChatSurface SHALL expose the existing Protocol operations needed to load paginat
 
 - **WHEN** Session state or history completes after a user Prompt was rendered
 - **THEN** ChatSurface keeps the user Prompt visible and does not replace it with only pending interaction items or runtime status items
+
+### Requirement: ChatSurface SHALL gate run cancellation by the Protocol capability
+
+ChatSurface SHALL render and invoke the run cancellation control only when the Protocol Session State declares `canCancel` true.
 
 #### Scenario: Hide cancel when the protocol denies cancellation
 
