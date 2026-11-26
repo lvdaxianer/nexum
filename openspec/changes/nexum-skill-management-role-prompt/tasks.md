@@ -35,10 +35,10 @@
 
 ## 6. 集成验证与真实浏览器验收
 
-- [ ] 6.1 运行所有受影响 package 的 typecheck/test，并运行 `bunx openspec validate nexum-skill-management-role-prompt --strict`；记录既有基线失败与本变更结果，修复本变更引入的问题。
-- [ ] 6.2 启动本地前后端服务，用真实浏览器会话在 Skills 面板注册 `/Users/lvdaxianer/workspace/uino/project/ontomato_enterprise/skills/metric-view-lifecycle`，确认 ready、刷新后仍在、`@metric-view-lifecycle` 可激活。
-- [ ] 6.3 在浏览器中取消注册并确认 UI 移除记录、源目录仍存在；配置中文默认角色提示词并发送 Session 请求，确认模型上下文包含原文 system message 且 Nexum 未改写模型响应。
-- [ ] 6.4 完成代码审查、工作树验证、提交并合并回 `dev-v0.0.1`，再次检查集成分支状态和验收证据。
+- [x] 6.1 运行所有受影响 package 的 typecheck/test，并运行 `bunx openspec validate nexum-skill-management-role-prompt --strict`；记录既有基线失败与本变更结果，修复本变更引入的问题。
+- [x] 6.2 启动本地前后端服务，用真实浏览器会话在 Skills 面板注册 `/Users/lvdaxianer/workspace/uino/project/ontomato_enterprise/skills/metric-view-lifecycle`，确认 ready、刷新后仍在、`@metric-view-lifecycle` 可激活。
+- [x] 6.3 在浏览器中取消注册并确认 UI 移除记录、源目录仍存在；配置中文默认角色提示词并发送 Session 请求，确认模型上下文包含原文 system message 且 Nexum 未改写模型响应。
+- [x] 6.4 完成代码审查、工作树验证、提交并合并回 `dev-v0.0.1`，再次检查集成分支状态和验收证据。
 
 ## Workflow follow-up
 
