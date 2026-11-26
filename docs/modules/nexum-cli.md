@@ -1,4 +1,6 @@
-# `@nexum/cli`
+# `nexum/cli`
+
+源码模块：`@nexum/cli`。CLI 是随 `nexum` 发布的终端入口，不需要单独安装 `@nexum/cli`。
 
 状态：现状基线
 
@@ -12,19 +14,14 @@
 
 它不负责 Core 执行语义、协议实现或业务决策；这些由 Server/Application/Core 负责。CLI 只消费协议并投影状态。
 
-## 公开入口与接入
+## 公开 API
 
-包通过 `bin` 暴露 `nexum` 命令，入口为 [`src/main.ts`](../../packages/nexum-cli/src/main.ts)：
+包通过 `bin` 暴露 `nexum` 命令。用户可以直接使用：
 
 ```bash
-# 仓库根目录(推荐)
-bun run cli -- --help
-
-# 开发环境直接运行
-bun packages/nexum-cli/src/main.ts --help
-
-# 或通过 package script
-bun run --cwd packages/nexum-cli start -- --help
+nexum --help
+nexum status
+nexum session list
 ```
 
 连接地址按 `--server` 标志 > `$NEXUM_API_URL` > `http://127.0.0.1:4097` 顺序解析。启动时先做 capabilities 探测，连接失败会提示启动 Server 的方式并以退出码 1 结束；`theme` 是纯本地命令，在探测前短路，不要求 Server 可达。退出码约定：`0` 成功、`1` 失败、`2` 用法错误、`130` 用户取消。
@@ -33,20 +30,20 @@ bun run --cwd packages/nexum-cli start -- --help
 
 以 `src/main.ts` 的 `USAGE` 为准：
 
-| 命令 | 作用 |
-| ---- | ---- |
-| `nexum`（无命令） | 进入 REPL，新会话（首条消息时懒创建） |
-| `nexum resume` | 交互式选择会话恢复；`-c`/`--continue` 跳过选择直接恢复最近 |
-| `nexum session list` / `session create [--dir <路径>] [--name <名称>]` / `session delete <id>` | 列出、创建或删除会话 |
-| `nexum prompt <文本> [--session <id>]` | 一次性流式执行，退出码 0/1/130 |
-| `nexum status` | 连接与配置总览 |
-| `nexum doctor` | 逐项诊断，存在失败项时退出码 1 |
-| `nexum theme [dark\|light\|auto]` | 查看/切换主题，写入 `~/.nexum/cli.json`，下次启动生效 |
-| `nexum model get \| set \| probe` | 读取、交互式更新和探测模型配置 |
-| `nexum role-prompt get \| set <文件> \| reset` | 读取、更新和重置角色提示 |
-| `nexum skill list \| detail <id> \| validate [id] \| refresh [id] \| register <地址> \| unregister <id>` | Skill 发现、校验和管理 |
-| `nexum mcp list \| add \| connect <id> \| disconnect <id> \| remove <id> \| tools <id> \| resources <id> \| prompts <id>` | MCP 服务器与能力管理 |
-| `nexum permission list \| allow <动作> [范围] \| deny <动作> [范围] \| remove <id> \| mode ask\|allow` | 权限规则与模式管理：规则表效果着色（allow 绿 / ask 黄 / deny 红），通配规则标注 `← 当前模式`；`mode allow` 写通配规则（危险操作仍会询问），`mode ask` 移除它 |
+| 命令                                                                                                                      | 作用                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `nexum`（无命令）                                                                                                         | 进入 REPL，新会话（首条消息时懒创建）                                                                                                                        |
+| `nexum resume`                                                                                                            | 交互式选择会话恢复；`-c`/`--continue` 跳过选择直接恢复最近                                                                                                   |
+| `nexum session list` / `session create [--dir <路径>] [--name <名称>]` / `session delete <id>`                            | 列出、创建或删除会话                                                                                                                                         |
+| `nexum prompt <文本> [--session <id>]`                                                                                    | 一次性流式执行，退出码 0/1/130                                                                                                                               |
+| `nexum status`                                                                                                            | 连接与配置总览                                                                                                                                               |
+| `nexum doctor`                                                                                                            | 逐项诊断，存在失败项时退出码 1                                                                                                                               |
+| `nexum theme [dark\|light\|auto]`                                                                                         | 查看/切换主题，写入 `~/.nexum/cli.json`，下次启动生效                                                                                                        |
+| `nexum model get \| set \| probe`                                                                                         | 读取、交互式更新和探测模型配置                                                                                                                               |
+| `nexum role-prompt get \| set <文件> \| reset`                                                                            | 读取、更新和重置角色提示                                                                                                                                     |
+| `nexum skill list \| detail <id> \| validate [id] \| refresh [id] \| register <地址> \| unregister <id>`                  | Skill 发现、校验和管理                                                                                                                                       |
+| `nexum mcp list \| add \| connect <id> \| disconnect <id> \| remove <id> \| tools <id> \| resources <id> \| prompts <id>` | MCP 服务器与能力管理                                                                                                                                         |
+| `nexum permission list \| allow <动作> [范围] \| deny <动作> [范围] \| remove <id> \| mode ask\|allow`                    | 权限规则与模式管理：规则表效果着色（allow 绿 / ask 黄 / deny 红），通配规则标注 `← 当前模式`；`mode allow` 写通配规则（危险操作仍会询问），`mode ask` 移除它 |
 
 全局选项：`--server`、`--session`、`-c`/`--continue`、`--theme`、`--no-anim`、`--version`、`--help`。
 
@@ -56,18 +53,18 @@ bun run --cwd packages/nexum-cli start -- --help
 
 输入框仅在空闲时绘制，为五行闭合框（顶边 / 提示行 `输入任务,Enter 发送 · @ 引用 Skill · /help 命令` / `›` 输入行 / 留白行 / 底边），宽度随终端（上限 110 列），光标归位框内输入行；提交后光标移至框外，运行中不显示提示符，事件输出不与输入行粘连；运行结束输入框自动重画。提示行右侧常驻状态段 `<模型> · <权限>`：模型段为当前模型名（青色），未配置模型时显示黄色 `未配置模型` 提醒；权限段为当前权限模式（`权限:ask/allow/deny`，有规则时追加 `· N 规则`；存在 `* *` 通配规则时取它的效果，否则为 ask）。启动时并行拉取，`/model`、`/permissions` 变更与权限卡片回复（allow_always 会写规则）后即时刷新，任一段拉取失败静默留空该段；框宽放不下状态段时退回纯提示行。非 TTY 或无色终端降级为普通 `nexum ▸ ` 提示符（无状态段）。视觉参照 `artifacts/nexum-cli-input-box.png`（`artifacts/` 不入库，仅作视觉参照）。slash 命令以 `src/repl.ts` 的 `HELP` 为准：
 
-| 命令 | 作用 | 命令 | 作用 |
-| ---- | ---- | ---- | ---- |
-| `/help` | 显示帮助 | `/new [名称]` | 新会话（首条消息时创建） |
-| `/sessions` | 列出会话 | `/use <id>` | 切换会话 |
-| `/resume` | 交互式恢复会话 | `/status` | 连接与配置总览 |
-| `/skills` | 列出可用 Skill（仅 `@id`） | `/mcp` | MCP 列表 |
-| `/model` | 当前模型 | `/theme` | 查看/切换主题 |
-| `/permissions` | 查看/切换权限（子命令同 `nexum permission`，与一次性命令共享实现） | | |
-| `/events` | 最近事件 | `/clear` | 清屏 |
-| `/cancel` | 取消当前运行 | `/continue` | 继续上次运行 |
-| `/thinking live\|summary\|full` | 思考展示模式（默认 live） | `/expand` | 展开最近思考 |
-| `/quit` | 退出 | | |
+| 命令                            | 作用                                                               | 命令          | 作用                     |
+| ------------------------------- | ------------------------------------------------------------------ | ------------- | ------------------------ |
+| `/help`                         | 显示帮助                                                           | `/new [名称]` | 新会话（首条消息时创建） |
+| `/sessions`                     | 列出会话                                                           | `/use <id>`   | 切换会话                 |
+| `/resume`                       | 交互式恢复会话                                                     | `/status`     | 连接与配置总览           |
+| `/skills`                       | 列出可用 Skill（仅 `@id`）                                         | `/mcp`        | MCP 列表                 |
+| `/model`                        | 当前模型                                                           | `/theme`      | 查看/切换主题            |
+| `/permissions`                  | 查看/切换权限（子命令同 `nexum permission`，与一次性命令共享实现） |               |                          |
+| `/events`                       | 最近事件                                                           | `/clear`      | 清屏                     |
+| `/cancel`                       | 取消当前运行                                                       | `/continue`   | 继续上次运行             |
+| `/thinking live\|summary\|full` | 思考展示模式（默认 live）                                          | `/expand`     | 展开最近思考             |
+| `/quit`                         | 退出                                                               |               |                          |
 
 ## 思考展示
 
@@ -110,16 +107,6 @@ assistant 文本与历史回放经流式 markdown 渲染（[`src/markdown.ts`](.
 - 事件流：复用 [`docs/capabilities/events.md`](../capabilities/events.md) 的序列与恢复游标，思考展示对应 `assistant.thinking`/`assistant.reasoning` 事件。
 - Permission/Question：终端问答实现 [`docs/ui/permission.md`](../ui/permission.md) 与 [`docs/ui/question.md`](../ui/question.md) 的交互语义；非 TTY 环境自动拒绝权限、自动取消问题。
 - 管理面：model、role-prompt、skill、mcp 命令一一对应 [`apis/nexum.md`](../../apis/nexum.md) 的能力分组。
-
-## 测试与验证
-
-```sh
-cd packages/nexum-cli
-bun test
-bun run typecheck:tsc
-```
-
-测试位于 [`packages/nexum-cli/test/`](../../packages/nexum-cli/test/)，按模块拆分（`term`/`anim`/`io`/`markdown`/`render`/`interact`/`commands`/`admin`/`repl`/`config`/`main`），通过注入内存 IO、数组行源和假适配器覆盖真实交互路径。
 
 ## 修改同步清单
 

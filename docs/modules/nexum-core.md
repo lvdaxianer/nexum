@@ -1,4 +1,6 @@
-# `@nexum/core`
+# `nexum/core`
+
+源码模块：`@nexum/core`。用户安装唯一公共包 `nexum` 后，从 `nexum/core` 导入类型和端口。
 
 状态：现状基线
 
@@ -12,7 +14,7 @@
 
 Core 不依赖 HTTP、具体 UI、文件格式或外部模型供应商。外层通过端口注入适配器，Server/Application 再把 Core 结果映射为 Protocol 和事件。
 
-## 公开入口
+## 公开 API
 
 入口 [`src/index.ts`](../../packages/nexum-core/src/index.ts) 导出或汇聚：
 
@@ -23,6 +25,16 @@ Core 不依赖 HTTP、具体 UI、文件格式或外部模型供应商。外层�
 - Skill/Role Prompt：Skill 注册、调用和角色提示存储契约。
 
 实现文件按能力拆分在 [`src/model.ts`](../../packages/nexum-core/src/model.ts)、[`src/tools.ts`](../../packages/nexum-core/src/tools.ts)、[`src/permission.ts`](../../packages/nexum-core/src/permission.ts)、[`src/context.ts`](../../packages/nexum-core/src/context.ts)、[`src/runtime.ts`](../../packages/nexum-core/src/runtime.ts) 和 [`src/skill-registry.ts`](../../packages/nexum-core/src/skill-registry.ts)。
+
+| API                                   | 关键参数                                               | 作用                                                  |
+| ------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- |
+| `ModelPort.prompt(input)`             | `sessionID`、`text`、`messages`、`tools`、`signal`     | 向模型提交一次生成请求并返回异步增量                  |
+| `NexumCodingLoop.run(input)`          | `sessionID`、`text`                                    | 执行一次用户任务，自动处理工具、权限、Question 和事件 |
+| `NexumSessionService.create(input)`   | `directory`、`name?`                                   | 创建绑定工作目录的 Session                            |
+| `ToolPort.execute(request)`           | `sessionID`、`toolName`、`action`、`resource`、`input` | 执行已通过权限判断的工具请求                          |
+| `NexumRolePromptStore.update(prompt)` | `prompt`                                               | 更新 Runtime 级默认角色提示词                         |
+
+`ModelPrompt.messages` 是模型可见的消息列表；一般由 Coding Loop 组合历史、角色提示词、Skill 和项目上下文，普通使用者不需要手动维护。用户本轮输入使用 `NexumCodingLoopInput.text`，不是角色提示词字段。
 
 ## 端口与运行边界
 
@@ -47,16 +59,6 @@ Core 不依赖 HTTP、具体 UI、文件格式或外部模型供应商。外层�
 ## 依赖边界
 
 Core 是领域层，不依赖 Persistence、Application、Server、Client 或任何 UI 包。Application 负责组合 Core 端口；Integrations 和 Persistence 分别提供外部系统与存储适配。
-
-## 测试与验证
-
-```sh
-cd packages/nexum-core
-bun test
-bun run typecheck
-```
-
-测试覆盖 Coding Loop、Session、Runtime、工具、权限、Question、上下文、Model 和 Skill；入口示例包括 [`test/coding-loop.test.ts`](../../packages/nexum-core/test/coding-loop.test.ts)、[`test/runtime.test.ts`](../../packages/nexum-core/test/runtime.test.ts)、[`test/permission.test.ts`](../../packages/nexum-core/test/permission.test.ts) 和 [`test/package-boundary.test.ts`](../../packages/nexum-core/test/package-boundary.test.ts)。
 
 ## 修改同步清单
 

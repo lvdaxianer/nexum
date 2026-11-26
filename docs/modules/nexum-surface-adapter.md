@@ -1,4 +1,6 @@
-# `@nexum/surface-adapter`
+# `nexum/surface-adapter`
+
+源码模块：`@nexum/surface-adapter`。用户安装唯一公共包 `nexum` 后，从 `nexum/surface-adapter` 导入聊天协议适配器。
 
 状态：现状基线
 
@@ -12,7 +14,7 @@
 
 它不负责 Session 业务规则、权限策略、事件去重或 UI 渲染；这些分别由 Server/Application/Core 和各 Surface 自己负责。
 
-## 公开入口与接入
+## 公开 API
 
 入口 [`src/index.ts`](../../packages/nexum-surface-adapter/src/index.ts) 导出 `CHAT_PROTOCOL_METHODS`、`ChatProtocolAdapter`、`ChatProtocolError`、`normalizeChatProtocolError`、`createChatProtocolAdapter` 以及请求/标识类型，并重新导出 `NexumEvent`、`NexumPermission`、`NexumQuestion`、`NexumSession`、`NexumSessionMessages`、`NexumSkill` 协议类型。
 
@@ -29,19 +31,29 @@ for await (const event of adapter.subscribeEvents({ sessionID, afterSequence: st
 
 `createChatProtocolAdapter` 接受 `@nexum/client` 的 `NexumClientOptions`（`baseUrl`、自定义 `fetch` 等），不传时连接默认地址。宿主也可以不依赖默认实现，自行实现 `ChatProtocolAdapter` 契约接入任意传输。
 
+| API                                  | 参数                                     | 返回值                      | 作用                               |
+| ------------------------------------ | ---------------------------------------- | --------------------------- | ---------------------------------- |
+| `createChatProtocolAdapter(options)` | `baseUrl?`、`fetch?`                     | `ChatProtocolAdapter`       | 创建基于 Nexum Client 的默认适配器 |
+| `adapter.loadHistory(input)`         | `sessionID`、分页参数                    | 消息历史                    | 加载 Session 历史                  |
+| `adapter.loadState(sessionID)`       | `sessionID`                              | Session 状态                | 获取恢复快照                       |
+| `adapter.subscribeEvents(input)`     | `sessionID`、`afterSequence?`、`signal?` | `AsyncIterable<NexumEvent>` | 订阅并恢复事件                     |
+| `adapter.sendMessage(input)`         | `sessionID`、`text`                      | 受理结果                    | 提交用户消息                       |
+| `adapter.replyPermission(input)`     | `sessionID`、`requestID`、`decision`     | 回复结果                    | 回复工具权限请求                   |
+| `adapter.replyQuestion(input)`       | `sessionID`、`requestID`、`answers`      | 回复结果                    | 回复结构化反问                     |
+
 ## 方法分组
 
 `ChatProtocolAdapter` 覆盖 `CHAT_PROTOCOL_METHODS` 列出的十个方法：
 
-| 分组        | 方法                                                            | 作用                                       |
-| ----------- | --------------------------------------------------------------- | ------------------------------------------ |
-| 历史与状态  | `loadHistory()`、`loadState()`                                  | 分页加载历史消息、读取会话状态快照         |
-| 事件        | `subscribeEvents()`                                             | 从 `afterSequence` 之后订阅会话 SSE 事件   |
-| Skill       | `listSkills()`                                                  | 查询可用于 `@skill` 自动补全的技能列表     |
-| 消息        | `sendMessage()`                                                 | 向会话发送用户消息                         |
-| Permission  | `replyPermission()`                                             | 回复权限请求（`allow_once`/`allow_always`/`deny`） |
-| Question    | `replyQuestion()`、`cancelQuestion()`                           | 提交问题答案或取消待回答问题               |
-| 运行控制    | `cancelRun()`、`continueRun()`                                  | 取消当前运行、继续可恢复的运行             |
+| 分组       | 方法                                  | 作用                                               |
+| ---------- | ------------------------------------- | -------------------------------------------------- |
+| 历史与状态 | `loadHistory()`、`loadState()`        | 分页加载历史消息、读取会话状态快照                 |
+| 事件       | `subscribeEvents()`                   | 从 `afterSequence` 之后订阅会话 SSE 事件           |
+| Skill      | `listSkills()`                        | 查询可用于 `@skill` 自动补全的技能列表             |
+| 消息       | `sendMessage()`                       | 向会话发送用户消息                                 |
+| Permission | `replyPermission()`                   | 回复权限请求（`allow_once`/`allow_always`/`deny`） |
+| Question   | `replyQuestion()`、`cancelQuestion()` | 提交问题答案或取消待回答问题                       |
+| 运行控制   | `cancelRun()`、`continueRun()`        | 取消当前运行、继续可恢复的运行                     |
 
 具体 URL、请求字段和响应状态见 [`apis/nexum.md`](../../apis/nexum.md)。
 
@@ -58,16 +70,6 @@ for await (const event of adapter.subscribeEvents({ sessionID, afterSequence: st
 - 事件订阅：承载 [`docs/capabilities/events.md`](../capabilities/events.md) 的事件序列与恢复游标（`afterSequence`），去重和投影由 Surface 负责。
 - Permission/Question：把 [`docs/ui/permission.md`](../ui/permission.md) 与 [`docs/ui/question.md`](../ui/question.md) 的用户决定映射为协议回复。
 - 交互协议：方法集对应 [`docs/ui/interaction-protocol.md`](../ui/interaction-protocol.md) 中聊天场景需要的请求/响应通道。
-
-## 测试与验证
-
-```sh
-cd packages/nexum-surface-adapter
-bun test
-bun run typecheck:tsc
-```
-
-测试位于 [`packages/nexum-surface-adapter/test/adapter-contract.test.ts`](../../packages/nexum-surface-adapter/test/adapter-contract.test.ts) 与 [`packages/nexum-surface-adapter/test/default-adapter.test.ts`](../../packages/nexum-surface-adapter/test/default-adapter.test.ts)，覆盖契约完整性和默认实现的协议映射。
 
 ## 修改同步清单
 

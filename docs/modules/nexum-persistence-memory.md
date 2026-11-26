@@ -9,6 +9,12 @@ import { createMemoryPersistence } from "nexum/persistence/memory"
 const runtime = createEmbeddedRuntime({ persistence: createMemoryPersistence() })
 ```
 
+## 公开 API
+
+### `createMemoryPersistence()`
+
+无参数，返回完整的 `NexumPersistence` 组合，可传给 `createEmbeddedRuntime({ persistence })`。它没有文件路径、数据库路径或重启恢复参数。
+
 它不创建文件或数据库，每次创建组合都是独立状态，适合嵌入式运行和快速测试；进程重启后不会恢复。需要恢复语义时使用 `nexum/persistence/file` 或 `nexum/persistence/sqlite`。
 
-源码边界：`packages/nexum-persistence-memory/src/index.ts`；仓库验证：`bun test --cwd packages/nexum-persistence-memory`。
+源码边界：`packages/nexum-persistence-memory/src/index.ts`。

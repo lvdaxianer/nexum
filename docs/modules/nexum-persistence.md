@@ -1,4 +1,6 @@
-# `@nexum/persistence`
+# `nexum/persistence`
+
+源码模块：`@nexum/persistence`。用户安装唯一公共包 `nexum` 后，从 `nexum/persistence` 导入持久化契约和 Store 实现。
 
 状态：现状基线
 
@@ -12,7 +14,7 @@
 
 当前持久化范围包括 Session、Message、Interaction、Model Config、Role Prompt、Permission Policy、Skill 注册、Event 和 Memory。策略判定仍由 Core 负责，本包只保存策略状态。
 
-## 公开入口
+## 公开 API
 
 入口 [`src/index.ts`](../../packages/nexum-persistence/src/index.ts) 导出：
 
@@ -21,6 +23,17 @@
 - Event/Memory：`createNexumEventHub`、`createFileMemory`、`createInMemoryMemory`。
 
 各 Store 通过 Core 接口提供最小读写能力。调用方由 Application 选择文件或内存实现，Server 不应复制 Store 的读写逻辑。
+
+| API                               | 参数                      | 返回值          | 作用                          |
+| --------------------------------- | ------------------------- | --------------- | ----------------------------- |
+| `createInMemorySessionStore()`    | 无                        | `SessionStore`  | 创建进程内 Session 存储       |
+| `createFileSessionStore(options)` | `filePath`                | `SessionStore`  | 使用 JSON 文件保存 Session    |
+| `createInMemoryMessageStore()`    | 无                        | `MessageStore`  | 创建进程内消息历史存储        |
+| `createFileMessageStore(options)` | `filePath`                | `MessageStore`  | 使用 JSON 文件保存消息历史    |
+| `createNexumEventHub(options?)`   | `filePath?`、保留策略选项 | `NexumEventHub` | 发布、订阅和回放 Runtime 事件 |
+| `createInMemoryMemory(options?)`  | Memory 配置可选           | `MemoryPort`    | 创建进程内记忆实现            |
+
+具体 Runtime 组合优先使用 `nexum/application` 的创建器；只有需要替换单个 Store 或实现自定义 Persistence 时，才直接调用这些 API。
 
 ## 持久化与恢复
 
@@ -37,16 +50,6 @@ permission-policies.json  events.json         memory.json
 ## 依赖边界
 
 Persistence 依赖 Core 的端口和类型，不依赖 Application、Server、Client 或 UI；Application 组合它，Server 通过 Application 访问它。事件与 Session 的公共行为见 [`docs/capabilities/events.md`](../capabilities/events.md) 和 [`docs/capabilities/session.md`](../capabilities/session.md)。
-
-## 测试与验证
-
-```sh
-cd packages/nexum-persistence
-bun test
-bun run typecheck
-```
-
-Store 测试位于 [`packages/nexum-persistence/test/session-store.test.ts`](../../packages/nexum-persistence/test/session-store.test.ts)、[`test/message-store.test.ts`](../../packages/nexum-persistence/test/message-store.test.ts)、[`test/interaction-store.test.ts`](../../packages/nexum-persistence/test/interaction-store.test.ts)、[`test/model-config.test.ts`](../../packages/nexum-persistence/test/model-config.test.ts) 和 [`test/memory.test.ts`](../../packages/nexum-persistence/test/memory.test.ts)。
 
 ## 修改同步清单
 

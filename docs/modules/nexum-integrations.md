@@ -1,4 +1,6 @@
-# `@nexum/integrations`
+# `nexum/integrations`
+
+源码模块：`@nexum/integrations`。用户安装唯一公共包 `nexum` 后，从 `nexum/integrations` 导入外部系统适配器。
 
 状态：现状基线
 
@@ -10,7 +12,7 @@
 
 `@nexum/integrations` 是 Core Port 的外部系统集成层。它把 OpenAI-compatible Model、本地 Host、目录边界、项目上下文、本地 Skill 来源和 MCP Transport 接入 Core，不负责 Persistence 或 Application 业务编排。
 
-## 公开入口
+## 公开 API
 
 入口 [`src/index.ts`](../../packages/nexum-integrations/src/index.ts) 导出：
 
@@ -25,6 +27,18 @@ import { createLocalHostAdapter, createOpenAICompatibleModelPort } from "nexum/i
 const host = createLocalHostAdapter()
 const model = createOpenAICompatibleModelPort({ config: modelConfig })
 ```
+
+| API                                        | 关键参数                | 返回值                    | 作用                            |
+| ------------------------------------------ | ----------------------- | ------------------------- | ------------------------------- |
+| `createOpenAICompatibleModelPort(options)` | `config`、请求/超时配置 | `ModelPort`               | 接入 OpenAI-compatible 模型服务 |
+| `createLocalHostAdapter(options?)`         | 工作目录和执行边界      | `HostPort`                | 提供文件和 Shell 宿主能力       |
+| `createLocalDirectoryValidator()`          | 无                      | `NexumDirectoryValidator` | 校验 Session 工作目录           |
+| `createNexumProjectContextPort(options)`   | 项目目录和上下文来源    | `ProjectContextPort`      | 提供项目级上下文                |
+| `createLocalSkillSource(options)`          | Skill 根目录            | `NexumSkillSource`        | 发现本地 Skill 文件             |
+| `createHttpMcpAdapter(options)`            | MCP URL、认证和请求配置 | `McpPort`                 | 连接 HTTP MCP Server            |
+| `createStdioMcpAdapter(options)`           | 命令、参数和环境变量    | `McpPort`                 | 连接 stdio MCP Server           |
+
+模型适配器的 `config` 决定 `baseUrl`、模型名称和凭据引用；它不会接收角色提示词。角色提示词由 Application 的 `rolePrompt` 注入，用户任务由 Coding Loop 的 `text` 传入。
 
 Model 适配器只访问配置中的活动 `baseUrl`，请求凭据通过 Authorization 发送；错误摘要和日志必须脱敏。Host 适配器拒绝越出 Session 工作目录的路径。
 
@@ -45,17 +59,6 @@ Model 适配器只访问配置中的活动 `baseUrl`，请求凭据通过 Author
 ## 依赖边界
 
 Integrations 只依赖 Core；不能依赖 Persistence、Application、Server、Client 或 UI。它是可替换的外部系统适配器，Application 在 Runtime 创建时注入它。
-
-## 测试与验证
-
-该包当前没有 package-local `*.test.ts` 文件，因此直接运行 `bun test` 会得到 Bun 的 `No tests found`；不要把它当作集成测试通过信号。包级类型检查使用：
-
-```sh
-cd packages/nexum-integrations
-bun run typecheck
-```
-
-当前集成行为主要由 [`packages/nexum-application/test/runtime.test.ts`](../../packages/nexum-application/test/runtime.test.ts) 通过真实 Adapter 组合验证；Core 的 Model、Host、MCP 和目录边界测试也应保持通过。新增集成测试时放入本包 `test/`，再恢复 `bun test` 作为独立验证命令。
 
 ## 修改同步清单
 

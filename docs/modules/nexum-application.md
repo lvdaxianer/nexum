@@ -1,4 +1,6 @@
-# `@nexum/application`
+# `nexum/application`
+
+源码模块：`@nexum/application`。用户安装唯一公共包 `nexum` 后，从 `nexum/application` 导入。
 
 状态：现状基线
 
@@ -14,7 +16,7 @@ Application 不定义通用存储格式，也不直接处理 HTTP/UI。替换模
 
 它通过 Server 映射为 [`apis/nexum.md`](../../apis/nexum.md) 中的 HTTP/SSE 能力；Application 本身不是公共 HTTP API。
 
-## 公开入口与组合方式
+## 公开 API
 
 入口 [`src/index.ts`](../../packages/nexum-application/src/index.ts) 主要导出：
 
@@ -28,11 +30,37 @@ Application 不定义通用存储格式，也不直接处理 HTTP/UI。替换模
 import { createLocalRuntime } from "nexum/application"
 
 const runtime = createLocalRuntime({ dataDirectory: ".nexum" })
-const session = await runtime.sessions.create({ directory: process.cwd() })
+const session = await runtime.sessionService.create({ directory: process.cwd() })
 await runtime.close()
 ```
 
 `createEmbeddedRuntime` 会组合 Session、Model、Permission、Question、Skill、Tool、Host、Memory、Event Hub 和 Coding Loop；`createLocalRuntime` 在此基础上把各 Store 指向数据目录。
+
+### Runtime 创建器
+
+| API                               | 参数                  | 返回值                         | 适用场景                       |
+| --------------------------------- | --------------------- | ------------------------------ | ------------------------------ |
+| `createEmbeddedRuntime(options?)` | `NexumRuntimeOptions` | `NexumDefaultRuntime`          | 内存运行、嵌入宿主和一次性任务 |
+| `createLocalRuntime(options?)`    | `NexumRuntimeOptions` | `NexumDefaultRuntime`          | 文件持久化的本地应用           |
+| `createSqliteRuntime(options?)`   | `NexumRuntimeOptions` | `Promise<NexumDefaultRuntime>` | SQLite 事务和重启恢复          |
+
+### `NexumRuntimeOptions` 常用参数
+
+| 参数             | 类型                    | 必填 | 说明                                                          |
+| ---------------- | ----------------------- | ---- | ------------------------------------------------------------- |
+| `model`          | `ModelPort`             | 否   | 注入自定义模型；省略时使用 `modelConfig` 创建默认模型适配器   |
+| `modelConfig`    | `NexumModelConfigStore` | 否   | 保存和读取模型配置                                            |
+| `rolePrompt`     | `NexumRolePromptStore`  | 否   | Runtime 级角色提示词；每次模型调用前临时注入为 system message |
+| `rolePromptFile` | `string`                | 否   | 使用文件保存角色提示词                                        |
+| `dataDirectory`  | `string`                | 否   | File Persistence 的数据目录                                   |
+| `databasePath`   | `string`                | 否   | SQLite Persistence 的数据库路径                               |
+| `host`           | `HostPort`              | 否   | 文件、Shell 等宿主能力                                        |
+| `sandbox`        | `NexumSandboxOptions`   | 否   | 宿主能力的安全边界                                            |
+| `skillRoots`     | `string[]`              | 否   | Skill 搜索目录                                                |
+| `mcp`            | `McpPort`               | 否   | 注入 MCP 外部能力                                             |
+| `persistence`    | `NexumPersistence`      | 否   | 完整替换默认存储组合                                          |
+
+Runtime 创建后最常用的成员是 `sessionService`、`codingLoop`、`rolePrompt`、`permissionBroker`、`questionPort`、`eventHub` 和 `messageStore`。普通用户通常只需要选择一个 Runtime 创建器，再调用 `sessionService.create()` 和 `codingLoop.run()`。
 
 ## Runtime 与端口映射
 
@@ -50,16 +78,6 @@ Server 使用 Application 提供的 Runtime，再将其映射为 [`@nexum/protoc
 ## 依赖边界
 
 Application 依赖 Core、Persistence、Integrations，不能被 Client 或 UI 反向依赖。它是运行时组装层，不拥有 HTTP 路由；完整边界见 [`docs/architecture/module-boundaries.md`](../architecture/module-boundaries.md)。
-
-## 测试与验证
-
-```sh
-cd packages/nexum-application
-bun test
-bun run typecheck
-```
-
-重点测试位于 [`packages/nexum-application/test/runtime.test.ts`](../../packages/nexum-application/test/runtime.test.ts)，覆盖 Embedded/Local Runtime、文件存储、Skill 注册、Memory、MCP 和模型流。
 
 ## 修改同步清单
 

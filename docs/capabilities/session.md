@@ -23,7 +23,82 @@ Session 元数据的公共形状如下：
 
 创建时 `directory` 必须是非空绝对路径，并通过目录校验器；名称为空会被拒绝。Session 列表按更新时间倒序返回。
 
-## 2. 生命周期
+## 2. 最小使用流程
+
+如果通过 TypeScript Client 使用 Server，Session 的完整调用链是：
+
+```ts
+import { Nexum } from "nexum/client"
+
+const client = Nexum.make({ baseUrl: "http://127.0.0.1:4097" })
+const session = await client.experimental.nexum.session.create({
+  directory: "/workspace/demo",
+  name: "demo",
+})
+
+await client.experimental.nexum.session.prompt({
+  sessionID: session.id,
+  text: "检查这个项目的目录结构",
+})
+
+for await (const event of client.experimental.nexum.session.events({
+  sessionID: session.id,
+})) {
+  console.log(event.type, event.data)
+}
+```
+
+角色提示词不放在 `session.prompt` 中。它属于 Runtime 级别的配置，通过 `rolePrompt` 设置；`prompt.text` 只表示用户这一次提交的任务。Coding Loop 会自动把角色提示词、历史消息、用户输入、Skill 和工具定义组合后交给模型。
+
+## 3. Session API 查询
+
+下面的 Client 方法都位于 `client.experimental.nexum.session`。HTTP/SSE 调用方可以在 [Nexum Runtime API](../../apis/nexum.md) 中查询对应的 URL、请求体、响应和错误码。
+
+| 方法                     | 参数                                                   | 返回值                      | 用途                                              |
+| ------------------------ | ------------------------------------------------------ | --------------------------- | ------------------------------------------------- |
+| `create(input)`          | `directory` 必填；`name` 可选                          | `NexumSession`              | 创建一个绑定工作目录的会话                        |
+| `list()`                 | 无                                                     | `NexumSession[]`            | 查询当前 Runtime 的会话列表                       |
+| `state(input)`           | `sessionID` 必填                                       | `NexumSessionState`         | 查询状态、待处理权限/反问和事件游标               |
+| `messages(input)`        | `sessionID` 必填；`before`、`limit`、`snapshotID` 可选 | `NexumSessionMessages`      | 分页读取消息历史；当前为实验性接口                |
+| `update(input)`          | `sessionID`、`name` 必填                               | `NexumSession`              | 修改会话展示名称                                  |
+| `delete(input)`          | `sessionID` 必填                                       | `{ id, deleted: true }`     | 删除会话及其历史、交互和事件                      |
+| `prompt(input)`          | `sessionID`、`text` 必填                               | `{ status: "accepted" }`    | 提交用户任务并异步启动运行                        |
+| `continue(input)`        | `sessionID` 必填                                       | `{ status: "accepted" }`    | 从可恢复的 User/Tool 上下文继续；当前为实验性接口 |
+| `cancel(input)`          | `sessionID` 必填                                       | `{ status: "cancelled" }`   | 取消当前运行和待处理交互                          |
+| `events(input, options)` | `sessionID` 必填；`afterSequence`、`signal` 可选       | `AsyncIterable<NexumEvent>` | 订阅实时事件，并支持断线续订                      |
+
+### 参数怎么理解
+
+| 参数            | 含义                        | 从哪里获得                                                 |
+| --------------- | --------------------------- | ---------------------------------------------------------- |
+| `sessionID`     | 目标会话的唯一标识          | `create()` 返回的 `session.id`，或 `list()` 返回的会话记录 |
+| `directory`     | Agent 可以工作的绝对目录    | 宿主应用选择的项目目录                                     |
+| `name`          | 给用户看的会话名称          | 应用标题或项目名称，可后续修改                             |
+| `text`          | 用户本次要 Agent 完成的任务 | 输入框、任务队列或业务请求                                 |
+| `before`        | 历史分页的结束位置          | 上一次 `messages()` 返回的分页游标                         |
+| `limit`         | 一次读取的历史条数          | 页面按需设置，服务端有最大值                               |
+| `snapshotID`    | 历史分页使用的快照          | 第一次 `messages()` 返回的 `snapshotID`                    |
+| `afterSequence` | 从哪个事件序号之后继续接收  | `state().lastSequence` 或本地已处理的最大序号              |
+
+### Session 和 Prompt 的关系
+
+```text
+create({ directory, name })
+          ↓
+      session.id
+          ↓
+prompt({ sessionID, text })
+          ↓
+  Coding Loop 读取 Session 历史
+          ↓
+  组合角色提示词、Skill、工具和上下文
+          ↓
+        ModelPort
+          ↓
+   文本、工具、权限、Question 和终态事件
+```
+
+## 4. 生命周期
 
 Core 只允许以下状态转移：
 
@@ -49,7 +124,7 @@ running ─────→ failed
 
 同一个 Session 同时只能有一个活动运行。重复 Prompt、Continue 或并发启动会得到 `NEXUM_SESSION_RUN_CONFLICT`，调用方应保留当前 UI 状态并等待终态或执行取消。
 
-## 3. Canonical 消息历史
+## 5. Canonical 消息历史
 
 消息历史由 `MessageStore` 按 Session 保存，支持以下角色：
 
@@ -64,7 +139,7 @@ running ─────→ failed
 
 Session 删除是组合清理：先拒绝正在运行的 Session，再删除消息历史、pending Interaction、事件历史和 Session 索引。删除不存在的 Session 返回 `NEXUM_SESSION_NOT_FOUND`；删除失败不得只从 UI 列表移除而不提示调用方。
 
-## 4. 页面恢复协议
+## 6. 页面恢复协议
 
 推荐的恢复顺序：
 
@@ -75,7 +150,7 @@ Session 删除是组合清理：先拒绝正在运行的 Session，再删除消�
 
 `state` 和 history 是两个独立读取模型：state 表示当前快照，history 表示可见对话，SSE 表示运行过程。不要用“最后一段文本”推断 Session 是否完成，也不要把事件流当作唯一历史来源。
 
-## 5. Continue、Cancel 与失败处理
+## 7. Continue、Cancel 与失败处理
 
 - `canContinue` 只有在最后一条 canonical 消息是非空 `user` 或 `tool` 消息时才为真。
 - Continue 是实验性操作；Session 正在运行时返回 `NEXUM_SESSION_RUN_CONFLICT`，没有可恢复上下文时返回 `NEXUM_SESSION_NOT_CONTINUABLE`。
@@ -83,7 +158,7 @@ Session 删除是组合清理：先拒绝正在运行的 Session，再删除消�
 - 已完成或已失败的 Session 不会因为普通 Cancel 被伪造为取消；调用方应以最终状态和事件为准。
 - 重启后文件 Store 会把遗留的 `running` Session 恢复为 `idle`，避免把进程死亡误认为仍有活动运行；事件和 canonical history 仍可按各自 Store 的持久化能力恢复。
 
-## 6. 相关入口
+## 8. 相关入口
 
 - [事件与 SSE 能力](events.md)
 - [Runtime 运行流程](../architecture/runtime-flow.md)

@@ -1,4 +1,6 @@
-# `@nexum/chat-surface`
+# `nexum/chat-surface`
+
+源码模块：`@nexum/chat-surface`。用户安装唯一公共包 `nexum` 后，从 `nexum/chat-surface` 导入聊天组件。
 
 状态：现状基线
 
@@ -12,7 +14,7 @@
 
 宿主只需要提供 `sessionID` 和协议客户端配置。组件不拥有 Session 业务规则、权限策略或工具执行逻辑；这些由 Server/Application/Core 负责。
 
-## 公开入口与接入
+## 公开 API
 
 入口 [`src/index.ts`](../../packages/nexum-chat-surface/src/index.ts) 导出：
 
@@ -41,6 +43,17 @@ Web Component 接入：
 
 组件使用 Light DOM，不使用 Shadow DOM。自定义元素准备完成后触发 `nexum-chat-ready`，事件 detail 包含 `sessionID`。
 
+### `ChatSurface` 参数
+
+| 参数        | 类型                  | 必填 | 说明                                      |
+| ----------- | --------------------- | ---- | ----------------------------------------- |
+| `sessionID` | `string`              | 是   | 要展示和操作的 Session                    |
+| `client`    | `NexumClientOptions`  | 否   | Server 地址和传输配置                     |
+| `adapter`   | `ChatProtocolAdapter` | 否   | 自定义协议适配器；传入后可替换默认 Client |
+| `title`     | `string`              | 否   | 聊天面板标题                              |
+
+Web Component 使用对应的 `session-id`、`api-base-url` 和 `title` 属性。组件会自动加载 Session 状态、历史和事件；宿主不需要自己复制 Session 事件处理逻辑。
+
 ## 协议适配边界
 
 协议适配契约已迁至 [`@nexum/surface-adapter`](./nexum-surface-adapter.md)，本包 re-export `ChatProtocolAdapter`、`createChatProtocolAdapter`、`ChatProtocolError` 等符号保持兼容。`ChatProtocolAdapter` 是 UI 与传输之间的稳定边界：默认适配器使用 `@nexum/client`，宿主也可以注入自定义适配器。适配器必须覆盖：
@@ -52,16 +65,6 @@ Web Component 接入：
 ## 依赖边界
 
 该包依赖 Surface Adapter、Solid、DOMPurify 和 marked（Client 类型经 Surface Adapter 中转）。它可以消费协议类型，但不能依赖 Core、Application 或 Server 内部模块。宿主通过 `@nexum/client` 或自定义 `ChatProtocolAdapter` 接入。
-
-## 测试与验证
-
-```sh
-cd packages/nexum-chat-surface
-bun test
-bun run typecheck
-```
-
-投影测试位于 [`packages/nexum-chat-surface/test/chat-projection.test.ts`](../../packages/nexum-chat-surface/test/chat-projection.test.ts)；默认适配器测试已随契约迁至 [`packages/nexum-surface-adapter/test/`](../../packages/nexum-surface-adapter/test/)。可运行 [`packages/nexum-chat-surface/example/index.html`](../../packages/nexum-chat-surface/example/index.html) 检查宿主接入。
 
 ## 修改同步清单
 

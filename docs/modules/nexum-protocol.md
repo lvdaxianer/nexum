@@ -1,4 +1,6 @@
-# `@nexum/protocol`
+# `nexum/protocol`
+
+源码模块：`@nexum/protocol`。用户安装唯一公共包 `nexum` 后，从 `nexum/protocol` 导入协议类型。
 
 状态：现状基线
 
@@ -12,7 +14,7 @@
 
 协议身份为 `nexum.runtime.v1`，HTTP 默认前缀为 `/api/nexum`。所有 JSON 响应使用 `data` 与 `meta.protocolVersion` 包装；事件流使用统一的 SSE 事件信封。
 
-## 公开入口
+## 公开 API
 
 包入口为 [`src/index.ts`](../../packages/nexum-protocol/src/index.ts)，主要导出：
 
@@ -24,6 +26,17 @@
 - 权限策略：`NexumPermissionPolicyEffect`、`NexumPermissionPolicyScope`、`NexumPermissionPolicyRule`、`NexumPermissionPolicyList`、`NexumPermissionPolicyRuleInput`、`NexumPermissionPolicyRuleUpdate`、`NexumPermissionPolicyDeleteResult`。
 
 协议字段是公共契约。新增或修改字段时，应同时更新 Server、Client、ChatSurface、API 文档和对应测试。
+
+| 类型                                | 关键字段                                                                           | 作用                   |
+| ----------------------------------- | ---------------------------------------------------------------------------------- | ---------------------- |
+| `NexumSession`                      | `id`、`name`、`directory`、`status`                                                | Session 的公共快照     |
+| `NexumSessionState`                 | `session`、`canContinue`、`pendingPermissions`、`pendingQuestions`、`lastSequence` | 页面恢复所需状态       |
+| `NexumSessionMessages`              | `messages`、`total`、`hasMore`、`snapshotID`                                       | 分页消息历史           |
+| `NexumEvent`                        | `eventID`、`runID`、`sessionID`、`sequence`、`type`、`data`                        | Runtime 事件信封       |
+| `NexumRolePrompt`                   | `prompt`、`source`、`updatedAt?`                                                   | Runtime 角色提示词快照 |
+| `NexumPermission` / `NexumQuestion` | 请求 ID、Session ID 和交互内容                                                     | 待处理的人机交互       |
+
+Protocol 只描述数据，不负责创建 Session、保存消息或执行模型。需要调用接口时使用 `nexum/client` 或 HTTP/SSE API。
 
 ## 协议使用方式
 
@@ -57,18 +70,6 @@ function handleEvent(event: NexumEvent) {
 | `NexumPermissionPolicyRule`、`NexumPermissionPolicyList`    | 权限策略规则查询与管理         | Server、Client、CLI              |
 | `NexumCapabilities`                                         | 能力发现和 UI 功能开关         | Server、Client、Surfaces         |
 | `NexumSkill`、`NexumModelConfig`、`NexumRolePrompt`         | Skill、模型和角色提示配置      | Server、Client、Surfaces         |
-
-## 测试与验证
-
-在仓库根目录执行：
-
-```sh
-cd packages/nexum-protocol
-bun test
-bun run typecheck
-```
-
-协议测试位于 [`packages/nexum-protocol/test/protocol.test.ts`](../../packages/nexum-protocol/test/protocol.test.ts)，覆盖协议身份、完整事件类型集合、事件数据类型和 Session 消息分页。
 
 ## 修改同步清单
 
