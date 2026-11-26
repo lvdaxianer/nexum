@@ -17,8 +17,8 @@
 
 ## 4. Integration
 
-- [ ] 4.1 运行受影响测试、`bun run check`、OpenSpec strict，完成审查、提交、合并和归档。
+- [x] 4.1 运行受影响测试、`bun run check`、OpenSpec strict，完成审查、提交、合并和归档。
 
 ## Workflow follow-up
 
-- 归档完成的 OpenSpec change，并验证归档后的主规格。
+- [x] 归档完成的 OpenSpec change，并验证归档后的主规格。
