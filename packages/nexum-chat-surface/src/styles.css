@@ -790,6 +790,54 @@
   align-items: center;
 }
 
+.nexum-chat-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.nexum-chat-file-button {
+  white-space: nowrap;
+}
+
+.nexum-chat-file-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  margin-top: 8px;
+  color: var(--nexum-chat-muted);
+  font-size: var(--nexum-chat-fs-meta);
+}
+
+.nexum-chat-file-name {
+  overflow: hidden;
+  max-width: min(100%, 420px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexum-chat-file-remove {
+  min-height: var(--nexum-chat-tap-min);
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--nexum-chat-radius-sm);
+  background: transparent;
+  color: var(--nexum-chat-danger);
+}
+
+.nexum-chat-file-remove:hover {
+  background: var(--nexum-chat-danger-soft);
+}
+
+.nexum-chat-file-error {
+  color: var(--nexum-chat-danger);
+}
+
 .nexum-chat-suggestions {
   position: absolute;
   right: 20px;

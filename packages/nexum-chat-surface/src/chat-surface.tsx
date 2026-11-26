@@ -22,6 +22,11 @@ type QuestionRequest = NexumQuestion
 type ContextSource = { readonly sourceID: string; readonly kind: string; readonly path: string }
 type SurfaceStatus = ChatStatus | ChatStateSnapshot["session"]["status"] | "no session" | "retrying" | "awaiting permission" | "awaiting question"
 
+export type ChatFileContext = {
+  readonly name: string
+  readonly text: string
+}
+
 export type ChatItemKind = "user" | "assistant" | "reasoning" | "execution" | "status"
 
 export type ChatItem = {
@@ -62,6 +67,13 @@ export type ChatSurfaceProps = {
 }
 
 const historyPageSize = 50
+const KIB_BYTES = 1024
+const CHAT_FILE_MAX_KIB = 512
+export const CHAT_FILE_MAX_BYTES = CHAT_FILE_MAX_KIB * KIB_BYTES
+const CHAT_FILE_EXTENSIONS = [".md", ".txt"] as const
+const CHAT_FILE_ACCEPT = ".md,.txt,text/markdown,text/plain"
+const CHAT_FILE_NAME_PREFIX = "【文件："
+const CHAT_FILE_END_MARKER = "【文件结束】"
 const markdown = new Marked({
   gfm: true,
   breaks: true,
@@ -73,6 +85,34 @@ const markdown = new Marked({
     },
   },
 })
+
+/**
+ * 校验聊天附件是否为支持的文本文件。
+ *
+ * @param file - 待校验的文件元数据
+ * @returns 通过时返回 undefined，否则返回可直接展示的错误消息
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-26
+ */
+export function validateChatFile(file: Pick<File, "name" | "size">): string | undefined {
+  const name = file.name.toLowerCase()
+  if (!CHAT_FILE_EXTENSIONS.some((extension) => name.endsWith(extension))) return "只支持 .md 和 .txt 文件"
+  if (file.size > CHAT_FILE_MAX_BYTES) return `文件不能超过 ${CHAT_FILE_MAX_KIB} KiB`
+  return undefined
+}
+
+/**
+ * 将用户问题和已读取的文件文本组成一次 Prompt。
+ *
+ * @param text - 用户输入的问题
+ * @param file - 已读取的文件上下文
+ * @returns 包含文件名、全文和结束标记的最终 Prompt
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-26
+ */
+export function composeChatPrompt(text: string, file: ChatFileContext): string {
+  return [text, "", `${CHAT_FILE_NAME_PREFIX}${file.name}】`, file.text, CHAT_FILE_END_MARKER].join("\n")
+}
 
 /** 渲染不可信模型输出，并限制链接打开行为。 */
 function MarkdownView(props: { readonly content: string; readonly class?: string }) {
@@ -104,8 +144,12 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const [cancelBusy, setCancelBusy] = createSignal(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = createSignal(false)
   const [notice, setNotice] = createSignal("")
+  const [fileContext, setFileContext] = createSignal<ChatFileContext | undefined>()
+  const [fileBusy, setFileBusy] = createSignal(false)
+  const [fileError, setFileError] = createSignal("")
 
   let conversationBody: HTMLDivElement | undefined
+  let fileInput: HTMLInputElement | undefined
   let streamController: AbortController | undefined
   let lifecycle = 0
   let promptSequence = 0
@@ -253,6 +297,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
     setContinueBusy(false)
     setCancelBusy(false)
     setCancelConfirmOpen(false)
+    clearFileContext()
     setNotice("")
     if (id) {
       seenEventIDs.set(id, new Set())
@@ -346,7 +391,9 @@ export function ChatSurface(props: ChatSurfaceProps) {
   async function sendPrompt() {
     const id = props.sessionID
     const text = prompt().trim()
-    if (!id || !text || busy() || inputLocked()) return
+    const file = fileContext()
+    const finalText = file ? composeChatPrompt(text, file) : text
+    if (!id || !text || busy() || fileBusy() || inputLocked()) return
     setBusy(true)
     setFollowTail(true)
     const thinkingID = `thinking:${id}:${Date.now()}:${promptSequence++}`
@@ -356,7 +403,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
         id: `user:${Date.now()}:${promptSequence++}`,
         kind: "user",
         title: "你",
-        content: text,
+        content: finalText,
         skillIDs: skillIDsFromText(text),
         status: "completed",
         localTime: formatLocalTime(),
@@ -367,8 +414,9 @@ export function ChatSurface(props: ChatSurfaceProps) {
     setStatus("running")
     setContinueAvailable(false)
     try {
-      await adapter.sendMessage({ sessionID: id, text })
+      await adapter.sendMessage({ sessionID: id, text: finalText })
       setPrompt("")
+      clearFileContext()
       setNotice("消息已提交，等待运行事件")
       // Prompt admission can race the initial SSE subscription; replay from the last known sequence.
       void connectEvents(id)
@@ -383,6 +431,72 @@ export function ChatSurface(props: ChatSurfaceProps) {
     } finally {
       setBusy(false)
     }
+  }
+
+  /**
+   * 读取用户选中的 Markdown 或纯文本文件，并保留可重试的失败状态。
+   *
+   * @param event - 原生文件选择事件
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-26
+   */
+  async function handleFileSelection(event: Event) {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+    const validationError = validateChatFile(file)
+    if (validationError) {
+      setFileError(validationError)
+      resetFileInput(input)
+      return
+    }
+    setFileError("")
+    setFileBusy(true)
+    try {
+      setFileContext({ name: file.name, text: await file.text() })
+      setNotice(`已读取文件：${file.name}`)
+    } catch {
+      handleFileReadFailure(input)
+    } finally {
+      setFileBusy(false)
+    }
+  }
+
+  /**
+   * 清理读取失败的原生文件选择值并提示用户重新选择。
+   *
+   * @param input - 原生文件选择器
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-26
+   */
+  function handleFileReadFailure(input: HTMLInputElement) {
+    setFileContext(undefined)
+    setFileError("文件读取失败，请重新选择文件")
+    resetFileInput(input)
+    setNotice("文件读取失败，请重试")
+  }
+
+  /**
+   * 重置原生选择器，使用户可以再次选择同一个文件。
+   *
+   * @param input - 原生文件选择器
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-26
+   */
+  function resetFileInput(input: HTMLInputElement) {
+    input.value = ""
+  }
+
+  /**
+   * 清理已选择的文件和原生选择器值，允许重复选择同名文件。
+   *
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-26
+   */
+  function clearFileContext() {
+    setFileContext(undefined)
+    setFileError("")
+    if (fileInput) fileInput.value = ""
   }
 
   async function continueRun() {
@@ -570,10 +684,27 @@ export function ChatSurface(props: ChatSurfaceProps) {
           <textarea aria-label="Coding Prompt" rows={3} value={prompt()} onInput={(event) => setPrompt(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); void sendPrompt() } }} placeholder={inputLocked() ? "Agent 正在回复，本轮完成后可继续输入…" : "描述下一步 Coding 任务…"} disabled={!props.sessionID || busy() || inputLocked()} />
           <Show when={skillSuggestions().length > 0}><div class="nexum-chat-suggestions" role="listbox" aria-label="Skill 建议"><For each={skillSuggestions()}>{(skill) => <button type="button" role="option" onMouseDown={(event) => event.preventDefault()} onClick={() => selectSkill(skill)}><span>@{skill.id}</span><small>{skill.description}</small></button>}</For></div></Show>
           <Show when={activeSkillIDs().length > 0}><div class="nexum-chat-active-skills"><span>已附加</span><For each={activeSkillIDs()}>{(id) => <span class="nexum-chat-chip skill-chip">@{id}</span>}</For></div></Show>
+          <Show when={fileContext() || fileBusy() || fileError()}>
+            <div class="nexum-chat-file-status" aria-live="polite">
+              <Show when={fileBusy()}>
+                <span>正在读取文件…</span>
+              </Show>
+              <Show when={!fileBusy() && fileContext()}>
+                {(file) => <><span class="nexum-chat-file-name">📄 {file().name}</span><button type="button" class="nexum-chat-file-remove" onClick={clearFileContext} disabled={busy() || inputLocked()}>移除</button></>}
+              </Show>
+              <Show when={!fileBusy() && fileError()}>
+                <span class="nexum-chat-file-error" role="alert">{fileError()}</span>
+              </Show>
+            </div>
+          </Show>
           <div class="nexum-chat-composer-bar prompt-bar">
             <span class="nexum-chat-hint">
               {inputLocked() ? "Agent 正在回复" : (<><span class="hint-enter">Enter 发送<span class="hint-sep"> · </span></span><span class="hint-shift">Shift+Enter 换行 · </span>@ 引用 Skill</>)}
             </span>
+            <input ref={(element) => (fileInput = element)} class="nexum-chat-file-input" type="file" accept={CHAT_FILE_ACCEPT} aria-label="选择 Markdown 或纯文本文件" tabindex="-1" onChange={(event) => void handleFileSelection(event)} disabled={!props.sessionID || busy() || fileBusy() || inputLocked()} />
+            <button type="button" class="nexum-chat-button nexum-chat-file-button" onClick={() => fileInput?.click()} disabled={!props.sessionID || busy() || fileBusy() || inputLocked()} aria-label="上传 Markdown 或纯文本文件">
+              {fileBusy() ? "读取中…" : "上传文件"}
+            </button>
             <Show when={props.composerExtras}>
               <span class="nexum-chat-composer-extras">{props.composerExtras}</span>
             </Show>
@@ -591,7 +722,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
                 <button type="button" class="nexum-chat-button is-danger" onClick={() => setCancelConfirmOpen(true)}>取消运行</button>
               </Show>
             </Show>
-            <button type="button" class="nexum-chat-primary" aria-label="发送 Prompt" disabled={!props.sessionID || !prompt().trim() || busy() || inputLocked()} onClick={() => void sendPrompt()}>{busy() ? "发送中…" : "发送"}</button>
+            <button type="button" class="nexum-chat-primary" aria-label="发送 Prompt" disabled={!props.sessionID || !prompt().trim() || busy() || fileBusy() || inputLocked()} onClick={() => void sendPrompt()}>{busy() ? "发送中…" : "发送"}</button>
           </div>
         </div>
       </div>
