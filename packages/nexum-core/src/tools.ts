@@ -1,7 +1,7 @@
 /** Nexum Core 的工具端口与权限请求归一化。 */
 
 import type { ModelToolDefinition, NexumSessionService, ToolPort, ToolRequest } from "./index.js"
-import type { HostPort } from "./host.js"
+import { normalizeNexumHostResource, type HostPort } from "./host.js"
 
 /** POC 首期内置工具名称。 */
 export type NexumBuiltinToolName = "read" | "write" | "edit" | "shell" | "skill_registry"
@@ -47,7 +47,16 @@ export function normalizeNexumToolRequest(
       : typeof input.path === "string"
         ? input.path
         : toolName
-  return { sessionID, toolName, action, resource, input, ...(signal ? { signal } : {}) }
+  const descriptor = normalizeNexumHostResource(action, resource)
+  return {
+    sessionID,
+    toolName,
+    action,
+    resource: descriptor.resource,
+    risk: descriptor.risk,
+    input,
+    ...(signal ? { signal } : {}),
+  }
 }
 
 function skillRegistryPermissionAction(operation: unknown): "skill.manage" | "skill.read" {

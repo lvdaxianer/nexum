@@ -26,6 +26,9 @@ const destructiveShellPatterns = [
   /\bchown\s+-[a-z]*r/i,
   /:\s*\(\s*\)\s*\{/,
   /\|\s*(?:sh|bash|zsh|fish)\b/,
+  /\b(?:curl|wget|nc|netcat|ssh|scp|sftp|ftp)\b/i,
+  /\b(?:sh|bash|zsh|fish)\s+-c\b/i,
+  /(?:^|\s)>\s*[^>]/,
   />\s*\/dev\/(?:sd|disk|nvme)/,
 ]
 
@@ -122,6 +125,7 @@ export function evaluateNexumPermissionPolicy(
 
 /** 判断请求是否属于危险操作。 */
 export function isDangerousNexumToolRequest(request: ToolRequest): boolean {
+  if (request.risk === "credential" || request.risk === "network") return true
   if (request.action === "shell") return destructiveShellPatterns.some((pattern) => pattern.test(request.resource))
   if (!pathActions.includes(request.action as (typeof pathActions)[number])) return false
   const normalized = request.resource.replaceAll("\\", "/").trim()

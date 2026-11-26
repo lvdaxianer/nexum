@@ -15,7 +15,7 @@ import type {
   ToolRequest,
   ToolResult,
 } from "@nexum/core"
-import { createLocalHostAdapter } from "@nexum/integrations"
+import { createLocalHostAdapter, createSandboxHost, type NexumSandboxOptions } from "@nexum/integrations"
 
 /** POC 首期内置工具名称。 */
 export type NexumBuiltinToolName = "read" | "write" | "edit" | "shell" | "skill_registry"
@@ -24,6 +24,7 @@ export type NexumBuiltinToolName = "read" | "write" | "edit" | "shell" | "skill_
 export interface NexumToolRegistryOptions {
   readonly sessions: NexumSessionService
   readonly host?: HostPort
+  readonly sandbox?: NexumSandboxOptions
   readonly shellTimeoutMs?: number
   readonly shellCleanupTimeoutMs?: number
   readonly skillRegistry?: NexumSkillRegistry
@@ -76,7 +77,8 @@ export function normalizeNexumToolRequest(
  * @date 2026-11-19
  */
 export function createNexumToolRegistry(options: NexumToolRegistryOptions): NexumToolRegistry {
-  const host = options.host ?? createLocalHostAdapter({ timeoutMs: options.shellTimeoutMs, cleanupTimeoutMs: options.shellCleanupTimeoutMs })
+  const localHost = options.host ?? createLocalHostAdapter({ timeoutMs: options.shellTimeoutMs, cleanupTimeoutMs: options.shellCleanupTimeoutMs })
+  const host = options.sandbox ? createSandboxHost(localHost, options.sandbox) : localHost
   const names: string[] = [
     "read",
     "write",
