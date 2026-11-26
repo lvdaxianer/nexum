@@ -62,9 +62,11 @@ import {
   createMcpSdkConnector,
   createOpenAICompatibleModelPort,
 } from "@nexum/integrations"
+import type { NexumSandboxOptions } from "@nexum/integrations"
 
 export { createNexumQuestionPort } from "./context.ts"
 export type { NexumQuestionPortOptions } from "./context.ts"
+export type { NexumSandboxOptions } from "@nexum/integrations"
 export { createNexumSkillRegistry } from "./skill-registry.ts"
 export type { NexumSkillRegistryOptions } from "./skill-registry.ts"
 export type { FilePersistenceOptions } from "@nexum/persistence-file"
@@ -96,6 +98,7 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly skillRegistry?: NexumSkillRegistry
   readonly skillInvocation?: NexumSkillInvocationPort
   readonly host?: HostPort
+  readonly sandbox?: NexumSandboxOptions
   readonly memory?: MemoryPort
   readonly mcp?: McpPort
   readonly mcpOAuth?: McpOAuthControlPort
@@ -168,6 +171,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   const tools = createNexumToolRegistry({
     sessions,
     host,
+    sandbox: options.sandbox,
     shellTimeoutMs: options.shellTimeoutMs ?? options.toolTimeoutMs,
     shellCleanupTimeoutMs: options.shellCleanupTimeoutMs,
     skillRegistry: skills,

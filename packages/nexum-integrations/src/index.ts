@@ -2,6 +2,8 @@
 export { createLocalDirectoryValidator } from "./directory.ts"
 export { createLocalHostAdapter } from "./local-host.ts"
 export type { LocalHostOptions } from "./local-host.ts"
+export { createSandboxHost } from "./sandbox.ts"
+export type { NexumSandboxOptions } from "./sandbox.ts"
 export { createHttpMcpAdapter, createMcpAdapter, createStdioMcpAdapter } from "./mcp.ts"
 export type { McpAdapterOptions, McpRpcTransport } from "./mcp.ts"
 export { createMcpOAuthManager, createMcpOAuthProvider } from "./oauth.ts"

@@ -39,6 +39,7 @@ export {
   type NexumRolePromptStore,
 } from "./role-prompt.js"
 import type { NexumRolePromptStore } from "./role-prompt.js"
+import type { NexumHostRisk } from "./host.js"
 
 /** Agent 请求模型生成时携带的最小输入。 */
 export interface ModelToolDefinition {
@@ -102,6 +103,7 @@ export interface ToolRequest {
   readonly toolName: string
   readonly action: string
   readonly resource: string
+  readonly risk?: NexumHostRisk
   readonly input: Record<string, unknown>
   readonly signal?: AbortSignal
 }
@@ -1690,7 +1692,15 @@ export type {
   NexumSkillSystemMessage,
 } from "./skill-invocation.js"
 export type { MemoryItem, MemoryPort, MemoryQuery } from "./memory.js"
-export type { HostPort, HostReadInput, HostShellInput, HostWriteInput } from "./host.js"
+export {
+  normalizeNexumHostResource,
+  type HostPort,
+  type HostReadInput,
+  type HostShellInput,
+  type HostWriteInput,
+  type NexumHostResourceDescriptor,
+  type NexumHostRisk,
+} from "./host.js"
 export { McpError, createMcpRegistry } from "./mcp.js"
 export type {
   McpConnection,

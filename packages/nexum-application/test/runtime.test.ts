@@ -63,6 +63,24 @@ test("local host refuses paths outside the session directory", async () => {
   expect(result).toEqual({ ok: false, output: "工具资源必须位于 Session 工作目录内" })
 })
 
+test("injects a Sandbox Host policy into the built-in tool registry", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-sandbox-runtime-"))
+  directories.push(directory)
+  const sessions = createNexumSessionService({ store: createInMemorySessionStore() })
+  const session = await sessions.create({ directory })
+  const registry = createNexumToolRegistry({ sessions, sandbox: { allowedActions: ["read"] } })
+
+  await expect(
+    registry.port.execute({
+      sessionID: session.sessionID,
+      toolName: "shell",
+      action: "shell",
+      resource: "echo blocked",
+      input: { command: "echo blocked" },
+    }),
+  ).resolves.toEqual({ ok: false, output: "Sandbox 禁止执行 shell 操作" })
+})
+
 test("tool registry fallback shell settles a hanging command", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-registry-shell-"))
   directories.push(directory)
