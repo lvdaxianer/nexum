@@ -753,14 +753,28 @@
 .nexum-chat-composer {
   position: relative;
   flex: 0 0 auto;
-  padding: 14px 20px 16px;
+  padding: 12px 20px 14px;
   border-top: 1px solid var(--nexum-chat-border);
   background: var(--nexum-chat-bg);
 }
 
 .nexum-chat-composer-inner {
+  position: relative;
   max-width: 1240px;
   margin: 0 auto;
+}
+
+.nexum-chat-composer-card {
+  border: 1px solid var(--nexum-chat-border);
+  border-radius: 16px;
+  background: var(--nexum-chat-bg);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--nexum-chat-shadow) 45%, transparent);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.nexum-chat-composer-card:focus-within {
+  border-color: var(--nexum-chat-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nexum-chat-accent) 12%, transparent);
 }
 
 .nexum-chat-composer textarea {
@@ -768,23 +782,25 @@
   width: 100%;
   min-height: 74px;
   resize: vertical;
-  padding: 12px 14px;
-  border: 1px solid var(--nexum-chat-border);
-  border-radius: 16px;
+  padding: 12px 14px 4px;
+  border: 0;
   outline: none;
-  background: var(--nexum-chat-bg);
+  background: transparent;
   color: var(--nexum-chat-text);
   font-size: var(--nexum-chat-fs-copy);
   line-height: 1.6;
 }
 
-.nexum-chat-composer textarea:focus {
-  border-color: var(--nexum-chat-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nexum-chat-accent) 12%, transparent);
+/* 焦点态由外层 composer-card 统一呈现，屏蔽宿主页面全局 textarea 焦点样式。 */
+.nexum-chat-composer textarea:focus,
+.nexum-chat-composer textarea:focus-visible {
+  outline: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .nexum-chat-composer-bar {
-  margin-top: 10px;
+  padding: 4px 10px 10px;
   flex-wrap: wrap;
   row-gap: 6px;
 }
@@ -792,6 +808,7 @@
 .nexum-chat-hint {
   flex: 1;
   min-width: 0;
+  padding-left: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -801,6 +818,44 @@
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
+}
+
+/* 取消运行的内联确认条 */
+.nexum-chat-confirm {
+  gap: 6px;
+  padding: 3px 3px 3px 12px;
+  border-radius: 999px;
+  background: var(--nexum-chat-danger-soft);
+  color: var(--nexum-chat-danger);
+  font-size: var(--nexum-chat-fs-meta);
+}
+
+.nexum-chat-confirm button {
+  min-height: 26px;
+  padding: 2px 12px;
+  border: 1px solid var(--nexum-chat-border);
+  border-radius: 999px;
+  background: var(--nexum-chat-bg);
+  color: var(--nexum-chat-text);
+  font-size: var(--nexum-chat-fs-meta);
+  white-space: nowrap;
+}
+
+.nexum-chat-confirm button:hover:not(:disabled) {
+  border-color: var(--nexum-chat-accent);
+  color: var(--nexum-chat-accent);
+}
+
+.nexum-chat-confirm button.is-danger {
+  border-color: var(--nexum-chat-danger);
+  background: var(--nexum-chat-danger);
+  color: #ffffff;
+}
+
+.nexum-chat-confirm button.is-danger:hover:not(:disabled) {
+  border-color: var(--nexum-chat-danger);
+  background: color-mix(in srgb, var(--nexum-chat-danger) 88%, #000000);
+  color: #ffffff;
 }
 
 .nexum-chat-file-input {
@@ -814,37 +869,76 @@
 }
 
 .nexum-chat-file-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--nexum-chat-muted);
   white-space: nowrap;
+}
+
+.nexum-chat-file-button:hover:not(:disabled) {
+  background: var(--nexum-chat-accent-soft);
+  color: var(--nexum-chat-accent);
+}
+
+.nexum-chat-file-icon {
+  font-size: 12px;
+  line-height: 1;
 }
 
 .nexum-chat-file-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  min-height: 26px;
-  margin-top: 8px;
+  padding: 10px 12px 0;
   color: var(--nexum-chat-muted);
   font-size: var(--nexum-chat-fs-meta);
 }
 
+.nexum-chat-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(100%, 420px);
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--nexum-chat-border);
+  border-radius: 999px;
+  background: var(--nexum-chat-panel);
+  color: var(--nexum-chat-text);
+}
+
+.nexum-chat-file-chip.is-busy {
+  padding-right: 10px;
+  color: var(--nexum-chat-muted);
+}
+
 .nexum-chat-file-name {
   overflow: hidden;
-  max-width: min(100%, 420px);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .nexum-chat-file-remove {
-  min-height: var(--nexum-chat-tap-min);
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border: 0;
-  border-radius: var(--nexum-chat-radius-sm);
+  border-radius: 50%;
   background: transparent;
-  color: var(--nexum-chat-danger);
+  color: var(--nexum-chat-muted);
+  font-size: 10px;
+  line-height: 1;
 }
 
-.nexum-chat-file-remove:hover {
+.nexum-chat-file-remove:hover:not(:disabled) {
   background: var(--nexum-chat-danger-soft);
+  color: var(--nexum-chat-danger);
 }
 
 .nexum-chat-file-error {
@@ -853,9 +947,9 @@
 
 .nexum-chat-suggestions {
   position: absolute;
-  right: 20px;
-  bottom: 88px;
-  left: 20px;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
   z-index: 2;
   display: grid;
   gap: 3px;
@@ -881,8 +975,7 @@
 }
 
 .nexum-chat-active-skills {
-  max-width: 1240px;
-  margin: 8px auto 0;
+  padding: 10px 12px 0;
 }
 
 .nexum-chat-active-skills > span:first-child {
@@ -933,8 +1026,7 @@
   .nexum-chat-composer-inner,
   .nexum-chat-request-title,
   .nexum-chat-request,
-  .nexum-chat-question,
-  .nexum-chat-active-skills {
+  .nexum-chat-question {
     max-width: none;
   }
 
@@ -965,8 +1057,7 @@
   .nexum-chat-composer-inner,
   .nexum-chat-request-title,
   .nexum-chat-request,
-  .nexum-chat-question,
-  .nexum-chat-active-skills {
+  .nexum-chat-question {
     max-width: none;
   }
 
@@ -1033,12 +1124,6 @@
   .nexum-chat-hint .hint-enter,
   .nexum-chat-hint .hint-shift {
     display: none;
-  }
-
-  .nexum-chat-suggestions {
-    right: 12px;
-    bottom: 88px;
-    left: 12px;
   }
 }
 
