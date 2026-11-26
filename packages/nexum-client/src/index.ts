@@ -9,6 +9,7 @@ import {
   type NexumEvent,
   type NexumModelConfig,
   type NexumModelProbe,
+  type NexumProviderCatalog,
   type NexumPermission,
   type NexumPermissionPolicyDeleteResult,
   type NexumPermissionPolicyList,
@@ -46,6 +47,7 @@ export type {
   NexumEvent,
   NexumModelConfig,
   NexumModelProbe,
+  NexumProviderCatalog,
   NexumMessage,
   NexumMessageToolCall,
   NexumPermission,
@@ -122,6 +124,7 @@ export const Nexum = {
               request<NexumModelConfig>("/model", { method: "PUT", body: JSON.stringify(input) }),
             probe: (input: { readonly mode?: "text" | "function_calling" | "both" }) =>
               request<NexumModelProbe>("/model/probe", { method: "POST", body: JSON.stringify(input) }),
+            catalog: () => request<NexumProviderCatalog>("/providers"),
           },
           rolePrompt: {
             get: () => request<NexumRolePrompt>("/role-prompt"),

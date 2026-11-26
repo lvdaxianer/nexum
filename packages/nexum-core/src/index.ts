@@ -7,6 +7,7 @@
 
 import { basename, isAbsolute, normalize } from "node:path"
 import { NexumModelError } from "./model.js"
+import type { NexumModelUsage } from "./model.js"
 import type {
   ContextCompactionPort,
   ContextCompactionResult,
@@ -90,6 +91,7 @@ export interface ModelChunk {
   readonly questionID?: string
   readonly questions?: readonly NexumQuestionItem[]
   readonly finishReason?: string
+  readonly usage?: NexumModelUsage
 }
 
 /** 模型端口负责产生 Agent 下一步所需的增量结果。 */
@@ -1657,7 +1659,18 @@ export type {
   NexumModelConfigStore,
 } from "./model-config.js"
 export { NexumModelError } from "./model.js"
-export type { NexumFetch, NexumModelErrorCode, NexumModelErrorDetails } from "./model.js"
+export type {
+  NexumFetch,
+  NexumModelCapability,
+  NexumModelDescriptor,
+  NexumModelErrorCode,
+  NexumModelErrorDetails,
+  NexumModelPricing,
+  NexumModelUsage,
+  NexumProviderCatalog,
+  NexumProviderCatalogPort,
+  NexumProviderDescriptor,
+} from "./model.js"
 export { createNexumModelProbePort, NexumModelProbeError } from "./model-probe.js"
 export type {
   NexumModelProbeInput,

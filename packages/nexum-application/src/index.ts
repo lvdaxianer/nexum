@@ -29,6 +29,7 @@ import {
   type MessageStore,
   type NexumCapability,
   type NexumModelProbePort,
+  type NexumProviderCatalogPort,
   type NexumPermissionBroker,
   type NexumPermissionPolicyStore,
   type NexumQuestionPort,
@@ -61,6 +62,7 @@ import {
   createMcpOAuthProvider,
   createMcpSdkConnector,
   createOpenAICompatibleModelPort,
+  createOpenAICompatibleProviderCatalog,
 } from "@nexum/integrations"
 import type { NexumSandboxOptions } from "@nexum/integrations"
 
@@ -95,6 +97,7 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly permissionPolicyStore?: NexumPermissionPolicyStore
   readonly questionPort?: NexumQuestionPort
   readonly modelProbe?: NexumModelProbePort
+  readonly providerCatalog?: NexumProviderCatalogPort
   readonly skillRegistry?: NexumSkillRegistry
   readonly skillInvocation?: NexumSkillInvocationPort
   readonly host?: HostPort
@@ -125,6 +128,7 @@ export interface NexumDefaultRuntime extends NexumRuntime {
   readonly permissionBroker: NexumPermissionBroker
   readonly questionPort: NexumQuestionPort
   readonly modelProbe: NexumModelProbePort
+  readonly providerCatalog: NexumProviderCatalogPort
   readonly codingLoop: NexumCodingLoop
   readonly executionStore: NexumExecutionStore
   readonly mcpReady?: Promise<void>
@@ -193,6 +197,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   }
   const model = options.model ?? createOpenAICompatibleModelPort({ config: modelConfig })
   const modelProbe = options.modelProbe ?? createNexumModelProbePort({ model })
+  const providerCatalog = options.providerCatalog ?? createOpenAICompatibleProviderCatalog({ config: modelConfig })
   const loop = options.codingLoop ??
     (options.model
       ? createNexumCodingLoop({ ...loopOptions, model: options.model })
@@ -225,6 +230,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     permissionBroker: permission,
     questionPort: question,
     modelProbe,
+    providerCatalog,
     codingLoop: runtimeLoop,
     executionStore,
     persistence,

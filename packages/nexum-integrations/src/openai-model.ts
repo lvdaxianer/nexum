@@ -13,6 +13,7 @@ import type {
   ModelToolCall,
   NexumModelConfigStore,
   NexumModelErrorCode,
+  NexumModelUsage,
 } from "@nexum/core"
 import { NexumModelError } from "@nexum/core"
 
@@ -101,10 +102,14 @@ export function createOpenAICompatibleModelPort(options: OpenAICompatibleModelPo
       }
       if (result.content !== undefined) yield { type: "text", content: result.content }
       if (result.toolCalls.length > 0) {
-        yield toolCallChunk(result.toolCalls, result.reasoningContent)
+        yield toolCallChunk(result.toolCalls, result.reasoningContent, result.usage)
         return
       }
-      yield { type: "completed", ...(result.finishReason ? { finishReason: result.finishReason } : {}) }
+      yield {
+        type: "completed",
+        ...(result.finishReason ? { finishReason: result.finishReason } : {}),
+        ...(result.usage ? { usage: result.usage } : {}),
+      }
     },
   }
 }
@@ -243,12 +248,17 @@ function isEventStream(response: Response): boolean {
   return response.headers.get("content-type")?.includes("text/event-stream") ?? false
 }
 
-function toolCallChunk(toolCalls: readonly ModelToolCall[], reasoningContent?: string): ModelChunk {
+function toolCallChunk(
+  toolCalls: readonly ModelToolCall[],
+  reasoningContent?: string,
+  usage?: NexumModelUsage,
+): ModelChunk {
   const first = toolCalls[0]
   return {
     type: "tool-call",
     toolCalls,
     ...(reasoningContent !== undefined ? { reasoningContent } : {}),
+    ...(usage ? { usage } : {}),
     ...(toolCalls.length === 1 && first
       ? { toolCallID: first.id, toolName: first.name, toolInput: first.input }
       : {}),
@@ -276,6 +286,7 @@ async function* readStreamedModelResult(response: Response): AsyncGenerator<Mode
   let sawPayload = false
   let finished = false
   let finishReason: string | undefined
+  let usage: NexumModelUsage | undefined
   try {
     while (!finished) {
       const read = await reader.read()
@@ -297,6 +308,8 @@ async function* readStreamedModelResult(response: Response): AsyncGenerator<Mode
             break
           }
           const parsed = parseStreamPayload(payload)
+          const streamedUsage = parseUsage(parsed.usage)
+          if (streamedUsage) usage = streamedUsage
           const streamedFinishReason = streamFinishReason(parsed)
           if (streamedFinishReason !== undefined) finishReason = streamedFinishReason
           const delta = streamDelta(parsed)
@@ -316,11 +329,11 @@ async function* readStreamedModelResult(response: Response): AsyncGenerator<Mode
   }
   const toolCalls = resolvePendingToolCalls(pending)
   if (toolCalls.length > 0) {
-    yield toolCallChunk(toolCalls, reasoningContent)
+    yield toolCallChunk(toolCalls, reasoningContent, usage)
     return
   }
   if (!sawPayload) throw new NexumModelError("invalid_response", "模型响应格式无效")
-  yield { type: "completed", ...(finishReason ? { finishReason } : {}) }
+  yield { type: "completed", ...(finishReason ? { finishReason } : {}), ...(usage ? { usage } : {}) }
 }
 
 /** 提取一个 SSE 事件块中的全部 data 负载。 */
@@ -407,6 +420,7 @@ interface ModelResult {
   readonly reasoningContent?: string
   readonly finishReason?: string
   readonly toolCalls: readonly ModelToolCall[]
+  readonly usage?: NexumModelUsage
 }
 
 async function readModelResult(response: Response): Promise<ModelResult> {
@@ -427,12 +441,42 @@ async function readModelResult(response: Response): Promise<ModelResult> {
   const reasoningContent =
     typeof first.message.reasoning_content === "string" ? first.message.reasoning_content : undefined
   const finishReason = typeof first.finish_reason === "string" ? first.finish_reason : undefined
+  const usage = parseUsage(body.usage)
   const rawToolCalls = first.message.tool_calls
-  if (rawToolCalls === undefined) return { content, reasoningContent, finishReason, toolCalls: [] }
+  if (rawToolCalls === undefined) return { content, reasoningContent, finishReason, toolCalls: [], ...(usage ? { usage } : {}) }
   if (!Array.isArray(rawToolCalls)) throw new NexumModelError("invalid_response", "模型工具调用格式无效")
 
   const toolCalls = rawToolCalls.map(parseToolCall)
-  return { content, reasoningContent, finishReason, toolCalls }
+  return { content, reasoningContent, finishReason, toolCalls, ...(usage ? { usage } : {}) }
+}
+
+function parseUsage(value: unknown): NexumModelUsage | undefined {
+  if (!isRecord(value)) return undefined
+  const promptTokens = boundedTokenCount(value.prompt_tokens)
+  const completionTokens = boundedTokenCount(value.completion_tokens)
+  const totalTokens = boundedTokenCount(value.total_tokens)
+  const estimatedCost = boundedCost(value.estimated_cost)
+  const currency = typeof value.currency === "string" && /^[A-Za-z]{3}$/.test(value.currency) ? value.currency : undefined
+  if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined && estimatedCost === undefined) {
+    return undefined
+  }
+  return {
+    ...(promptTokens !== undefined ? { promptTokens } : {}),
+    ...(completionTokens !== undefined ? { completionTokens } : {}),
+    ...(totalTokens !== undefined ? { totalTokens } : {}),
+    ...(estimatedCost !== undefined ? { estimatedCost } : {}),
+    ...(currency ? { currency: currency.toUpperCase() } : {}),
+  }
+}
+
+function boundedTokenCount(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 100_000_000) return undefined
+  return value
+}
+
+function boundedCost(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1_000_000) return undefined
+  return Math.round(value * 1_000_000) / 1_000_000
 }
 
 function parseToolCall(rawToolCall: unknown): ModelToolCall {

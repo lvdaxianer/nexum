@@ -121,6 +121,39 @@ export type NexumModelConfig = {
   readonly credentialRef?: string
 }
 
+export type NexumModelCapability = "text" | "reasoning" | "tool_calling" | "vision" | "streaming"
+
+export type NexumModelPricing = {
+  readonly inputPerMillionTokens?: number
+  readonly outputPerMillionTokens?: number
+  readonly currency?: string
+  readonly source?: string
+  readonly updatedAt?: string
+}
+
+export type NexumProviderModel = {
+  readonly providerID: string
+  readonly modelID: string
+  readonly displayName?: string
+  readonly capabilities: readonly NexumModelCapability[]
+  readonly contextWindow?: number
+  readonly maxOutputTokens?: number
+  readonly pricing?: NexumModelPricing
+}
+
+export type NexumProvider = {
+  readonly providerID: string
+  readonly displayName: string
+  readonly status: "available" | "unavailable"
+  readonly models: readonly NexumProviderModel[]
+  readonly errorCode?: "unavailable"
+}
+
+export type NexumProviderCatalog = {
+  readonly providers: readonly NexumProvider[]
+  readonly generatedAt: string
+}
+
 export type NexumRolePrompt = {
   readonly prompt: string
   readonly source: "default" | "custom"
