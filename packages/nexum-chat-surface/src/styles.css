@@ -133,6 +133,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 
 .nexum-chat-status-pill {
@@ -725,6 +726,7 @@
   min-height: var(--nexum-chat-tap-min);
   padding: 8px 12px;
   font-size: var(--nexum-chat-fs-meta);
+  white-space: nowrap;
 }
 
 .nexum-chat-primary {
@@ -770,6 +772,8 @@
 
 .nexum-chat-composer-bar {
   margin-top: 10px;
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 
 .nexum-chat-hint {
