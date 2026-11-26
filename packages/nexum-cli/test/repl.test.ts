@@ -1009,3 +1009,108 @@ test("box mode pads prompter questions but never double-pads the input prefix", 
   expect(await answer).toBe("1")
   source.close()
 })
+
+/** 带输入框的 tty 源:rendered 剥离 SGR 但保留光标控制序列供断言。 */
+function ttyBoxSource(columns = 80) {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, columns, 2)!
+  const source = readlineLineSource(() => [], { input, output, box, margin: 2 })
+  return { input, source, rendered: () => rendered.replace(/\x1b\[[0-9;]*m/g, "") }
+}
+
+test("typing / in the box shows live command hints without Tab, truncated to the box width", async () => {
+  const { input, source, rendered } = ttyBoxSource()
+  source.showPrompt?.()
+  input.write("/")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const out = rendered()
+  expect(out).toContain("\x1b[s\x1b[1B\r\x1b[2K")
+  const row = out.split("\x1b[s").pop()!
+  expect(row).toContain("/help")
+  expect(row).toContain("/sessions")
+  // 全量命令超宽:截断并以 … 收尾
+  expect(row).toContain("…")
+  expect(row).not.toContain("/quit")
+  source.close()
+})
+
+test("hints filter as you type: prefix, fuzzy and subcommands", async () => {
+  const { input, source, rendered } = ttyBoxSource()
+  source.showPrompt?.()
+  input.write("/sk")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  let row = rendered().split("\x1b[s").pop()!
+  expect(row).toContain("/skills")
+  expect(row).not.toContain("/help")
+  input.write("\x7f\x7f")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  // 行内剩 /,继续输入即为模糊片段
+  input.write("xpand")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  row = rendered().split("\x1b[s").pop()!
+  expect(row).toContain("/expand")
+  expect(row).not.toContain("/help")
+  input.write("\x7f".repeat(6))
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  input.write("/permissions ")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  row = rendered().split("\x1b[s").pop()!
+  expect(row).toContain("mode  allow  deny  remove")
+  source.close()
+})
+
+test("hints clear on non-slash input and redraw only when content changes", async () => {
+  const { input, source, rendered } = ttyBoxSource()
+  source.showPrompt?.()
+  input.write("/")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  expect(rendered().split("\x1b[s").pop()).toContain("/help")
+  input.write("\x7f")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  // 清空后留白行还原
+  const cleared = rendered().split("\x1b[s").pop()!
+  expect(cleared).not.toContain("/help")
+  expect(cleared).toContain("│ ")
+  const redraws = rendered().split("\x1b[s").length - 1
+  // 再退格:内容未变,不重绘
+  input.write("\x7f")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  expect(rendered().split("\x1b[s").length - 1).toBe(redraws)
+  input.write("你")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  expect(rendered().split("\x1b[s").pop()).not.toContain("/help")
+  source.close()
+})
+
+test("submitting clears the hints row before the box closes", async () => {
+  const { input, source, rendered } = ttyBoxSource()
+  const line = source.next()
+  source.showPrompt?.()
+  input.write("/sk")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  input.write("\n")
+  expect(await line).toBe("/sk")
+  // 提交时先还原留白行再下移出框
+  expect(rendered()).toContain("\r\x1b[2K  │ \x1b[2B")
+  source.close()
+})
+
+test("plain prompt path never writes hint rows", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const source = readlineLineSource(() => [], { input, output, margin: 2 })
+  source.showPrompt?.()
+  input.write("/")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  expect(rendered).not.toContain("\x1b[s")
+  source.close()
+})

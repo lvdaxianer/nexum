@@ -150,7 +150,7 @@ export function createLiveLine(io: CliIO, render: (tick: number) => string, colu
 }
 
 /** 按显示宽度截断帧(CJK 计 2,ANSI 序列零宽原样保留),超宽时末位以 … 收尾;宽字符不劈开。 */
-function truncateFrame(text: string, width: number): string {
+export function truncateFrame(text: string, width: number): string {
   const tokens = text.match(/\x1b\[[0-9;]*[A-Za-z]|./gsu) ?? []
   const widths = tokens.map((token) => (token.startsWith("\x1b") ? 0 : displayWidth(token)))
   if (widths.reduce((sum, w) => sum + w, 0) <= width) return text

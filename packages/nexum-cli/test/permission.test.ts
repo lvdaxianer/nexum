@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { Nexum, type NexumPermissionPolicyRule } from "@nexum/client"
 import { cmdPermission, cmdPermissionList, cmdPermissionMode, cmdPermissionRemove, cmdPermissionSet, permissionStatusText } from "../src/permission.ts"
 import { memoryIO } from "../src/io.ts"
+import { displayWidth } from "../src/term.ts"
 
 const meta = { protocolVersion: "nexum.runtime.v1", traceId: "trace_test" } as const
 
@@ -182,4 +183,22 @@ test("permissionStatusText derives the mode from the global wildcard rule only",
   expect(permissionStatusText(caps, { rules: [rule({ id: "r3", action: "*", resource: "*", effect: "allow", scope: "session", sessionID: "s1" })], defaultEffect: "ask" })).toBe("权限:ask · 1 规则")
   const colored = permissionStatusText({ ...caps, color: "ansi16" }, { rules: [], defaultEffect: "ask" })
   expect(colored).toContain("\x1b[33mask")
+})
+
+test("permission list truncates long resources and keeps every column aligned", async () => {
+  const io = memoryIO()
+  const longCommand = 'echo "=== src ===" && ls -la src && cat package.json && echo done'
+  const { client } = policyClient([
+    rule({ id: "hpr_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", action: "shell", resource: longCommand, effect: "allow" }),
+    rule({ id: "rule_002", action: "edit", resource: "src/a.ts", effect: "deny" }),
+  ])
+  await cmdPermissionList(client, io)
+  const lines = io.plain().split("\n").filter((line) => line.includes("rule_002") || line.includes("hpr_") || line.includes("ID"))
+  expect(lines.length).toBe(3)
+  // 长命令被截断并以 … 收尾
+  expect(io.plain()).toContain("…")
+  expect(io.plain()).not.toContain("echo done")
+  // 表头与数据行显示宽度一致(无通配规则,无 ← 当前模式 标记)
+  const widths = lines.map((line) => displayWidth(line))
+  expect(new Set(widths).size).toBe(1)
 })

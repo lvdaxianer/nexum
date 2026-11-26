@@ -1,8 +1,8 @@
 /** 权限策略命令组:list / allow / deny / remove / mode,一次性命令与 REPL /permissions 共享实现。 */
 
 import { NexumClientError, type NexumPermissionPolicyList, type NexumPermissionPolicyRule } from "@nexum/client"
-import { paint, type TermCaps } from "./term"
-import type { CliIO } from "./io"
+import { displayWidth, paint, type TermCaps } from "./term"
+import { truncateFrame, type CliIO } from "./io"
 import type { NexumClient } from "./commands"
 
 const ACTIONS = ["*", "shell", "read", "write", "edit"] as const
@@ -32,14 +32,24 @@ export async function cmdPermissionList(client: NexumClient, io: CliIO): Promise
     io.line(paint(io.caps, "dim", "暂无规则,全部操作逐次询问"))
     return
   }
-  io.line(paint(io.caps, "dim", "ID        动作    范围          效果    作用域   更新于"))
-  // 服务器生成的规则 ID 可能远长于表头(如 hpr_<uuid>),按实际最长 ID 对齐
-  const idWidth = Math.max(10, ...list.rules.map((rule) => rule.id.length + 2))
-  for (const rule of list.rules) {
-    const scope = rule.scope === "session" && rule.sessionID ? `session (${rule.sessionID.slice(0, 8)})` : rule.scope
-    const marker = rule.action === "*" && rule.resource === "*" && rule.scope === "global" ? ` ${paint(io.caps, "dim", "← 当前模式")}` : ""
-    const effect = paint(io.caps, effectColor(rule.effect), rule.effect.padEnd(8))
-    io.line(`${rule.id.padEnd(idWidth)}${rule.action.padEnd(8)}${rule.resource.padEnd(14)}${effect}${scope.padEnd(9)}${rule.updatedAt.slice(0, 16).replace("T", " ")}${marker}`)
+  // 范围列超宽截断(长 shell 命令不再撑爆表格),ID 列兜底 40;列宽按截断后的显示宽度自适应,各行对齐
+  const rows = list.rules.map((rule) => ({
+    id: truncateFrame(rule.id, 40),
+    action: rule.action,
+    resource: truncateFrame(rule.resource, 32),
+    effect: rule.effect,
+    scope: rule.scope === "session" && rule.sessionID ? `session (${rule.sessionID.slice(0, 8)})` : rule.scope,
+    updatedAt: rule.updatedAt.slice(0, 16).replace("T", " "),
+    marker: rule.action === "*" && rule.resource === "*" && rule.scope === "global",
+  }))
+  const idWidth = Math.max(10, ...rows.map((row) => displayWidth(row.id) + 2))
+  const resourceWidth = Math.max(14, ...rows.map((row) => displayWidth(row.resource) + 2))
+  const cell = (text: string, width: number) => text + " ".repeat(Math.max(1, width - displayWidth(text)))
+  io.line(paint(io.caps, "dim", `${cell("ID", idWidth)}${cell("动作", 8)}${cell("范围", resourceWidth)}${cell("效果", 8)}${cell("作用域", 9)}${cell("更新于", 16)}`))
+  for (const row of rows) {
+    const marker = row.marker ? ` ${paint(io.caps, "dim", "← 当前模式")}` : ""
+    const effect = paint(io.caps, effectColor(row.effect), row.effect.padEnd(8))
+    io.line(`${cell(row.id, idWidth)}${cell(row.action, 8)}${cell(row.resource, resourceWidth)}${effect}${cell(row.scope, 9)}${row.updatedAt}${marker}`)
   }
   io.line(paint(io.caps, "dim", "评估顺序:session 规则优先于 global · deny 优先于 allow · 危险 shell 的 allow 需精确匹配"))
 }

@@ -9,7 +9,7 @@ import { askPermission, askQuestion, permissionFromEvent, questionFromEvent, typ
 import { cmdPermission, permissionStatusText } from "./permission"
 import { createRenderer, historyLines } from "./render"
 import { displayWidth, paint, type TermCaps } from "./term"
-import type { CliIO } from "./io"
+import { truncateFrame, type CliIO } from "./io"
 
 export type LineSource = {
   next(): Promise<string | null>
@@ -77,10 +77,10 @@ export function readlineLineSource(
         write: { value: (text: string) => rawOutput.write(text.replaceAll("\x1b[0J", "\x1b[0K")) },
       }) as NodeJS.WritableStream)
     : rawOutput
+  const inputStream = options.input ?? process.stdin
   const rl = createInterface({
-    input: options.input ?? process.stdin,
-    output,
-    // 注入测试流时强制终端模式,补全器才会在 Tab 时触发;生产路径保持默认(随 stdout.isTTY)。
+    input: inputStream,
+    output,    // 注入测试流时强制终端模式,补全器才会在 Tab 时触发;生产路径保持默认(随 stdout.isTTY)。
     ...(options.input ? { terminal: true } : {}),
     completer: (line: string): [string[], string] => {
       // slash 命令名补全:行首 / 且光标仍在命令名 token 内;前缀优先,无命中退回子串模糊
@@ -131,10 +131,50 @@ export function readlineLineSource(
     notifyClosed = () => reject(new Error("readline closed"))
   })
   closedSignal.catch(() => {})
+  // 即时提示:输入 / 后在留白行实时列出匹配的命令/子命令(无需 Tab);内容变化才重绘,避免闪烁
+  let hintsShown = ""
+  const computeHints = (line: string): string => {
+    const command = line.match(/^\/(\S*)$/)
+    if (command) {
+      const query = command[1]!.toLowerCase()
+      const names = SLASH_COMMANDS.map((cmd) => cmd.name)
+      const prefix = names.filter((name) => name.startsWith(query))
+      const hits = prefix.length > 0 ? prefix : names.filter((name) => name.includes(query))
+      return hits.map((name) => `/${name}`).join("  ")
+    }
+    const sub = line.match(/^\/(\S+)\s+(\S*)$/)
+    if (sub) {
+      const cmd = SLASH_COMMANDS.find((entry) => entry.name === sub[1])
+      if (cmd?.subcommands) return cmd.subcommands.join("  ")
+    }
+    return ""
+  }
+  const redrawHints = (hints: string) => {
+    if (!box || hints === hintsShown) return
+    hintsShown = hints
+    const row = hints === "" ? box.spacer : `${box.spacer}${truncateFrame(paint(box.caps, "dim", hints), box.width - 2)}`
+    // 光标在输入行:保存光标 → 下移改写留白行 → 恢复光标(readline 的光标模型不受影响)
+    output.write(`\x1b[s\x1b[1B\r\x1b[2K${row}\x1b[u`)
+  }
+  if (box) {
+    // 实证(bun terminal 模式):createInterface 已开启 keypress 发射,且我们的监听器在 readline
+    // 内部处理器之后触发,rl.line 已更新(含退格)
+    inputStream.on("keypress", () => {
+      if (!promptActive) return
+      redrawHints(computeHints(rl.line))
+    })
+  }
   rl.on("line", (line) => {
     // 闭合框在 showPrompt 时已画好;实证(bun terminal 模式):Enter 时 readline 先写 \r\n,
     // 'line' 触发时光标在留白行行首,下移两行(留白→底边→框外),后续输出落在框外下方。
-    if (promptActive && box) output.write("\x1b[2B")
+    if (promptActive && box) {
+      // 提交时清掉提示,留白行还原为空(光标恰在留白行行首)
+      if (hintsShown !== "") {
+        output.write(`\r\x1b[2K${box.spacer}`)
+        hintsShown = ""
+      }
+      output.write("\x1b[2B")
+    }
     promptActive = false
     const waiter = waiters.shift()
     if (waiter) waiter(line)
@@ -166,6 +206,7 @@ export function readlineLineSource(
     showPrompt: () => {
       if (closed || promptActive) return
       promptActive = true
+      hintsShown = ""
       if (box) {
         output.write(`${box.top}\n${hintRow(box)}\n`)
         rl.setPrompt(box.inputPrefix)
