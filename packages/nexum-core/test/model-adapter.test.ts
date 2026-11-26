@@ -31,6 +31,35 @@ test("sends the active model configuration to one OpenAI-compatible endpoint", a
   expect(request?.init?.body).toContain('"stream":true')
 })
 
+test("parses bounded usage metadata without changing the response shape", async () => {
+  const config = createNexumModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () =>
+      Response.json({
+        usage: { prompt_tokens: 12, completion_tokens: 7, total_tokens: 19, estimated_cost: 0.00123456, currency: "usd" },
+        choices: [{ message: { content: "模型回答" } }],
+      }),
+  })
+
+  expect(await collect(model)).toEqual([
+    { type: "text", content: "模型回答" },
+    { type: "completed", usage: { promptTokens: 12, completionTokens: 7, totalTokens: 19, estimatedCost: 0.001235, currency: "USD" } },
+  ])
+})
+
+test("drops unbounded usage values", async () => {
+  const config = createNexumModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () => Response.json({ usage: { prompt_tokens: 100_000_001 }, choices: [{ message: { content: "回答" } }] }),
+  })
+
+  expect(await collect(model)).toEqual([{ type: "text", content: "回答" }, { type: "completed" }])
+})
+
 test("preserves the provider finish reason so the loop can continue truncated output", async () => {
   const config = createNexumModelConfigStore()
   await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
@@ -120,6 +149,26 @@ test("requests streaming and yields each SSE text delta as it arrives", async ()
     { type: "text", content: "，" },
     { type: "text", content: "世界" },
     { type: "completed", finishReason: "stop" },
+  ])
+})
+
+test("attaches bounded usage from the final streaming payload", async () => {
+  const config = createNexumModelConfigStore()
+  await config.update({ baseUrl: "https://model.example.com/v1", model: "coding-model", credential: "test-credential" })
+  const sseBody = [
+    { choices: [{ index: 0, delta: { content: "回答" } }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } },
+  ]
+    .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+    .join("")
+  const model = createOpenAICompatibleModelPort({
+    config,
+    fetch: async () => new Response(`${sseBody}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } }),
+  })
+
+  expect(await collect(model)).toEqual([
+    { type: "text", content: "回答" },
+    { type: "completed", finishReason: "stop", usage: { promptTokens: 4, completionTokens: 2, totalTokens: 6 } },
   ])
 })
 

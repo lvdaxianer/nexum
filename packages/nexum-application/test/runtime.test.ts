@@ -57,6 +57,20 @@ test("uses an injected persistence composition for embedded runtime stores", asy
   await runtime.close()
 })
 
+test("composes a provider catalog without changing the coding loop", async () => {
+  const modelConfig = createNexumModelConfigStore()
+  await modelConfig.update({
+    baseUrl: "https://model.example.com/v1",
+    model: "coding-model",
+    credential: "super-secret-value",
+  })
+  const runtime = createEmbeddedRuntime({ modelConfig })
+
+  expect((await runtime.providerCatalog.list()).providers[0]?.models[0]?.modelID).toBe("coding-model")
+  expect(JSON.stringify(await runtime.providerCatalog.list())).not.toContain("super-secret-value")
+  await runtime.close()
+})
+
 test("local host refuses paths outside the session directory", async () => {
   const host = createLocalHostAdapter()
   const result = await host.readText({ directory: "/tmp/nexum", path: "../outside.txt" })

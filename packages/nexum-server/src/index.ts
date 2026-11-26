@@ -29,6 +29,7 @@ import {
   type NexumRolePromptStore,
   type NexumModelProbeMode,
   type NexumModelProbePort,
+  type NexumProviderCatalogPort,
   type NexumSessionService,
   type SessionRecord,
   type SessionStore,
@@ -65,6 +66,7 @@ const MODEL_PROBE_TIMEOUT_MS = 30_000
 const NEXUM_PROTOCOL_VERSION = "nexum.runtime.v1"
 const NEXUM_FEATURES = [
   "model",
+  "provider_catalog",
   "session",
   "prompt",
   "permission",
@@ -77,7 +79,7 @@ const NEXUM_FEATURES = [
   "mcp",
 ] as const
 const NEXUM_CAPABILITIES = [
-  { id: "model", version: "1", status: "enabled", operations: ["prompt"] },
+  { id: "model", version: "1", status: "enabled", operations: ["prompt", "catalog"] },
   { id: "tool", version: "1", status: "enabled", operations: ["execute"] },
   { id: "permission", version: "1", status: "enabled", operations: ["evaluate"] },
   { id: "interaction", version: "1", status: "enabled", operations: ["request", "reply"] },
@@ -173,6 +175,7 @@ export interface NexumServerOptions {
   readonly permissionPolicyStore?: NexumPermissionPolicyStore
   readonly questionPort?: NexumQuestionPort
   readonly modelProbe?: NexumModelProbePort
+  readonly providerCatalog?: NexumProviderCatalogPort
   readonly modelConfigStore?: NexumModelConfigStore
   readonly rolePromptStore?: NexumRolePromptStore
   readonly rolePromptFile?: string
@@ -229,6 +232,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
       ...(options.permissionPolicyStore ? { permissionPolicyStore: options.permissionPolicyStore } : {}),
       ...(options.questionPort ? { questionPort: options.questionPort } : {}),
       ...(options.modelProbe ? { modelProbe: options.modelProbe } : {}),
+      ...(options.providerCatalog ? { providerCatalog: options.providerCatalog } : {}),
       ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
       ...(options.skillRegistryFile ? { skillRegistryFile: options.skillRegistryFile } : {}),
       ...(options.skillInvocation ? { skillInvocation: options.skillInvocation } : {}),
@@ -246,6 +250,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const modelConfigStore = runtime.modelConfig
   const rolePromptStore = runtime.rolePrompt
   const modelProbe = runtime.modelProbe
+  const providerCatalog = runtime.providerCatalog
   const eventHub = runtime.eventHub
   const permissionBroker = runtime.permissionBroker
   const questionPort = runtime.questionPort
@@ -289,6 +294,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
                   modelConfigStore,
                   rolePromptStore,
                   modelProbe,
+                  providerCatalog,
                   skillRegistry,
                   skillInvocation,
                   mcp,
@@ -409,6 +415,7 @@ async function handleRequest(
   modelConfigStore?: NexumModelConfigStore,
   rolePromptStore?: NexumRolePromptStore,
   modelProbe?: NexumModelProbePort,
+  providerCatalog?: NexumProviderCatalogPort,
   skillRegistry?: NexumSkillRegistry,
   skillInvocation?: NexumSkillInvocationPort,
   mcp?: McpPort,
@@ -545,6 +552,13 @@ async function handleRequest(
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
     return probeModel(request, modelProbe, traceId)
+  }
+
+  if (url.pathname === "/api/nexum/providers") {
+    if (request.method !== "GET") {
+      return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    }
+    return getProviderCatalog(providerCatalog, traceId)
   }
 
   if (url.pathname === "/api/nexum/role-prompt") {
@@ -2303,6 +2317,86 @@ async function getModelConfig(modelConfigStore: NexumModelConfigStore | undefine
     return errorResponse(503, "NEXUM_MODEL_CONFIG_NOT_CONFIGURED", "Nexum Model Config 尚未配置", traceId)
   }
   return jsonResponse({ data: (await modelConfigStore.get()) ?? null }, traceId)
+}
+
+/** 返回只含白名单字段的 Provider/model 目录；适配器失败不影响模型 Prompt。 */
+async function getProviderCatalog(providerCatalog: NexumProviderCatalogPort | undefined, traceId: string): Promise<Response> {
+  if (!providerCatalog) {
+    return jsonResponse({ data: unavailableProviderCatalog() }, traceId)
+  }
+  try {
+    const catalog = await providerCatalog.list()
+    return jsonResponse({ data: publicProviderCatalog(catalog) }, traceId)
+  } catch {
+    return jsonResponse({ data: unavailableProviderCatalog() }, traceId)
+  }
+}
+
+function publicProviderCatalog(catalog: Awaited<ReturnType<NexumProviderCatalogPort["list"]>>) {
+  const capabilities = new Set(["text", "reasoning", "tool_calling", "vision", "streaming"])
+  return {
+    providers: catalog.providers.map((provider) => ({
+      providerID: safeCatalogText(provider.providerID, "unknown-provider"),
+      displayName: safeCatalogText(provider.displayName, "Unknown provider"),
+      status: provider.status === "unavailable" ? "unavailable" as const : "available" as const,
+      models: provider.models.map((model) => ({
+        providerID: safeCatalogText(model.providerID, "unknown-provider"),
+        modelID: safeCatalogText(model.modelID, "unknown-model"),
+        ...(model.displayName ? { displayName: safeCatalogText(model.displayName, "Unknown model") } : {}),
+        capabilities: model.capabilities.filter((capability) => capabilities.has(capability)),
+        ...(boundedCatalogNumber(model.contextWindow) !== undefined
+          ? { contextWindow: boundedCatalogNumber(model.contextWindow) }
+          : {}),
+        ...(boundedCatalogNumber(model.maxOutputTokens) !== undefined
+          ? { maxOutputTokens: boundedCatalogNumber(model.maxOutputTokens) }
+          : {}),
+        ...(model.pricing ? { pricing: publicModelPricing(model.pricing) } : {}),
+      })),
+      ...(provider.errorCode === "unavailable" ? { errorCode: "unavailable" as const } : {}),
+    })),
+    generatedAt: typeof catalog.generatedAt === "string" ? catalog.generatedAt.slice(0, 64) : new Date().toISOString(),
+  }
+}
+
+function publicModelPricing(pricing: NonNullable<Awaited<ReturnType<NexumProviderCatalogPort["list"]>>["providers"][number]["models"][number]["pricing"]>) {
+  return {
+    ...(boundedCatalogNumber(pricing.inputPerMillionTokens) !== undefined
+      ? { inputPerMillionTokens: boundedCatalogNumber(pricing.inputPerMillionTokens) }
+      : {}),
+    ...(boundedCatalogNumber(pricing.outputPerMillionTokens) !== undefined
+      ? { outputPerMillionTokens: boundedCatalogNumber(pricing.outputPerMillionTokens) }
+      : {}),
+    ...(typeof pricing.currency === "string" && /^[A-Za-z]{3}$/.test(pricing.currency)
+      ? { currency: pricing.currency.toUpperCase() }
+      : {}),
+    ...(pricing.source ? { source: safeCatalogText(pricing.source, "estimate") } : {}),
+    ...(pricing.updatedAt ? { updatedAt: safeCatalogText(pricing.updatedAt, "") } : {}),
+  }
+}
+
+function unavailableProviderCatalog() {
+  return {
+    providers: [
+      {
+        providerID: "unavailable",
+        displayName: "Provider catalog unavailable",
+        status: "unavailable" as const,
+        models: [],
+        errorCode: "unavailable" as const,
+      },
+    ],
+    generatedAt: new Date().toISOString(),
+  }
+}
+
+function safeCatalogText(value: string, fallback: string): string {
+  const text = value.trim().slice(0, 128)
+  return text || fallback
+}
+
+function boundedCatalogNumber(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value) || value < 0 || value > 1_000_000_000) return undefined
+  return value
 }
 
 /** 更新并校验当前模型配置，错误时保留旧配置。 */

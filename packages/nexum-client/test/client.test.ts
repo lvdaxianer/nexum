@@ -28,6 +28,25 @@ test("uses the Nexum runtime protocol for capability requests", async () => {
   expect(requests[0]?.method).toBe("GET")
 })
 
+test("queries the provider catalog through the model client namespace", async () => {
+  const requests: Request[] = []
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      const request = new Request(typeof input === "string" ? input : input.toString(), init)
+      requests.push(request)
+      return Response.json({
+        data: { providers: [], generatedAt: "2026-11-26T00:00:00.000Z" },
+        meta: { protocolVersion: "nexum.runtime.v1", traceId: "trace_provider" },
+      })
+    },
+  })
+
+  expect((await client.experimental.nexum.model.catalog()).data.providers).toEqual([])
+  expect(requests[0]?.url).toBe("http://nexum.test/api/nexum/providers")
+  expect(requests[0]?.method).toBe("GET")
+})
+
 test("uses the experimental continue endpoint without appending a duplicate prompt", async () => {
   const requests: Request[] = []
   const client = Nexum.make({
