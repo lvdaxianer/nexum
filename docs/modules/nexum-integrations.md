@@ -20,7 +20,7 @@
 - `createNexumProjectContextPort`、`createLocalSkillSource`：提供项目上下文和本地 Skill 文件来源。
 
 ```ts
-import { createLocalHostAdapter, createOpenAICompatibleModelPort } from "@nexum/integrations"
+import { createLocalHostAdapter, createOpenAICompatibleModelPort } from "nexum/integrations"
 
 const host = createLocalHostAdapter()
 const model = createOpenAICompatibleModelPort({ config: modelConfig })

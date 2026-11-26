@@ -17,7 +17,7 @@
 入口 [`src/index.ts`](../../packages/nexum-surface-adapter/src/index.ts) 导出 `CHAT_PROTOCOL_METHODS`、`ChatProtocolAdapter`、`ChatProtocolError`、`normalizeChatProtocolError`、`createChatProtocolAdapter` 以及请求/标识类型，并重新导出 `NexumEvent`、`NexumPermission`、`NexumQuestion`、`NexumSession`、`NexumSessionMessages`、`NexumSkill` 协议类型。
 
 ```ts
-import { createChatProtocolAdapter } from "@nexum/surface-adapter"
+import { createChatProtocolAdapter } from "nexum/surface-adapter"
 
 const adapter = createChatProtocolAdapter({ baseUrl: "http://127.0.0.1:4097" })
 

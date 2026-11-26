@@ -15,7 +15,7 @@
 入口 [`src/index.ts`](../../packages/nexum-client/src/index.ts) 导出 `Nexum`、`NexumClientError`、`NexumFetch`、`NexumClientOptions`、`NexumEventOptions`，并重新导出协议类型。
 
 ```ts
-import { Nexum } from "@nexum/client"
+import { Nexum } from "nexum/client"
 
 const client = Nexum.make({
   baseUrl: "http://127.0.0.1:4097",

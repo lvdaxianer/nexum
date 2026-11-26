@@ -1,16 +1,13 @@
-# @nexum/cli
+# Nexum CLI
 
-Nexum 的终端 Surface，与 Web UI 同级。它复用 `@nexum/surface-adapter` 的协议契约和 `@nexum/client`，提供 REPL、思考动画、Permission/Question 交互问答和 session/model/skill/mcp 等管理面命令，不依赖 Core 或 Server 内部实现。
+CLI 是 Nexum 的终端 Surface。安装 `nexum` 后即可使用 `nexum` 可执行文件；程序化入口为 `nexum/cli`。
 
 ```bash
-# 查看全部命令
-bun packages/nexum-cli/src/main.ts --help
-
-# 或通过 package script
-bun run --cwd packages/nexum-cli start -- --help
-
-# 连接 Server 后进入 REPL
-bun packages/nexum-cli/src/main.ts --server http://127.0.0.1:4097
+npm install nexum
+npx nexum --help
+npx nexum --server http://127.0.0.1:4097
 ```
 
-模块职责、命令表、终端能力分层和测试入口见 [`docs/modules/nexum-cli.md`](../../docs/modules/nexum-cli.md)。
+CLI 复用 `nexum/surface-adapter` 和 `nexum/client`，提供 REPL、Session、Model、Skill、MCP、Permission 和 Question 命令，不直接依赖 Core 或 Server 执行实现。Server 需要由宿主或单独的 Nexum 服务启动。
+
+仓库内开发使用源码入口：`bun run --cwd packages/nexum-cli start -- --help`。源码包只用于 workspace 开发，发布物中的 CLI 已经编译到 `nexum` tarball，不要求用户下载仓库源码。

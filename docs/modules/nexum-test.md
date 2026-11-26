@@ -8,7 +8,7 @@
 
 ## 职责
 
-`@nexum/test` 是 Nexum 的跨层验证包和可启动 Test Workbench。它不是生产 Runtime，也不是写死业务 Demo；它用真实 Core、Application、Protocol、Client、Server 和 Surface 跑通一条完整链路。
+`@nexum/test` 是 Nexum 的内部跨层验证包和可启动 Test Workbench。它不是生产 Runtime，也不是写死业务 Demo；它用真实 Core、Application、Protocol、Client、Server 和 Surface 跑通一条完整链路。
 
 ## Workbench 接入
 

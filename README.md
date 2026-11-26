@@ -4,6 +4,26 @@ Nexum 是一个 UI 无关、协议优先、可组合的 Agent Runtime。它把 A
 
 Nexum 不是绑定某个 UI 的完整聊天产品，也不是把所有能力塞进一个“大 Agent 类”。它提供可运行的默认组合，同时允许替换模型、存储、Host、MCP、协议客户端和 UI。
 
+## 为什么叫 Nexum
+
+`Nexum` 取自“连接、绑定”的含义：它连接 Agent 的运行语义、环境能力、协议和不同交互 Surface。名字只叫 Nexum，因为核心价值不是某一个 UI 或某一类 Agent，而是让这些模块可以被清晰组合、替换和复用。
+
+## 发布包安装
+
+Nexum 对用户只发布一个 `nexum` 包，不发布 `@nexum/application` 等独立包。安装编译后的产物后，通过 workspace 风格的 subpath 使用模块：
+
+```bash
+npm install nexum
+```
+
+```ts
+import { createLocalRuntime } from "nexum/application"
+import { Nexum } from "nexum/client"
+import { createFilePersistence } from "nexum/persistence/file"
+```
+
+完整入口和每个模块的使用说明见[模块文档索引](docs/modules/README.md)。下面的 `bun install`、源码路径和 `bun run --cwd` 命令只属于 Nexum 贡献者的 workspace 开发流程。
+
 ## GitHub 项目简介（中文）
 
 Nexum 是一个面向多场景 Agent 应用的可组合运行时。它将 Coding Loop、Session、上下文压缩、权限、Skill、Memory 和 MCP 等稳定运行语义沉淀在 UI 无关的 Core 中，通过 Persistence 和 Integrations 接入存储、模型、文件系统和宿主能力，再由 Application 组合运行时，并以协议层连接 Web、Desktop、TUI、CLI 及企业应用。Nexum 关注最小功能单元、清晰分层、长任务可恢复和 UI/运行时解耦，让同一套 Agent 能力可以被不同产品安全复用。
@@ -45,7 +65,7 @@ Nexum 当前提供以下运行时能力：
 
 ## 先跑起来
 
-### 安装
+### 贡献者安装 workspace
 
 ```bash
 bun install
@@ -93,8 +113,8 @@ Application 提供默认 Runtime Composer。你可以先使用默认组合，再
 `createEmbeddedRuntime` 默认使用内存 Persistence，不创建文件，适合单元测试、嵌入式宿主和一次性场景：
 
 ```ts
-import { createEmbeddedRuntime } from "@nexum/application"
-import type { ModelPort } from "@nexum/core"
+import { createEmbeddedRuntime } from "nexum/application"
+import type { ModelPort } from "nexum/core"
 
 declare const model: ModelPort
 
@@ -117,7 +137,7 @@ await runtime.codingLoop.run({
 `createLocalRuntime` 使用 `@nexum/persistence-file`，把 Session、消息、事件、交互和其他 Runtime 状态保存到数据目录，适合本地 CLI 或单机应用：
 
 ```ts
-import { createLocalRuntime } from "@nexum/application"
+import { createLocalRuntime } from "nexum/application"
 
 const runtime = createLocalRuntime({ dataDirectory: ".nexum" })
 ```
@@ -129,8 +149,8 @@ const runtime = createLocalRuntime({ dataDirectory: ".nexum" })
 `createSqliteRuntime` 使用 `@nexum/persistence-sqlite`，再交给 Server 绑定 HTTP/SSE：
 
 ```ts
-import { createSqliteRuntime } from "@nexum/application"
-import { startNexumServer } from "@nexum/server"
+import { createSqliteRuntime } from "nexum/application"
+import { startNexumServer } from "nexum/server"
 
 const runtime = await createSqliteRuntime({
   databasePath: ".nexum/nexum.db",
@@ -147,7 +167,7 @@ Server 只负责传输、路由、错误映射和事件订阅；Runtime 的 Sess
 协议客户端不依赖 Core 或 Server，可以被 Web、Desktop、TUI、CLI 或其他语言绑定复用：
 
 ```ts
-import { Nexum } from "@nexum/client"
+import { Nexum } from "nexum/client"
 
 const client = Nexum.make({ baseUrl: "http://127.0.0.1:4097" })
 const capabilities = await client.capabilities()

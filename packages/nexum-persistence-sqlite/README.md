@@ -1,7 +1,19 @@
-# @nexum/persistence-sqlite
+# Nexum SQLite Persistence
 
-Nexum 的 SQLite 数据库适配器。
+SQLite Persistence 是支持事务和重启恢复的数据库实现，发布入口为 `nexum/persistence/sqlite`。
 
-使用 `createSqlitePersistence({ databasePath })` 创建组合。首次打开数据库时会自动初始化并记录 schema 版本；数据库目录使用 `0700`、数据库及已存在的 WAL 伴生文件使用 `0600`。关闭后再次使用同一个数据库文件可以恢复已提交的 Session、消息、事件、权限和其他 Runtime 状态。SQLite Session 删除会在一个事务中清理相关记录。
+```bash
+npm install nexum
+```
 
-Web/Server 默认使用 `.nexum/nexum.db`。测试必须为每个 Runtime 使用独立临时数据库，不能共享开发数据库或固定测试文件。
+```ts
+import { createSqlitePersistence } from "nexum/persistence/sqlite"
+import { createSqliteRuntime } from "nexum/application"
+
+const persistence = await createSqlitePersistence({ databasePath: ".nexum/nexum.db" })
+const runtime = await createSqliteRuntime({ persistence })
+```
+
+首次打开数据库会初始化 schema；关闭后再次打开同一路径可以恢复已提交的 Session、消息、事件和交互状态。数据库及 WAL 文件应限制权限，测试必须为每个 Runtime 使用独立临时数据库，不能共享开发库。
+
+仓库内开发：`bun test --cwd packages/nexum-persistence-sqlite`、`bun run --cwd packages/nexum-persistence-sqlite typecheck`。
