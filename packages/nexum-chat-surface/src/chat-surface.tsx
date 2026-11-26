@@ -55,6 +55,10 @@ export type ChatSurfaceProps = {
   readonly onOpenPermissionSettings?: () => void
   /** 当前 Session 进入终态时通知宿主同步外层列表。 */
   readonly onSessionStatusChange?: (sessionID: ChatSessionID, status: NexumSession["status"]) => void
+  /**
+   * 当前 Session 收到 Skill registry 变更时通知宿主刷新管理列表。
+   */
+  readonly onSkillUpdated?: () => void
 }
 
 const historyPageSize = 50
@@ -110,6 +114,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
   let lifecycle = 0
   let followTail = true
   let promptSequence = 0
+  let skillLoadSequence = 0
   let surfaceRoot: HTMLElement | undefined
   const seenEventIDs = new Map<string, Set<string>>()
   const eventSequences = new Map<string, number>()
@@ -158,11 +163,14 @@ export function ChatSurface(props: ChatSurfaceProps) {
   }
 
   async function loadSkills(id: string, currentLifecycle: number) {
+    const loadSequence = ++skillLoadSequence
     try {
       const nextSkills = await adapter.listSkills()
-      if (isCurrent(id, currentLifecycle)) setSkills(nextSkills)
+      if (isCurrent(id, currentLifecycle) && loadSequence === skillLoadSequence) setSkills(nextSkills)
     } catch (error) {
-      if (isCurrent(id, currentLifecycle)) setNotice(messageFrom(error, "Skill 列表加载失败"))
+      if (isCurrent(id, currentLifecycle) && loadSequence === skillLoadSequence) {
+        setNotice(messageFrom(error, "Skill 列表加载失败"))
+      }
     }
   }
 
@@ -195,7 +203,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
         eventSequences.set(id, event.sequence)
         setEvents((current) => [...current, { ...event, localTime: formatLocalTime(event.occurredAt) }].slice(-200))
         setChatItems((current) => projectChatEvent(current, event))
-        applyEventState(event, id)
+        applyEventState(event, id, currentLifecycle)
       }
       if (!controller.signal.aborted && isCurrent(id, currentLifecycle)) setConnected(false)
     } catch (error) {
@@ -253,7 +261,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
     }
   }
 
-  function applyEventState(event: NexumEvent, id: string) {
+  function applyEventState(event: NexumEvent, id: string, currentLifecycle: number) {
     const data = eventDataOf(event.data)
     if (event.type === "model.attempt") setStatus("running")
     if (event.type === "model.retry") setStatus("retrying")
@@ -307,6 +315,10 @@ export function ChatSurface(props: ChatSurfaceProps) {
     if (event.type === "skill.activated") {
       const skillID = stringValue(data.skillID)
       if (skillID) setActiveSkillIDs((current) => (current.includes(skillID) ? current : [...current, skillID]))
+    }
+    if (event.type === "skill.updated") {
+      void loadSkills(id, currentLifecycle)
+      props.onSkillUpdated?.()
     }
     if (event.type === "skill.failed") setNotice("Skill 激活失败，请检查状态和权限")
   }

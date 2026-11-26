@@ -1006,6 +1006,66 @@ describe.serial("Nexum UI smoke", () => {
     },
   )
 
+  test.serial("refreshes Skills from a live skill.updated event", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    const eventHub = createNexumEventHub()
+    const sessions = createNexumSessionService({ store: createInMemorySessionStore() })
+    const registry = createNexumSkillRegistry({ roots: [] })
+    let delaySkillList = false
+    let skillListReloadStarted: (() => void) | undefined
+    const skillListReload = new Promise<void>((resolve) => {
+      skillListReloadStarted = resolve
+    })
+    apiServer = await startNexumServer({
+      port: apiPort,
+      corsOrigins: [uiOrigin],
+      eventHub,
+      sessionService: sessions,
+      skillRegistry: registry,
+    })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+    await page.route("**/api/nexum/skills", async (route) => {
+      if (route.request().method() !== "GET" || !delaySkillList) {
+        await route.continue()
+        return
+      }
+      delaySkillList = false
+      skillListReloadStarted?.()
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
+      await route.continue()
+    })
+    directory = await mkdtemp(join(tmpdir(), "nexum-ui-skill-event-session-"))
+    skillRoot = await mkdtemp(join(tmpdir(), "nexum-ui-skill-event-root-"))
+    const skillDirectory = join(skillRoot, "live-skill")
+    await mkdir(skillDirectory)
+    await writeFile(join(skillDirectory, "SKILL.md"), "---\nname: live-skill\ndescription: Live Skill\n---\n")
+
+    await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(directory)
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    await expect(page.getByText(/已创建，等待 Prompt/)).toBeVisible()
+    await openDrawer(page, /Skills/)
+    await expect(page.getByText("暂无已发现的项目 Skill", { exact: true })).toBeVisible()
+    await page.locator(".skill-list").evaluate((element) => element.setAttribute("data-test-identity", "stable"))
+
+    delaySkillList = true
+    const registerResponse = await fetch(new URL("/api/nexum/skills/register", apiServer.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ address: skillDirectory }),
+    })
+    expect(registerResponse.status).toBe(200)
+    await skillListReload
+    await expect(page.locator(".skill-list")).toHaveAttribute("data-test-identity", "stable")
+    await expect(page.getByText("live-skill", { exact: true }).first()).toBeVisible()
+
+    await closeDrawer(page)
+    await page.getByPlaceholder("描述下一步 Coding 任务…").fill("@live")
+    await expect(page.getByRole("option", { name: "@live-skill" })).toBeVisible()
+  })
+
   test.serial("controls model probe and restores the selected session from the page", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()

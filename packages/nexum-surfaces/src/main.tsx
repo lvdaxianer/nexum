@@ -114,6 +114,8 @@ function App() {
   const [deleteMessage, setDeleteMessage] = createSignal("")
   const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false)
   let sessionSelectSequence = 0
+  let skillLoadSequence = 0
+  let skillReloadQueued = false
   let mcpPollingActive = false
   let mcpRefreshTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -362,11 +364,25 @@ function App() {
    * @date 2026-11-20
    */
   async function loadSkills() {
+    const loadSequence = ++skillLoadSequence
     try {
-      setSkills([...(await client.experimental.nexum.skill.list()).data])
+      const nextSkills = [...(await client.experimental.nexum.skill.list()).data]
+      if (loadSequence === skillLoadSequence) setSkills(nextSkills)
     } catch (error) {
-      setNotice(messageFrom(error, "Skill 目录暂时不可用"))
+      if (loadSequence === skillLoadSequence) setNotice(messageFrom(error, "Skill 目录暂时不可用"))
     }
+  }
+
+  /**
+   * 合并 Skill registry 事件触发的刷新，避免同一批事件重复发起请求。
+   */
+  function scheduleSkillReload() {
+    if (skillReloadQueued) return
+    skillReloadQueued = true
+    queueMicrotask(() => {
+      skillReloadQueued = false
+      void loadSkills()
+    })
   }
 
   async function loadMcpServers() {
@@ -1448,6 +1464,7 @@ function App() {
             sessionID={sessionID()}
             client={{ baseUrl: apiBaseUrl }}
             onSessionStatusChange={(id, status) => setSessions((current) => mergeSessionStatus(current, id, status))}
+            onSkillUpdated={scheduleSkillReload}
             onOpenPermissionSettings={openPolicyPopover}
             composerExtras={
               <button type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>
