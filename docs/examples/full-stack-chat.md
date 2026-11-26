@@ -125,7 +125,7 @@ const session = await client.experimental.nexum.session.create({
 
 创建成功后，`session.id` 就是后面交给聊天界面的 Session 标识。
 
-Session 的创建、查询、Prompt、历史和恢复见 [Session 会话能力](../capabilities/session.md)。
+Session 相关用法统一见 [Session 会话能力](../capabilities/session.md)，包括查询、切换、历史、重命名、删除、取消和继续；本教程只展示它如何和 Client、Chat Surface 组合。
 
 ## 第 6 步：查询和切换已有 Session
 
