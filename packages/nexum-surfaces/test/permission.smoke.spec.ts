@@ -168,13 +168,16 @@ describe.serial("Nexum UI smoke", () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()
     const sessionService = createNexumSessionService({ store: createInMemorySessionStore() })
+    const messageStore = createInMemoryMessageStore()
     directory = await mkdtemp(join(tmpdir(), "nexum-ui-file-context-"))
     apiServer = await startNexumServer({
       port: apiPort,
       corsOrigins: [uiOrigin],
       sessionService,
+      messageStore,
       codingLoop: {
         async run(input) {
+          await messageStore.save(input.sessionID, [{ role: "user", content: input.text }])
           return (await sessionService.get(input.sessionID))!
         },
         async continueStart(sessionID) {
@@ -207,8 +210,14 @@ describe.serial("Nexum UI smoke", () => {
     expect(requestBody.text).toBe("请总结文件\n\n【本地上传文件上下文开始】\n以下正文已经由浏览器读取并随本条消息发送。请直接使用正文回答，不要根据文件名调用 read、ls 或其他工作目录工具查找文件。\n文件名：notes.md\n【文件正文开始】\n# 标题\n正文\n【文件正文结束】\n【本地上传文件上下文结束】")
     await expect(page.locator(".chat-message.user")).toContainText("请总结文件")
     await expect(page.locator(".nexum-chat-user-attachment")).toContainText("notes.md")
+    await expect(page.locator(".chat-message.user")).toHaveCount(1)
+    await expect.poll(async () => page.locator(".nexum-chat-body").evaluate((element) => element.scrollTop >= element.scrollHeight - element.clientHeight - 1)).toBe(true)
     await expect(page.getByLabel("Coding Prompt")).toHaveValue("")
     await expect(page.locator(".nexum-chat-file-name")).toHaveCount(0)
+    await page.reload()
+    await expect(page.locator(".chat-message.user")).toContainText("请总结文件")
+    await expect(page.locator(".nexum-chat-user-attachment")).toContainText("notes.md")
+    await expect(page.locator(".chat-message.user")).toHaveCount(1)
   })
 
   test.serial("offers one continue action after a settled failed run", { timeout: 15_000 }, async () => {

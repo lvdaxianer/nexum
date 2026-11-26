@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { NexumEvent } from "../src/index.ts"
-import { composeChatPrompt, historyItemsFromMessages, mergePendingChatItems, projectChatEvent } from "../src/chat-surface.tsx"
+import { composeChatPrompt, historyItemsFromMessages, mergeHistoryItems, mergePendingChatItems, projectChatEvent } from "../src/chat-surface.tsx"
 import type { ChatItem } from "../src/chat-surface.tsx"
 import type { ChatStateSnapshot } from "../src/index.ts"
 
@@ -58,6 +58,28 @@ test("ChatSurface merges pending state without removing an existing user message
     { id: "user:001", content: "刚发送的问题" },
     { id: "permission:permission_001", status: "waiting" },
   ])
+})
+
+test("ChatSurface reconciles the optimistic user message with history without duplicating it", () => {
+  const prompt = composeChatPrompt("能告诉我文件内容吗", { name: "notes.md", text: "正文" })
+  const current = [
+    { id: "user:optimistic", kind: "user", title: "你", content: "能告诉我文件内容吗", attachmentName: "notes.md", sourceContent: prompt, status: "completed", localTime: "当前" },
+    { id: "thinking:session_001", kind: "status", title: "Agent 思考", content: "模型正在思考", status: "streaming", localTime: "当前" },
+  ] satisfies ChatItem[]
+  const incoming = historyItemsFromMessages([{ index: 0, message: { role: "user", content: prompt } }])
+
+  const merged = mergeHistoryItems(current, incoming)
+
+  expect(merged).toHaveLength(2)
+  expect(merged.filter((item) => item.kind === "user")).toHaveLength(1)
+  expect(merged[0]).toMatchObject({ id: "user:optimistic", content: "能告诉我文件内容吗", attachmentName: "notes.md" })
+})
+
+test("ChatSurface does not drop an older identical question while prepending history", () => {
+  const current = [{ id: "history:user:2", kind: "user", title: "你", content: "重复问题", sourceContent: "重复问题", status: "completed", localTime: "历史" }] satisfies ChatItem[]
+  const incoming = historyItemsFromMessages([{ index: 1, message: { role: "user", content: "重复问题" } }])
+
+  expect(mergeHistoryItems(current, incoming).map((item) => item.id)).toEqual(["history:user:1", "history:user:2"])
 })
 
 test("ChatSurface merges streaming assistant text and renders permission/question events", () => {
