@@ -64,10 +64,12 @@ export function inputBoxLines(caps: TermCaps, columns: number, margin = 0): Inpu
 
 export function readlineLineSource(
   skills: () => readonly string[],
-  options: { input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream; box?: InputBox } = {},
+  options: { input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream; box?: InputBox; margin?: number } = {},
 ): LineSource & { prompter: Prompter } {
   const rawOutput = options.output ?? process.stdout
   const box = options.box
+  // 裸提示符与提问行走 readline 流(不经 io 边距注入),统一前置边距;box 的 inputPrefix 已含边距不叠加
+  const marginPad = " ".repeat(Math.max(0, options.margin ?? 0))
   // 实证(bun terminal 模式):退格等编辑触发全行重绘,序列 ^[[0J 清到屏尾会抹掉闭合框底边;
   // box 模式改写为 ^[[0K(清到行尾),重绘只影响输入行。已知限制:多行粘贴的重绘会留残影。
   const output = box
@@ -152,7 +154,7 @@ export function readlineLineSource(
     prompter: (query) => {
       // question 接管下一次行输入,不再触发 'line';提示状态随之失效。
       promptActive = false
-      return Promise.race([rl.question(query), closedSignal])
+      return Promise.race([rl.question(`${marginPad}${query}`), closedSignal])
     },
     close: () => rl.close(),
     setSigintHandler: (handler) => {
@@ -175,7 +177,7 @@ export function readlineLineSource(
         output.write(`\x1b[2A\r${box.inputPrefix}`)
         return
       }
-      rl.setPrompt("nexum ▸ ")
+      rl.setPrompt(`${marginPad}nexum ▸ `)
       rl.prompt()
     },
   }

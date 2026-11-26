@@ -473,3 +473,21 @@ test("margin end-to-end: thinking stream, collapse, tool line and answer all ind
   expect(text).not.toContain("推理第一行")
   expect(text).not.toContain("推理第二行")
 })
+
+test("markdown tail erase re-reads the terminal width at erase time (resize-safe)", () => {
+  const io = memoryIO({ color: "ansi16" }, 2)
+  const renderer = createRenderer({ io })
+  const original = process.stdout.columns
+  try {
+    process.stdout.columns = 80
+    renderer.event(event("assistant.text", { content: "x".repeat(70) }, 1))
+    // 擦除发生在 resize 之后:60 列 - 边距 2 = 58,tail 宽 71 → 2 行
+    process.stdout.columns = 60
+    renderer.event(event("assistant.text", { content: "y" }, 2))
+    expect(io.output()).toContain("\x1b[1A\r\x1b[2K")
+  } finally {
+    if (original === undefined) delete (process.stdout as { columns?: number }).columns
+    else process.stdout.columns = original
+    renderer.close()
+  }
+})

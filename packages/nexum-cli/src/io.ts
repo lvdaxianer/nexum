@@ -63,7 +63,8 @@ export function createMarginWriter(write: (text: string) => void, margin: number
 export function createIO(options: { caps?: TermCaps; out?: { write(text: string): unknown }; margin?: number } = {}): CliIO {
   const caps = options.caps ?? detectCaps()
   const out = options.out ?? process.stdout
-  const margin = Math.min(8, Math.max(0, options.margin ?? (caps.isTTY ? 2 : 0)))
+  // 非 TTY(管道/脚本)强制无边距保持可解析;显式 margin 仅在 TTY 生效
+  const margin = caps.isTTY ? Math.min(8, Math.max(0, options.margin ?? 2)) : 0
   const write = createMarginWriter((text) => void out.write(text), margin)
   return {
     caps,

@@ -126,7 +126,7 @@ export async function run(argv: string[]): Promise<number> {
       io.line(paint(io.caps, "dim", "v0.1.0 · 协议 nexum.runtime.v1"))
       const lineSource = readlineLineSource(
         () => skills.filter((skill) => skill.status === "ready").map((skill) => skill.id),
-        { box: inputBoxLines(io.caps, process.stdout.columns ?? 80, io.margin) },
+        { box: inputBoxLines(io.caps, process.stdout.columns ?? 80, io.margin), margin: io.margin },
       )
       try {
         let sessionID: string | undefined

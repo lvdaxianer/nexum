@@ -26,7 +26,7 @@ export type Renderer = {
 export function createRenderer(options: { io: CliIO; thinking?: ThinkingMode }): Renderer {
   const io = options.io
   const caps = io.caps
-  const md = createMarkdownStream(caps, (text) => io.write(text), (process.stdout.columns ?? 80) - io.margin)
+  const md = createMarkdownStream(caps, (text) => io.write(text), () => (process.stdout.columns ?? 80) - io.margin)
   let mode = options.thinking ?? "live"
   let status: RenderStatus = "idle"
   let live: LiveLine | undefined

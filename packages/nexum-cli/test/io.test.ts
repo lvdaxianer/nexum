@@ -205,3 +205,11 @@ test("live line deducts the io margin from the frame width", async () => {
     expect(frame.endsWith("…")).toBe(true)
   }
 })
+
+test("explicit margin only applies on TTY; pipes always get margin 0", () => {
+  expect(collectIO({ margin: 4, isTTY: false }).io.margin).toBe(0)
+  expect(collectIO({ margin: 4, isTTY: true }).io.margin).toBe(4)
+  const { io, output } = collectIO({ margin: 4, isTTY: false })
+  io.line("管道行")
+  expect(output()).toBe("管道行\n")
+})

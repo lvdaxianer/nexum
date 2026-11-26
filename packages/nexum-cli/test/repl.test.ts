@@ -927,3 +927,45 @@ test("hint row with status stays right-aligned inside a margined box", async () 
   expect(displayWidth(plainHint)).toBe(displayWidth(box.top.replace(/\x1b\[[0-9;]*m/g, "")))
   source.close()
 })
+
+test("readlineLineSource indents the bare prompt and prompter questions by the margin", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const source = readlineLineSource(() => [], { input, output, margin: 2 })
+  source.showPrompt?.()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(rendered).toContain("  nexum ▸ ")
+  const answer = source.prompter("选择 › ")
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(rendered).toContain("  选择 › ")
+  input.write("1\n")
+  expect(await answer).toBe("1")
+  source.close()
+})
+
+test("box mode pads prompter questions but never double-pads the input prefix", async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let rendered = ""
+  output.on("data", (chunk) => {
+    rendered += chunk.toString()
+  })
+  const box = inputBoxLines({ isTTY: true, color: "ansi16", anim: true, theme: "dark" }, 80, 2)!
+  const source = readlineLineSource(() => [], { input, output, box, margin: 2 })
+  source.showPrompt?.()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  // inputPrefix 自带边距,不叠加
+  const plainRendered = rendered.replace(/\x1b\[[0-9;]*m/g, "")
+  expect(plainRendered).toContain("  │ › ")
+  expect(plainRendered).not.toContain("    │ › ")
+  const answer = source.prompter("选择 › ")
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(rendered).toContain("  选择 › ")
+  input.write("1\n")
+  expect(await answer).toBe("1")
+  source.close()
+})
