@@ -21,6 +21,7 @@ import {
   type NexumResponse,
   type NexumSession,
   type NexumSessionDeleteResult,
+  type NexumExecutionRecovery,
   type NexumSessionMessages,
   type NexumSessionState,
   type NexumSkillDeleteResult,
@@ -61,6 +62,7 @@ export type {
   NexumResponse,
   NexumSession,
   NexumSessionDeleteResult,
+  NexumExecutionRecovery,
   NexumSessionMessages,
   NexumSessionState,
   NexumSkillDeleteResult,
@@ -155,6 +157,7 @@ export const Nexum = {
               request<NexumSession>("/session", { method: "POST", body: JSON.stringify(input) }),
             list: () => request<readonly NexumSession[]>("/session"),
             state: (input: { readonly sessionID: string }) => request<NexumSessionState>(`/session/${encodeURIComponent(input.sessionID)}/state`),
+            recovery: (input: { readonly sessionID: string }) => request<readonly NexumExecutionRecovery[]>(`/session/${encodeURIComponent(input.sessionID)}/recovery`),
             messages: (input: {
               readonly sessionID: string
               readonly before?: number

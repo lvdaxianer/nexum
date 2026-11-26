@@ -13,4 +13,5 @@ export { createNexumModelConfigStore } from "@nexum/persistence/internal/model-c
 export { createInMemoryPermissionPolicyStore } from "@nexum/persistence/internal/permission-policy-store"
 export { createNexumRolePromptStore } from "@nexum/persistence/internal/role-prompt"
 export { createInMemorySessionStore } from "@nexum/persistence/internal/session-store"
+export { createInMemoryExecutionStore } from "@nexum/persistence/internal/execution-store"
 export { createInMemorySkillRegistrationStore } from "@nexum/persistence/internal/skill-registration-store"

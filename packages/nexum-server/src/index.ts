@@ -21,6 +21,7 @@ import {
   nexumAnyToolAction,
   redactNexumSensitiveValue,
   type NexumCodingLoop,
+  type NexumExecutionStore,
   type NexumModelConfigStore,
   type NexumPermissionBroker,
   type NexumPermissionPolicyStore,
@@ -84,7 +85,7 @@ const NEXUM_CAPABILITIES = [
     id: "session",
     version: "1",
     status: "enabled",
-    operations: ["create", "list", "get", "update", "delete", "continue"],
+    operations: ["create", "list", "get", "update", "delete", "continue", "recovery"],
   },
   { id: "context", version: "1", status: "enabled", operations: ["load", "compact"] },
   {
@@ -254,6 +255,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
   const skillInvocation = runtime.skillInvocation
   const corsOrigins = options.corsOrigins ?? DEFAULT_CORS_ORIGINS
   const codingLoop = runtime.codingLoop
+  await codingLoop.recover?.()
   const mcp = options.mcp ?? runtime.mcp
   const mcpOAuth = options.mcpOAuth ?? runtime.mcpOAuth
   const mcpConfigStore = options.mcpConfigStore ?? runtime.mcpConfigStore
@@ -281,6 +283,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
                   publishSkillUpdate,
                   runtimeInteractionStore,
                   codingLoop,
+                  runtime.executionStore,
                   permissionBroker,
                   questionPort,
                   modelConfigStore,
@@ -400,6 +403,7 @@ async function handleRequest(
   publishSkillUpdate: PublishSkillUpdate,
   interactionStore: NexumInteractionStore | undefined,
   codingLoop?: NexumCodingLoop,
+  executionStore?: NexumExecutionStore,
   permissionBroker?: NexumPermissionBroker,
   questionPort?: NexumQuestionPort,
   modelConfigStore?: NexumModelConfigStore,
@@ -491,6 +495,12 @@ async function handleRequest(
       return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 POST 请求", traceId)
     }
     return createSession(request, sessionService, traceId)
+  }
+
+  const recoveryMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)\/recovery$/)
+  if (recoveryMatch) {
+    if (request.method !== "GET") return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 GET 请求", traceId)
+    return getSessionRecovery(decodeURIComponent(recoveryMatch[1]!), sessionService, executionStore, traceId)
   }
 
   const continueMatch = url.pathname.match(new RegExp(`^${NEXUM_EXPERIMENTAL_API_PREFIX}/session/([^/]+)/continue$`))
@@ -1745,6 +1755,37 @@ async function getSessionState(
         pendingQuestions,
         lastSequence: eventHub.lastSequence(sessionID),
       },
+    },
+    traceId,
+  )
+}
+
+/** 返回 Session 的安全执行恢复状态，不暴露内部路径、锁或原始异常。 */
+async function getSessionRecovery(
+  sessionID: string,
+  sessionService: NexumSessionService,
+  executionStore: NexumExecutionStore | undefined,
+  traceId: string,
+): Promise<Response> {
+  if (!(await sessionService.get(sessionID))) return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
+  if (!executionStore) return jsonResponse({ data: [] }, traceId)
+  const records = await executionStore.list()
+  return jsonResponse(
+    {
+      data: records
+        .filter((record) => record.sessionID === sessionID)
+        .map((record) => ({
+          executionID: record.executionID,
+          sessionID: record.sessionID,
+          mode: record.mode,
+          status: record.status,
+          attempt: record.attempt,
+          maxAttempts: record.maxAttempts,
+          recoverable: record.recoverable,
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+          ...(record.errorCode ? { errorCode: record.errorCode } : {}),
+        })),
     },
     traceId,
   )

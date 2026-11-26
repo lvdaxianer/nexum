@@ -24,7 +24,7 @@ See `proposal.md` for the motivation. 当前 Core 的 `activeRuns` 和 `continua
 1. **Claim 独立于 SessionRecord。** Session 状态继续表达用户可见生命周期，ExecutionRecord 表达一次运行的恢复事实；这样历史消息、Session 删除和恢复尝试可以分别演进。
 2. **Recovery 使用 `continue`。** Prompt admission 先把用户消息落入 canonical history；进程中断后只要末条是 user/tool，就从已有 history 继续，不再次写入 prompt。没有可继续上下文时只标记等待人工，不自动调用模型。
 3. **由 Store 原子 claim。** Store 提供 `claim`/`settle`/`list` 边界；Memory 用单进程 Map，File 用原子 JSON 替换，SQLite 用单条记录写入。该原子性只保证同一持久化实例的本地 admission，不宣称集群 fencing。
-4. **恢复在 Runtime 创建后显式启动。** Application 组合器调用 Loop 的 `recover`，Server 在接收请求前等待恢复扫描完成；恢复失败记录在 claim 中，不阻塞其他 Session。
+4. **恢复在 Server 启动依赖就绪后显式启动。** Application 组合器只接入 ExecutionStore；Server 完成 Skill/MCP 初始化后、接收请求前调用 Loop 的 `recover`，并等待恢复扫描完成；恢复失败记录在 claim 中，不阻塞其他 Session。
 5. **Recovery DTO 只返回安全字段。** Protocol/Server 暴露 execution ID、状态、attempt、是否可恢复和时间戳；不暴露存储路径、锁对象、异常堆栈或 Prompt 原文。
 
 ## Risks / Trade-offs

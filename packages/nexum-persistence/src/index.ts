@@ -3,3 +3,5 @@
 export type { NexumPersistence } from "./composition.ts"
 export { createNexumEventHub, NexumEventStoreError } from "./events.ts"
 export type { NexumEventHub, NexumEventHubOptions, NexumEventSubscriptionOptions } from "./events.ts"
+export { createFileExecutionStore, createInMemoryExecutionStore, NexumExecutionStoreError } from "./execution-store.ts"
+export type { FileExecutionStoreOptions } from "./execution-store.ts"

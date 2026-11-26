@@ -17,6 +17,8 @@ import {
   type ModelMessage,
   type NexumInteractionRecord,
   type NexumInteractionStore,
+  type NexumExecutionRecord,
+  type NexumExecutionStore,
   type NexumModelConfig,
   type NexumModelConfigInput,
   type NexumModelConfigStore,
@@ -48,6 +50,60 @@ export function createSqliteSessionStore(database: Database): SessionStore {
     },
     async delete(sessionID) {
       deleteRecord(database, "session", sessionID)
+    },
+  }
+}
+
+export function createSqliteExecutionStore(database: Database): NexumExecutionStore {
+  return {
+    async list() {
+      return readRecords<NexumExecutionRecord>(database, "execution").sort((left, right) =>
+        left.updatedAt.localeCompare(right.updatedAt) || left.executionID.localeCompare(right.executionID),
+      )
+    },
+    async get(executionID) {
+      return readRecord<NexumExecutionRecord>(database, "execution", executionID)
+    },
+    async claim(input) {
+      const current = readRecord<NexumExecutionRecord>(database, "execution", input.executionID)
+      const timestamp = new Date().toISOString()
+      const record: NexumExecutionRecord = current
+        ? {
+            ...current,
+            sessionID: input.sessionID,
+            mode: input.mode,
+            status: "running",
+            attempt: current.attempt + 1,
+            maxAttempts: input.maxAttempts,
+            recoverable: true,
+            updatedAt: timestamp,
+            errorCode: undefined,
+          }
+        : {
+            executionID: input.executionID,
+            sessionID: input.sessionID,
+            mode: input.mode,
+            status: "running",
+            attempt: 1,
+            maxAttempts: input.maxAttempts,
+            recoverable: true,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          }
+      writeRecord(database, "execution", record.executionID, record)
+      return record
+    },
+    async settle(executionID, status, errorCode) {
+      const current = readRecord<NexumExecutionRecord>(database, "execution", executionID)
+      if (!current) throw new Error("执行声明不存在")
+      const record = { ...current, status, recoverable: status === "recovery_waiting", updatedAt: new Date().toISOString(), ...(errorCode ? { errorCode } : {}) }
+      writeRecord(database, "execution", executionID, record)
+      return record
+    },
+    async deleteSession(sessionID) {
+      readRecords<NexumExecutionRecord>(database, "execution")
+        .filter((record) => record.sessionID === sessionID)
+        .forEach((record) => deleteRecord(database, "execution", record.executionID))
     },
   }
 }

@@ -26,5 +26,7 @@ export { createFileRolePromptStore } from "@nexum/persistence/internal/role-prom
 export type { FileRolePromptStoreOptions } from "@nexum/persistence/internal/role-prompt"
 export { createFileSessionStore } from "@nexum/persistence/internal/session-store"
 export type { FileSessionStoreOptions } from "@nexum/persistence/internal/session-store"
+export { createFileExecutionStore, NexumExecutionStoreError } from "@nexum/persistence/internal/execution-store"
+export type { FileExecutionStoreOptions } from "@nexum/persistence/internal/execution-store"
 export { createFileSkillRegistrationStore } from "@nexum/persistence/internal/skill-registration-store"
 export type { FileSkillRegistrationStoreOptions } from "@nexum/persistence/internal/skill-registration-store"

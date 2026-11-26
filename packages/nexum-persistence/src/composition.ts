@@ -7,6 +7,7 @@ import type {
   MemoryPort,
   MessageStore,
   NexumInteractionStore,
+  NexumExecutionStore,
   NexumModelConfigStore,
   NexumPermissionPolicyStore,
   NexumRolePromptStore,
@@ -29,9 +30,11 @@ import { createFileRolePromptStore, createNexumRolePromptStore } from "./role-pr
 import { createFileSessionStore, createInMemorySessionStore } from "./session-store.ts"
 import { createFileSkillRegistrationStore, createInMemorySkillRegistrationStore } from "./skill-registration-store.ts"
 import { createNexumEventHub, type NexumEventHub } from "./events.ts"
+import { createFileExecutionStore, createInMemoryExecutionStore } from "./execution-store.ts"
 
 /** Runtime 需要的完整持久化能力组合。 */
 export interface NexumPersistence {
+  readonly executionStore: NexumExecutionStore
   readonly sessionStore: SessionStore
   readonly messageStore: MessageStore
   readonly interactionStore: NexumInteractionStore
@@ -60,6 +63,7 @@ export interface FilePersistenceOptions {
   readonly memoryFile?: string
   readonly mcpConfigFile?: string
   readonly mcpCredentialFile?: string
+  readonly executionFile?: string
 }
 
 /**
@@ -73,6 +77,7 @@ export interface FilePersistenceOptions {
 export function createFilePersistence(options: FilePersistenceOptions = {}): NexumPersistence {
   const directory = options.dataDirectory ?? join(process.cwd(), ".nexum")
   return {
+    executionStore: createFileExecutionStore({ filePath: options.executionFile ?? join(directory, "executions.json") }),
     sessionStore: createFileSessionStore({ filePath: options.sessionFile ?? join(directory, "sessions.json") }),
     messageStore: createFileMessageStore({ filePath: options.messageFile ?? join(directory, "messages.json") }),
     interactionStore: createFileInteractionStore({ filePath: options.interactionFile ?? join(directory, "interactions.json") }),
@@ -102,6 +107,7 @@ export function createFilePersistence(options: FilePersistenceOptions = {}): Nex
  */
 export function createMemoryPersistence(): NexumPersistence {
   return {
+    executionStore: createInMemoryExecutionStore(),
     sessionStore: createInMemorySessionStore(),
     messageStore: createInMemoryMessageStore(),
     interactionStore: createInMemoryInteractionStore(),

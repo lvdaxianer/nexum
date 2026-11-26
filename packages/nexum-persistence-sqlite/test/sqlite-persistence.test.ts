@@ -27,6 +27,7 @@ test("persists runtime records across database reopen", async () => {
 
   await first.sessionStore.save(session)
   await first.messageStore.save(session.sessionID, [{ role: "user", content: "hello" }])
+  await first.executionStore.claim({ executionID: "exec_sqlite", sessionID: session.sessionID, mode: "prompt", maxAttempts: 3 })
   await first.modelConfig.update({ baseUrl: "https://model.example.test/v1", model: "demo", credential: "secret" })
   await first.rolePrompt.update("回答中文")
   await first.permissionPolicyStore.add({ action: "read", resource: "src", effect: "allow" })
@@ -37,6 +38,7 @@ test("persists runtime records across database reopen", async () => {
   const second = await createSqlitePersistence({ databasePath })
   expect(await second.sessionStore.get(session.sessionID)).toEqual(session)
   expect(await second.messageStore.load(session.sessionID)).toEqual([{ role: "user", content: "hello" }])
+  expect(await second.executionStore.get("exec_sqlite")).toMatchObject({ status: "running", attempt: 1, recoverable: true })
   expect(await second.modelConfig.get()).toEqual({ baseUrl: "https://model.example.test/v1", model: "demo", credentialConfigured: true })
   expect(await second.modelConfig.resolveCredential()).toBe("secret")
   expect(await second.rolePrompt.get()).toMatchObject({ prompt: "回答中文", source: "custom" })
@@ -134,6 +136,7 @@ test("deletes a SQLite Session and related records atomically", async () => {
 
   await persistence.sessionStore.save(session)
   await persistence.messageStore.save(session.sessionID, [{ role: "user", content: "hello" }])
+  await persistence.executionStore.claim({ executionID: "exec_delete", sessionID: session.sessionID, mode: "prompt", maxAttempts: 3 })
   await persistence.interactionStore.save({
     kind: "permission",
     requestID: "permission_delete",
@@ -150,6 +153,7 @@ test("deletes a SQLite Session and related records atomically", async () => {
 
   expect(await persistence.sessionStore.get(session.sessionID)).toBeUndefined()
   expect(await persistence.messageStore.load(session.sessionID)).toEqual([])
+  expect(await persistence.executionStore.get("exec_delete")).toBeUndefined()
   expect(await persistence.interactionStore.get("permission_delete")).toBeUndefined()
   expect(persistence.eventHub.lastSequence(session.sessionID)).toBe(0)
   persistence.close()

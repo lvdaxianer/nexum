@@ -332,6 +332,19 @@ export type NexumSessionState = {
   readonly lastSequence: number
 }
 
+export type NexumExecutionRecovery = {
+  readonly executionID: string
+  readonly sessionID: string
+  readonly mode: "prompt" | "continue" | "recovery"
+  readonly status: "running" | "completed" | "failed" | "cancelled" | "recovery_waiting" | "recovery_exhausted"
+  readonly attempt: number
+  readonly maxAttempts: number
+  readonly recoverable: boolean
+  readonly createdAt: string
+  readonly updatedAt: string
+  readonly errorCode?: "not_continuable" | "attempt_limit" | "session_not_found"
+}
+
 export type NexumEvent<T extends NexumEventType = NexumEventType> = {
   readonly eventID: string
   readonly runID: string
