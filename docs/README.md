@@ -14,6 +14,15 @@
 
 先记住五个概念：Runtime 是 Agent 的运行环境，Model 是模型，Tool 是 Agent 可以调用的能力，Session 是一次可恢复的任务，Surface 是用户看到的 Web、CLI 或桌面界面。
 
+## 组合案例
+
+不要从模块表开始拼 Runtime，先选择一个完整案例：[Nexum 组合案例](examples/README.md)。
+
+- [在应用内嵌入 Agent](examples/embedded-runtime.md)：最简单的进程内组合。
+- [本地文件持久化](examples/local-file-runtime.md)：保存 Session，重启后继续使用。
+- [SQLite + HTTP/SSE 服务](examples/sqlite-http-runtime.md)：让 Web、桌面端或其他语言接入。
+- [接入聊天 UI](examples/chat-surface.md)：把已有 Server 接入可嵌入的聊天界面。
+
 ## 按能力使用
 
 | 你想了解什么         | 从这里开始                                                | 你会看到什么                                     |
