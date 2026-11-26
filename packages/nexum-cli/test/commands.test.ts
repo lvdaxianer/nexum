@@ -19,7 +19,7 @@ function fakeClient(handler: (request: Request) => unknown) {
 function fakeAdapter(events: { type: string; data: Record<string, unknown> }[]): ChatProtocolAdapter {
   return {
     loadHistory: async () => ({ messages: [], total: 0, hasMore: false, snapshotID: "snap" }),
-    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }, canContinue: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
+    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
     subscribeEvents: async function* () {
       for (const [index, event] of events.entries()) {
         yield { eventID: `e${index}`, runID: "r1", sessionID: "s1", sequence: index + 1, occurredAt: "", ...event } as never
@@ -112,7 +112,7 @@ test("cmdPrompt prints the permission outcome before replying and renders tool.r
   let outputAtReply = ""
   const adapter: ChatProtocolAdapter = {
     loadHistory: async () => ({ messages: [], total: 0, hasMore: false, snapshotID: "snap" }),
-    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }, canContinue: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
+    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "", }, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
     subscribeEvents: async function* () {
       yield { eventID: "e1", runID: "r1", sessionID: "s1", sequence: 1, occurredAt: "", type: "tool.request", data: { toolCallID: "t1", toolName: "read" } } as never
       yield { eventID: "e2", runID: "r1", sessionID: "s1", sequence: 2, occurredAt: "", type: "permission.requested", data: { requestID: "p1", action: "edit", resource: "a.ts" } } as never
@@ -146,7 +146,7 @@ test("cmdPrompt auto-denies permission and auto-cancels question when not TTY", 
   const replies: string[] = []
   const adapter: ChatProtocolAdapter = {
     loadHistory: async () => ({ messages: [], total: 0, hasMore: false, snapshotID: "snap" }),
-    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }, canContinue: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
+    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
     subscribeEvents: async function* () {
       yield { eventID: "e1", runID: "r1", sessionID: "s1", sequence: 1, occurredAt: "", type: "permission.requested", data: { requestID: "p1", action: "edit", resource: "a.ts" } } as never
       yield { eventID: "e2", runID: "r1", sessionID: "s1", sequence: 2, occurredAt: "", type: "question.request", data: { requestID: "q1", toolCallID: "t1", questions: [{ header: "h", question: "q?", options: [{ label: "A", description: "" }] }] } } as never

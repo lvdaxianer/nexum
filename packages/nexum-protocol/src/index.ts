@@ -360,6 +360,7 @@ export type NexumSkillDeleteResult = {
 export type NexumSessionState = {
   readonly session: NexumSession
   readonly canContinue: boolean
+  readonly canCancel: boolean
   readonly pendingPermissions: readonly NexumPermission[]
   readonly pendingQuestions: readonly NexumQuestion[]
   readonly lastSequence: number

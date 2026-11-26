@@ -49,6 +49,7 @@ test("ChatSurface merges pending state without removing an existing user message
   const state = {
     session: { id: "session_001", name: "测试", directory: "/tmp/nexum", status: "idle", createdAt: "2026-11-26T00:00:00.000Z", updatedAt: "2026-11-26T00:00:00.000Z" },
     canContinue: false,
+    canCancel: false,
     pendingPermissions: [{ id: "permission_001", sessionID: "session_001", action: "read", resource: "README.md" }],
     pendingQuestions: [],
     lastSequence: 0,

@@ -609,6 +609,38 @@ test("accepts a prompt and delegates it to the injected coding loop", async () =
   })
 })
 
+test("rejects cancellation after the session reaches a terminal status", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-server-terminal-cancel-"))
+  temporaryDirectories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory })
+  await sessionService.setStatus(session.sessionID, "running")
+  await sessionService.setStatus(session.sessionID, "completed")
+  let cancelled = false
+  const server = await startNexumServer({
+    port: 0,
+    sessionService,
+    codingLoop: {
+      async run(input) {
+        return (await sessionService.get(input.sessionID))!
+      },
+      async cancel(sessionID) {
+        cancelled = true
+        return (await sessionService.get(sessionID))!
+      },
+    },
+  })
+  servers.push(server)
+
+  const response = await fetch(new URL(`/api/nexum/session/${session.sessionID}/cancel`, server.url), { method: "POST" })
+  const body = (await response.json()) as { errorCode: string; message: string }
+
+  expect(response.status).toBe(409)
+  expect(body.errorCode).toBe("NEXUM_SESSION_CANCEL_CONFLICT")
+  expect(body.message).toBe("Session 当前状态不允许取消")
+  expect(cancelled).toBe(false)
+})
+
 test("rejects an oversized JSON prompt before starting the coding loop", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-server-body-limit-"))
   temporaryDirectories.push(directory)

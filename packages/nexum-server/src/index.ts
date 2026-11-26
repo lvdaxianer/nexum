@@ -18,6 +18,7 @@ import {
   NexumRolePromptError,
   NexumSkillInvocationError,
   McpError,
+  canCancelSessionStatus,
   nexumAnyToolAction,
   redactNexumSensitiveValue,
   type NexumCodingLoop,
@@ -1654,9 +1655,13 @@ async function cancelSession(
   }
 
   try {
+    // 服务端先复用 Core 能力判断，避免空闲或终态请求被误报为取消成功。
+    if (!canCancelSessionStatus(session.status)) {
+      return errorResponse(409, "NEXUM_SESSION_CANCEL_CONFLICT", "Session 当前状态不允许取消", traceId)
+    }
     if (codingLoop) {
       await codingLoop.cancel(sessionID)
-    } else if (session.status === "idle" || session.status === "running") {
+    } else {
       await sessionService.setStatus(sessionID, "cancelled")
     }
     return jsonResponse({ data: { status: "cancelled" } }, traceId)
@@ -1765,6 +1770,7 @@ async function getSessionState(
           updatedAt: session.updatedAt,
         },
         canContinue: codingLoop?.canContinue ? await codingLoop.canContinue(sessionID) : false,
+        canCancel: canCancelSessionStatus(session.status),
         pendingPermissions,
         pendingQuestions,
         lastSequence: eventHub.lastSequence(sessionID),

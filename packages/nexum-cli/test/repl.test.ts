@@ -34,7 +34,7 @@ function fakeAdapter(script: { events?: NexumEvent[]; onSend?: (text: string) =>
   const queued = [...(script.events ?? [])]
   const adapter: ChatProtocolAdapter = {
     loadHistory: async () => ({ messages: [{ index: 1, message: { role: "user", content: "历史问题" } }], total: 1, hasMore: false, snapshotID: "snap" }),
-    loadState: async () => ({ session, canContinue: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
+    loadState: async () => ({ session, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
     subscribeEvents: async function* (input) {
       while (!input.signal?.aborted) {
         if (queued.length > 0) {

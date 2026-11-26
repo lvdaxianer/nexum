@@ -54,16 +54,27 @@ test("returns a session snapshot with pending collections and last sequence", as
 
   const response = await fetch(new URL(`/api/nexum/session/${session.sessionID}/state`, server.url))
   const body = (await response.json()) as {
-    data: { session: { id: string }; pendingPermissions: unknown[]; pendingQuestions: unknown[]; lastSequence: number }
+    data: { session: { id: string }; canCancel: boolean; pendingPermissions: unknown[]; pendingQuestions: unknown[]; lastSequence: number }
     meta: { protocolVersion: string }
   }
 
   expect(response.status).toBe(200)
   expect(body.data.session.id).toBe(session.sessionID)
+  expect(body.data.canCancel).toBe(false)
   expect(body.data.pendingPermissions).toEqual([])
   expect(body.data.pendingQuestions).toEqual([])
   expect(body.data.lastSequence).toBe(0)
   expect(body.meta.protocolVersion).toBe("nexum.runtime.v1")
+
+  await sessionService.setStatus(session.sessionID, "running")
+  const runningResponse = await fetch(new URL(`/api/nexum/session/${session.sessionID}/state`, server.url))
+  const runningBody = (await runningResponse.json()) as { data: { canCancel: boolean } }
+  expect(runningBody.data.canCancel).toBe(true)
+
+  await sessionService.setStatus(session.sessionID, "completed")
+  const completedResponse = await fetch(new URL(`/api/nexum/session/${session.sessionID}/state`, server.url))
+  const completedBody = (await completedResponse.json()) as { data: { canCancel: boolean } }
+  expect(completedBody.data.canCancel).toBe(false)
 })
 
 test("emits SSE event and id fields and replays after Last-Event-ID", async () => {

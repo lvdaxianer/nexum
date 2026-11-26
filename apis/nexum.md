@@ -43,7 +43,7 @@
 | `GET` / `PUT` / `DELETE` | `/api/nexum/role-prompt`                                    | [默认角色提示词](#默认角色提示词)         | 已记录 body、默认/自定义来源和恢复语义           | HTTP 示例 |
 | `GET` / `POST`           | `/api/nexum/session`                                        | [Session 资源与状态](#session-资源与状态) | 已记录 Session 字段、目录校验和创建错误          | curl      |
 | `PUT` / `DELETE`         | `/api/nexum/session/:sessionID`                             | [Session 删除](#session-删除)             | 已记录 name 更新、删除冲突和清理失败             | curl      |
-| `GET`                    | `/api/nexum/session/:sessionID/state`                       | [Session 资源与状态](#session-资源与状态) | 已记录 pending、`canContinue`、`lastSequence`    | JSON      |
+| `GET`                    | `/api/nexum/session/:sessionID/state`                       | [Session 资源与状态](#session-资源与状态) | 已记录 pending、`canContinue`、`canCancel`、`lastSequence` | JSON      |
 | `POST`                   | `/api/nexum/session/:sessionID/prompt`                      | [Session 运行端点](#session-运行端点)     | 已记录 admission、冲突和后台运行语义             | curl      |
 | `GET`                    | `/api/experimental/nexum/session/:sessionID/messages`       | [Session 对话历史](#session-对话历史)     | 已记录分页、snapshot、脱敏和实验性标记           | curl      |
 | `POST`                   | `/api/experimental/nexum/session/:sessionID/continue`       | [实验性：继续运行](#实验性继续运行)       | 已记录 `{}`、原子 admission 和错误               | curl      |
@@ -269,7 +269,7 @@ DELETE 请求体为空，完整契约见 [Session 删除](#session-删除)。删
 
 ### State：`GET /api/nexum/session/{sessionID}/state`
 
-成功 `200` 返回 `session`、`canContinue`、`pendingPermissions`、`pendingQuestions` 和 `lastSequence`。Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`。该快照用于页面恢复，不替代 messages 历史或 SSE 事件。
+成功 `200` 返回 `session`、`canContinue`、`canCancel`、`pendingPermissions`、`pendingQuestions` 和 `lastSequence`。其中 `canCancel` 是核心层根据 Session 状态计算的权威能力，只有 `session.status` 为 `running` 时为 `true`；调用方不得仅依据本地按钮状态判断。Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`。该快照用于页面恢复，不替代 messages 历史或 SSE 事件。
 
 ```json
 {
@@ -283,6 +283,7 @@ DELETE 请求体为空，完整契约见 [Session 删除](#session-删除)。删
       "updatedAt": "..."
     },
     "canContinue": true,
+    "canCancel": false,
     "pendingPermissions": [],
     "pendingQuestions": [],
     "lastSequence": 42
@@ -340,7 +341,7 @@ curl --request POST 'http://127.0.0.1:4097/api/nexum/session/session_001/prompt'
 }
 ```
 
-Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；取消过程中状态不允许转换返回 `409 NEXUM_SESSION_CANCEL_CONFLICT`。Cancel 会中止活动 Coding Loop 和待处理权限，但不删除消息历史、事件或 Session。
+Session 不存在返回 `404 NEXUM_SESSION_NOT_FOUND`；Session 不是 `running` 或取消过程中状态不允许转换时返回 `409 NEXUM_SESSION_CANCEL_CONFLICT`。Cancel 会中止活动 Coding Loop 和待处理权限，但不删除消息历史、事件或 Session。调用方应先依据 State 的 `canCancel` 控制入口，并继续处理服务端的 `409`，因为状态可能在读取和取消之间发生变化。
 
 ```bash
 curl --request POST 'http://127.0.0.1:4097/api/nexum/session/session_001/cancel' \
