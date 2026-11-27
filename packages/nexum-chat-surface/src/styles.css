@@ -800,6 +800,8 @@
 }
 
 .nexum-chat-composer-bar {
+  /* 换行时按钮靠右对齐（覆盖共享规则的 space-between），发送键始终落在右下。 */
+  justify-content: flex-end;
   padding: 4px 10px 10px;
   flex-wrap: wrap;
   row-gap: 6px;
