@@ -24,9 +24,33 @@ test("creates an idle session for a valid working directory", async () => {
 
   const session = await service.create({ directory })
 
-  expect(session).toMatchObject({ directory, status: "idle" })
+  expect(session).toMatchObject({ directory, status: "idle", mode: "build" })
   expect(session.sessionID).toMatch(/^[0-9a-f-]{36}$/)
   expect(await service.get(session.sessionID)).toEqual(session)
+})
+
+test("switches an idle session between build and plan modes", async () => {
+  const directory = await makeDirectory()
+  const service = createNexumSessionService()
+  const session = await service.create({ directory })
+
+  const planned = await service.setMode(session.sessionID, "plan")
+
+  expect(planned).toMatchObject({ sessionID: session.sessionID, mode: "plan" })
+  expect(planned.updatedAt).not.toBe(session.updatedAt)
+  await expect(service.setMode(session.sessionID, "plan")).resolves.toMatchObject({ mode: "plan" })
+  await expect(service.setMode(session.sessionID, "build")).resolves.toMatchObject({ mode: "build" })
+})
+
+test("rejects changing the Agent mode while a Session is running", async () => {
+  const directory = await makeDirectory()
+  const service = createNexumSessionService()
+  const session = await service.create({ directory })
+
+  await service.setStatus(session.sessionID, "running")
+
+  await expect(service.setMode(session.sessionID, "plan")).rejects.toMatchObject({ code: "session_busy" })
+  await expect(service.get(session.sessionID)).resolves.toMatchObject({ mode: "build", status: "running" })
 })
 
 test("creates a named session with durable timestamps", async () => {

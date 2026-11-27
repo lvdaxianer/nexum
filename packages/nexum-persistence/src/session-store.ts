@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { basename, dirname } from "node:path"
-import type { SessionRecord, SessionStore } from "@nexum/core"
+import type { NexumAgentMode, SessionRecord, SessionStore } from "@nexum/core"
 
 const sessionStatuses = new Set<SessionRecord["status"]>(["idle", "running", "completed", "failed", "cancelled"])
 
@@ -27,13 +27,13 @@ export function createInMemorySessionStore(): SessionStore {
   return {
     async get(sessionID: string) {
       const session = sessions.get(sessionID)
-      return session ? { ...session } : undefined
+      return session ? normalizeSessionRecord(session) : undefined
     },
     async list() {
-      return sortSessions(Array.from(sessions.values(), (session) => ({ ...session })))
+      return sortSessions(Array.from(sessions.values(), normalizeSessionRecord))
     },
     async save(session: SessionRecord) {
-      sessions.set(session.sessionID, { ...session })
+      sessions.set(session.sessionID, normalizeSessionRecord(session))
     },
     async delete(sessionID: string) {
       sessions.delete(sessionID)
@@ -54,15 +54,15 @@ export function createFileSessionStore(options: FileSessionStoreOptions) {
   return {
     async get(sessionID: string) {
       const session = (await load()).get(sessionID)
-      return session ? { ...session } : undefined
+      return session ? normalizeSessionRecord(session) : undefined
     },
     async list() {
-      return sortSessions(Array.from((await load()).values(), (session) => ({ ...session })))
+      return sortSessions(Array.from((await load()).values(), normalizeSessionRecord))
     },
     async save(session: SessionRecord) {
       const operation = writeQueue.then(async () => {
         const next = new Map(await load())
-        next.set(session.sessionID, { ...session })
+        next.set(session.sessionID, normalizeSessionRecord(session))
         await persistSessions(options.filePath, next)
         loaded = Promise.resolve(next)
       })
@@ -123,14 +123,21 @@ function migrateSession(value: unknown, fallbackTime: string): SessionRecord {
   const createdAt = typeof value.createdAt === "string" ? value.createdAt : fallbackTime
   const updatedAt = typeof value.updatedAt === "string" ? value.updatedAt : createdAt
   const status = value.status as SessionRecord["status"]
+  const mode = value.mode === "plan" || value.mode === "build" ? value.mode : ("build" satisfies NexumAgentMode)
   return {
     sessionID: value.sessionID,
     name,
     directory,
     status: status === "running" ? "idle" : status,
+    mode,
     createdAt,
     updatedAt,
   }
+}
+
+function normalizeSessionRecord(session: SessionRecord): SessionRecord {
+  const mode = session.mode === "plan" ? "plan" : "build"
+  return session.mode === mode ? { ...session } : { ...session, mode }
 }
 
 function sortSessions(sessions: SessionRecord[]): SessionRecord[] {

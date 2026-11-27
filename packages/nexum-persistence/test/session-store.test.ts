@@ -20,6 +20,7 @@ test("restores sessions after a new file store is created", async () => {
     name: "project",
     directory: "/workspace/project",
     status: "idle" as const,
+    mode: "build" as const,
     createdAt: "2026-11-21T00:00:00.000Z",
     updatedAt: "2026-11-21T00:00:00.000Z",
   }
@@ -49,9 +50,30 @@ test("migrates legacy records without names or timestamps", async () => {
     name: "demo",
     directory: "/tmp/demo",
     status: "idle",
+    mode: "build",
   })
   expect(session?.createdAt).toBeString()
   expect(session?.updatedAt).toBeString()
+})
+
+test("persists an explicit plan mode in the file store", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-session-store-plan-"))
+  temporaryDirectories.push(root)
+  const filePath = join(root, "sessions.json")
+  const store = createFileSessionStore({ filePath })
+  const record = {
+    sessionID: "session_plan",
+    name: "plan",
+    directory: "/workspace/plan",
+    status: "idle" as const,
+    mode: "plan" as const,
+    createdAt: "2026-11-21T00:00:00.000Z",
+    updatedAt: "2026-11-21T00:00:00.000Z",
+  }
+
+  await store.save(record)
+
+  await expect(store.get(record.sessionID)).resolves.toEqual(record)
 })
 
 test("rejects corrupt session files without replacing them", async () => {
@@ -92,6 +114,7 @@ test("does not restore a deleted session in a fresh file store", async () => {
     name: sessionID,
     directory: `/workspace/${sessionID}`,
     status: "completed" as const,
+    mode: "build" as const,
     createdAt: "2026-11-21T00:00:00.000Z",
     updatedAt: "2026-11-21T00:00:00.000Z",
   }))
