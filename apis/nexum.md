@@ -79,6 +79,10 @@ Content-Type: application/json
 stable `session.id`; use it for every later operation. `mode` is optional and
 defaults to `build`.
 
+For embedded Application callers, configure `defaultAgentMode` when creating
+the Runtime. A `mode` supplied in this Protocol request overrides that Runtime
+default; HTTP callers that omit both values still receive a Build Session.
+
 ### Switch Agent mode
 
 Plan mode is the read-and-plan phase. Core permits reads and writes under the

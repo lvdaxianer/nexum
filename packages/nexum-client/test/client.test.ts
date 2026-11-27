@@ -91,6 +91,35 @@ test("deletes a session through the stable DELETE endpoint", async () => {
   expect(await requests[0]?.text()).toBe("")
 })
 
+test("creates a Session with an explicit Agent mode", async () => {
+  const requests: Request[] = []
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      const request = new Request(typeof input === "string" ? input : input.toString(), init)
+      requests.push(request)
+      return Response.json({
+        data: {
+          id: "session_001",
+          name: "计划会话",
+          directory: "/workspace/demo",
+          status: "idle",
+          mode: "plan",
+          createdAt: "2026-11-27T00:00:00.000Z",
+          updatedAt: "2026-11-27T00:00:00.000Z",
+        },
+        meta: { protocolVersion: "nexum.runtime.v1", traceId: "trace_create_mode" },
+      })
+    },
+  })
+
+  const result = await client.experimental.nexum.session.create({ directory: "/workspace/demo", mode: "plan" })
+
+  expect(result.data.mode).toBe("plan")
+  expect(requests[0]?.url).toBe("http://nexum.test/api/nexum/session")
+  expect(await requests[0]?.json()).toEqual({ directory: "/workspace/demo", mode: "plan" })
+})
+
 test("switches a session Agent mode through the stable mode endpoint", async () => {
   const requests: Request[] = []
   const client = Nexum.make({

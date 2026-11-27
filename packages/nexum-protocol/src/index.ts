@@ -177,7 +177,7 @@ export type NexumSession = {
   readonly name: string
   readonly directory: string
   readonly status: NexumSessionStatus
-  readonly mode?: NexumAgentMode
+  readonly mode: NexumAgentMode
   readonly createdAt: string
   readonly updatedAt: string
 }

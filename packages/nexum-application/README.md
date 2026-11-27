@@ -11,12 +11,16 @@ import { createEmbeddedRuntime } from "nexum-ai/application"
 import type { ModelPort } from "nexum-ai/core"
 
 declare const model: ModelPort
-const runtime = createEmbeddedRuntime({ model })
-const session = await runtime.sessionService.create({ directory: process.cwd(), name: "demo" })
+const runtime = createEmbeddedRuntime({ model, defaultAgentMode: "plan" })
+const session = await runtime.sessionService.create({
+  directory: process.cwd(),
+  name: "demo",
+  mode: "build",
+})
 await runtime.codingLoop.run({ sessionID: session.sessionID, text: "检查当前项目" })
 ```
 
-它把 Core、Persistence 和 Integrations 组合成可运行 Runtime。快速嵌入使用 `createEmbeddedRuntime`，本地文件运行使用 `createLocalRuntime`，SQLite/服务端恢复使用 `createSqliteRuntime`；也可以通过 `NexumRuntimeOptions` 注入自己的 Model、Host、Permission 或 Store。
+它把 Core、Persistence 和 Integrations 组合成可运行 Runtime。快速嵌入使用 `createEmbeddedRuntime`，本地文件运行使用 `createLocalRuntime`，SQLite/服务端恢复使用 `createSqliteRuntime`；也可以通过 `NexumRuntimeOptions` 注入自己的 Model、Host、Permission、Store 或 `defaultAgentMode`。Runtime 默认模式只作用于未显式指定 mode 的新 Session，Session 创建参数优先级更高。
 
 Application 不负责 UI 和 HTTP 传输。需要服务端时再组合 `nexum-ai/server`，需要客户端时组合 `nexum-ai/client`；持久化实现见 `nexum-ai/persistence/memory`、`nexum-ai/persistence/file` 和 `nexum-ai/persistence/sqlite`。
 

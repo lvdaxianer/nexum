@@ -23,6 +23,7 @@ test("ChatProtocolAdapter exposes the complete chat protocol boundary", () => {
         name: "测试 Session",
         directory: "/tmp/nexum",
         status: "idle",
+        mode: "build",
         createdAt: "2026-11-24T00:00:00.000Z",
         updatedAt: "2026-11-24T00:00:00.000Z",
       },

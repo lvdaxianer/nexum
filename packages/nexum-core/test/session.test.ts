@@ -29,6 +29,24 @@ test("creates an idle session for a valid working directory", async () => {
   expect(await service.get(session.sessionID)).toEqual(session)
 })
 
+test("uses the Core default Agent mode when Session creation omits mode", async () => {
+  const directory = await makeDirectory()
+  const service = createNexumSessionService({ defaultAgentMode: "plan" })
+
+  const session = await service.create({ directory })
+
+  expect(session.mode).toBe("plan")
+})
+
+test("lets an explicit Session mode override the Core default", async () => {
+  const directory = await makeDirectory()
+  const service = createNexumSessionService({ defaultAgentMode: "plan" })
+
+  const session = await service.create({ directory, mode: "build" })
+
+  expect(session.mode).toBe("build")
+})
+
 test("switches an idle session between build and plan modes", async () => {
   const directory = await makeDirectory()
   const service = createNexumSessionService()

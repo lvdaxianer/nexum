@@ -45,6 +45,19 @@ test("creates an embedded runtime with memory, host and event capabilities", asy
   await runtime.close()
 })
 
+test("passes the Runtime default Agent mode to new Sessions", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-runtime-mode-"))
+  directories.push(directory)
+  const runtime = createEmbeddedRuntime({ defaultAgentMode: "plan" })
+
+  const planned = await runtime.sessions.create({ directory })
+  const built = await runtime.sessions.create({ directory, mode: "build" })
+
+  expect(planned.mode).toBe("plan")
+  expect(built.mode).toBe("build")
+  await runtime.close()
+})
+
 test("uses an injected persistence composition for embedded runtime stores", async () => {
   const persistence = createMemoryPersistence()
   const runtime = createEmbeddedRuntime({ persistence })

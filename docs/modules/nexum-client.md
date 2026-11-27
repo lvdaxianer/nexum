@@ -35,6 +35,11 @@ The current protocol exposes these methods under
 later calls. Configure the default role prompt separately with
 `rolePrompt.update({ prompt })`; do not put it in `session.prompt`.
 
+`session.create({ mode })` chooses the initial Agent mode for that Session. The
+Application Runtime may provide `defaultAgentMode` for embedded callers, but an
+explicit Session mode always wins; if neither is set, the Core default is
+`build`.
+
 Plan mode is the read-and-plan phase: Core permits reads and writes only below
 `.nexum/plans/` and rejects business-file writes, Shell, MCP, and Skill
 management before permission evaluation. Build mode keeps the normal execution

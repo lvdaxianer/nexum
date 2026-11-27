@@ -270,6 +270,7 @@ export interface NexumSessionServiceOptions {
   readonly executionStore?: NexumExecutionStore
   readonly directoryValidator?: NexumDirectoryValidator
   readonly atomicDelete?: (sessionID: string) => Promise<void>
+  readonly defaultAgentMode?: NexumAgentMode
 }
 
 /** Session 领域错误，包含稳定的机器可读错误码。 */
@@ -329,6 +330,7 @@ export async function validateNexumDirectory(directory: string): Promise<void> {
 export function createNexumSessionService(options: NexumSessionServiceOptions): NexumSessionService {
   const store = options.store
   const directoryValidator = options.directoryValidator ?? { validate: validateNexumDirectory }
+  const defaultAgentMode = requireAgentMode(options.defaultAgentMode ?? "build")
   const sessionQueues = new Map<string, Promise<void>>()
 
   const enqueueSessionOperation = <T>(sessionID: string, operation: () => Promise<T>): Promise<T> => {
@@ -352,7 +354,7 @@ export function createNexumSessionService(options: NexumSessionServiceOptions): 
       const directory = normalize(trimmedDirectory)
       await directoryValidator.validate(directory)
       const name = normalizeSessionName(input.name, directory)
-      const mode = requireAgentMode(input.mode ?? "build")
+      const mode = requireAgentMode(input.mode ?? defaultAgentMode)
       const timestamp = new Date().toISOString()
       const session: SessionRecord = {
         sessionID: crypto.randomUUID(),
