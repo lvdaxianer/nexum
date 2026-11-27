@@ -28,3 +28,19 @@ Surface → Surface Adapter → Client → Protocol
 
 The public package is still one `nexum` package; these names are subpath
 boundaries, not independent user installation targets. See the [module index](../modules/README.md).
+
+## How a change crosses boundaries
+
+Changing Session semantics belongs in Core and its Persistence projections;
+changing an HTTP route belongs in Server, Protocol, Client, and the Runtime API;
+changing how a chat card looks belongs in Surface or Chat Surface. Keep the
+direction explicit so replacing SQLite, a model provider, a transport, or a UI
+does not require rewriting the Agent loop.
+
+| Need to change | Start at | Do not change directly |
+| --- | --- | --- |
+| Runtime semantics | Core ports and rules | UI components or HTTP handlers |
+| Durable storage | Persistence implementation | Core's domain decisions |
+| External model/files/MCP | Integrations adapter | Client or Surface |
+| HTTP/SSE contract | Protocol and Server | Persistence internals |
+| Browser or terminal display | Surface Adapter/Surface | Coding Loop |

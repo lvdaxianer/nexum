@@ -29,3 +29,17 @@ const state = await adapter.loadState(sessionID)
 The default adapter normalizes Client errors into `ChatProtocolError`. A host
 can implement the same contract for another transport. It does not render UI,
 own policy, or execute Core logic. See [Chat Surface](nexum-chat-surface.md).
+
+## Method groups
+
+| Group | Methods | Purpose |
+| --- | --- | --- |
+| Recovery | `loadHistory`, `loadState`, `subscribeEvents` | Load a Session and resume its event cursor |
+| User input | `sendMessage` | Submit the current task text |
+| Human interaction | `replyPermission`, `replyQuestion`, `cancelQuestion` | Answer or cancel pending requests |
+| Run control | `cancelRun`, `continueRun` | Stop or resume a recoverable run |
+| Discovery | `listSkills` | Provide Skill completion data |
+
+The adapter is a transport boundary. It keeps Session IDs and event cursors
+explicit, normalizes errors for a Surface, and leaves rendering and policy
+decisions to the host.

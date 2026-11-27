@@ -42,3 +42,14 @@ error, and `130` user cancellation.
 
 See the [Session guide](../capabilities/session.md) for the same operations as
 Client APIs.
+
+## REPL and rendering
+
+The REPL keeps a selected Session ID, streams the same Protocol events as a Web
+Surface, and exposes `/sessions`, `/use <id>`, `/events`, `/cancel`, and
+`/continue` for the common lifecycle. Thinking/reasoning output is a display
+choice; it must not change the underlying event or Session semantics.
+
+The CLI is a Surface. It calls Client and Surface Adapter APIs, while Server,
+Application, and Core remain responsible for persistence, execution, tools,
+Permission, Question, and recovery.

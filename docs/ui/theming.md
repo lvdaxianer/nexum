@@ -31,3 +31,18 @@ editing the package stylesheet.
 Respect `prefers-color-scheme` when the host follows the system theme and keep
 contrast, focus, empty, loading, and error states visible. See [Chat Surface](../modules/nexum-chat-surface.md)
 and [UI states](states.md).
+
+## Container and host responsibilities
+
+The Chat Surface should size itself from its container rather than assuming a
+fixed desktop width. The host owns page-level breakpoints, navigation, and the
+placement of the Session list; the component owns message, input, Permission,
+and Question layout inside its container.
+
+## Custom themes and validation
+
+Override theme variables at the host boundary and keep both dark and light
+states readable. Validate narrow and wide containers, system-theme changes,
+keyboard focus, empty/loading/error states, streaming text, long tool output,
+and Permission/Question cards. Do not edit package CSS to solve a host layout
+problem; use the documented variables and wrapper styles.

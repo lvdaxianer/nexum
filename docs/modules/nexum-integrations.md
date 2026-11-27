@@ -20,3 +20,15 @@ Integrations connect external systems to Core ports. Import them from
 Adapters are environment boundaries. They do not own Session persistence,
 Application orchestration, permission policy, or UI state. See [external
 integrations](../capabilities/integrations.md) and [Application](nexum-application.md).
+
+## Security and cancellation rules
+
+The local Host resolves paths inside the validated working directory and
+propagates `AbortSignal` to Shell and file operations. The model adapter keeps
+credentials on the backend, normalizes streaming and JSON responses, and maps
+provider failures to stable Core errors. MCP adapters expose safe status and
+catalog data without returning OAuth tokens or client secrets.
+
+Choose an Integration when the external technology changes. Keep Session,
+Permission, and UI behavior in Core/Application/Surface rather than embedding
+those decisions inside an adapter.

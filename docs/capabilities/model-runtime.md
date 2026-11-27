@@ -43,3 +43,25 @@ Common limits include:
 When the context exceeds the model limit, the Runtime can compact history and
 continue from the resulting summary. Read [Context and History](context-and-history.md)
 and [Application](../modules/nexum-application.md) for composition options.
+
+## Model errors and retries
+
+Stable model error codes include `not_configured`, `authentication_failed`,
+`network_error`, `timeout`, `rate_limited`, `upstream_error`,
+`invalid_request`, `unavailable`, `context_overflow`, and `invalid_response`.
+Network, timeout, rate-limit, upstream, and unavailable errors may be retried;
+authentication, invalid-request, invalid-response, and not-configured errors
+are not blindly repeated.
+
+Each request publishes `model.attempt`. Before visible reasoning or text is
+produced, a retryable transient error can use bounded exponential backoff and
+the upstream `Retry-After` value. Once visible output exists, the Runtime does
+not replay the same model step because doing so could duplicate text or tool
+side effects. Cancellation aborts both the backoff and the request.
+
+## Context overflow
+
+When the provider reports `context_overflow`, the Runtime can invoke a
+`ContextCompactionPort`, write a summary and retained recent messages to
+canonical history, and retry the rebuilt request once. Compaction and retry are
+different recovery paths and must not alternate forever.

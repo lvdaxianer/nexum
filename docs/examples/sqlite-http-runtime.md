@@ -8,6 +8,8 @@ Use this composition when Web, desktop, CLI, or another language needs to call
 the same runtime. The Server owns HTTP/SSE, the Client consumes the protocol,
 and SQLite provides durable storage.
 
+## Composition
+
 ```text
 Web / Desktop / CLI / another language
              │
@@ -18,7 +20,7 @@ Web / Desktop / CLI / another language
  Application + Core + SQLite Persistence
 ```
 
-## Create the server runtime
+## Server composition
 
 ```ts
 import { createSqliteRuntime } from "nexum/application"
@@ -49,7 +51,7 @@ console.log(server.url)
 data. The Server exposes the already-composed runtime; it does not replace the
 runtime's execution or persistence rules.
 
-## Call it from a client
+## Client composition
 
 ```ts
 import { Nexum } from "nexum/client"
@@ -83,3 +85,10 @@ for await (const event of client.experimental.nexum.session.events({
 
 For authentication and non-loopback deployment, read [Server API](../modules/nexum-server.md#public-api).
 For the complete request/response contract, read the [Runtime API](../../apis/nexum.md).
+
+## Related references
+
+- [SQLite Persistence](../modules/nexum-persistence-sqlite.md)
+- [Server](../modules/nexum-server.md)
+- [Client](../modules/nexum-client.md)
+- [Runtime API](../../apis/nexum.md)

@@ -16,3 +16,27 @@ where parameters go, and which module page to read next.
 The examples use the one published `nexum` package. Internal `@nexum/*` names
 appear only when a page explains source boundaries; they are not separate
 packages to install.
+
+## How to choose
+
+- Start with [Complete Agent application](full-stack-chat.md) when you want to
+  see the backend, persistence, transport, client, and UI together.
+- Use [Embedded runtime](embedded-runtime.md) when the host already owns the UI
+  and only needs an in-process Agent.
+- Use [Local file runtime](local-file-runtime.md) when a local app needs restart
+  recovery without a separate service.
+- Use [SQLite + HTTP/SSE](sqlite-http-runtime.md) for Web, desktop, CLI, or
+  cross-language clients.
+- Use [Chat Surface](chat-surface.md) when a Server already exists and only the
+  embeddable chat UI is missing.
+
+## Shared modules
+
+- [Application](../modules/nexum-application.md) composes Runtime services.
+- [Core](../modules/nexum-core.md) owns runtime semantics and ports.
+- [Persistence](../modules/nexum-persistence.md) stores recoverable state.
+- [Protocol](../modules/nexum-protocol.md) defines cross-process data.
+- [Client](../modules/nexum-client.md) calls HTTP/SSE and consumes events.
+- [Server](../modules/nexum-server.md) exposes the Runtime boundary.
+- [Surface Adapter](../modules/nexum-surface-adapter.md) bridges a UI to Client.
+- [Chat Surface](../modules/nexum-chat-surface.md) renders an embeddable chat.

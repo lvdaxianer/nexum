@@ -31,3 +31,32 @@ JSON-RPC connection.
 OAuth authorization is exposed as an attempt lifecycle: create an attempt,
 read its status, complete it with the redirect URL, or cancel it. Exact request
 and response fields are in the [Runtime API](../../apis/nexum.md).
+
+## Status and retry behavior
+
+The normal status flow is `disabled → pending → retrying → connected`. A
+temporary connection failure is retried with bounded delays; invalid
+configuration, a request for user authorization, or an explicit disconnect
+does not start an automatic retry loop. The Runtime owns the connection and
+cleans up the transport and timers when a server or Runtime closes.
+
+The status snapshot may expose a retry attempt and next retry time, but it must
+not expose authorization headers, cookies, tokens, secrets, API keys, or OAuth
+credentials. A UI can poll while a server is `pending` or `retrying` and stop
+polling when the page is hidden or unloaded.
+
+## OAuth boundary
+
+OAuth uses a short-lived attempt ID, expiry, cancellation, state, and PKCE
+verifier. Prefer a loopback callback on `127.0.0.1`; when a browser callback is
+not available, submit the complete redirect URL to the completion endpoint.
+Tokens and client secrets are stored in the credential store and are never
+returned by the list, event, tool, or error APIs.
+
+## Tool bridge
+
+Connected tools are registered in the Application Tool Registry with names of
+the form `mcp__{server_namespace}__{tool_name}` and retain the MCP
+`inputSchema`. Execution still passes through normal Permission and cancellation
+boundaries. Tool/resource/prompt catalog changes trigger a refresh event rather
+than requiring the UI to create its own JSON-RPC transport.

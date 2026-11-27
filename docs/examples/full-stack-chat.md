@@ -2,32 +2,44 @@
 
 [中文](../zh-CN/examples/full-stack-chat.md)
 
-This beginner-friendly tutorial combines a SQLite runtime, an HTTP/SSE Server,
-the Nexum Client, and Chat Surface. It also shows where Session APIs live and
-how selecting a different Session replays its history.
+This beginner-friendly tutorial builds a small Agent application from zero:
+the backend stores data in SQLite and exposes HTTP/SSE, while the frontend
+uses Nexum Client and Chat Surface to display the chat UI.
+
+When you finish, the composition looks like this:
 
 ```text
-Chat Surface → Client + Surface Adapter → HTTP/SSE Server
-             → Application + Core + SQLite Persistence → Model provider
+Frontend Chat Surface
+        ↓
+Client + Surface Adapter
+        ↓ HTTP/SSE
+Nexum Server
+        ↓
+Application + Core + SQLite Persistence
+        ↓
+Model provider
 ```
 
-## 1. Install Nexum
+## Step 1: Install Nexum
 
-Nexum publishes one compiled package. Import public modules through subpaths:
+Nexum publishes one `nexum` package. Import public modules through subpaths:
 
 ```bash
 npm install nexum
 ```
 
-| Import | Purpose |
+| Entry point | Purpose |
 | --- | --- |
-| `nexum/application` | Create Runtime, Session, and Coding Loop |
-| `nexum/persistence/sqlite` | SQLite storage and recovery |
-| `nexum/server` | HTTP/SSE boundary |
-| `nexum/client` | Session requests and event subscription |
-| `nexum/chat-surface` | Ready-made chat UI |
+| [`nexum/application`](../modules/nexum-application.md) | Create the Runtime, Session, and Coding Loop |
+| [`nexum/persistence/sqlite`](../modules/nexum-persistence-sqlite.md) | Store Sessions, messages, and events |
+| [`nexum/server`](../modules/nexum-server.md) | Provide the HTTP/SSE boundary |
+| [`nexum/client`](../modules/nexum-client.md) | Create Sessions, submit Prompts, and subscribe to events |
+| [`nexum/chat-surface`](../modules/nexum-chat-surface.md) | Render the chat UI |
 
-## 2. Create a SQLite runtime
+## Step 2: Create the backend Runtime
+
+The Runtime is where the Agent actually runs. It owns Sessions, models, tools,
+permissions, and events.
 
 ```ts
 import { createSqliteRuntime } from "nexum/application"
@@ -37,11 +49,19 @@ const runtime = await createSqliteRuntime({
 })
 ```
 
-`databasePath` points to the SQLite file. It is not the Agent working
-directory. SQLite persists Sessions, messages, events, interactions, and
-runtime configuration.
+`databasePath` is the SQLite file used by the backend. It is not the Agent's
+working directory:
 
-## 3. Configure the model and role prompt
+- `databasePath` stores Sessions, messages, events, and configuration;
+- `directory` tells the Agent which project directory it may work in.
+
+See [SQLite Persistence API](../modules/nexum-persistence-sqlite.md#public-api)
+for the storage options.
+
+## Step 3: Configure the model and role prompt
+
+After creating the Runtime, configure the upstream model and the role the
+Agent should play:
 
 ```ts
 await runtime.modelConfig.update({
@@ -55,14 +75,21 @@ await runtime.rolePrompt.update(
 )
 ```
 
-`baseUrl` and `model` describe the upstream model provider. `credentialRef`
-names the credential source read by the backend. `rolePrompt` is the default
-system instruction; the user's task is supplied later as `text`.
+| Parameter | Meaning |
+| --- | --- |
+| `baseUrl` | Model provider URL, not the Nexum Server URL |
+| `model` | Model name at the provider |
+| `credentialRef` | Environment/config reference read by the backend |
+| `rolePrompt` | Default Agent role, injected as a system message |
 
-See [Model / Runtime](../capabilities/model-runtime.md) and
-[Integrations](../modules/nexum-integrations.md#public-api).
+The role prompt is configured once for the Runtime. The user's current task is
+passed later through `text`; it does not need to repeat the role prompt.
+Read [Model / Runtime](../capabilities/model-runtime.md) and
+[Integrations API](../modules/nexum-integrations.md#public-api) for more.
 
-## 4. Expose the runtime through Server
+## Step 4: Expose the Runtime through Server
+
+Pass the composed Runtime to Server:
 
 ```ts
 import { startNexumServer } from "nexum/server"
@@ -72,95 +99,239 @@ const server = await startNexumServer({
   hostname: "127.0.0.1",
   port: 4097,
 })
+
+console.log(`Nexum Server: ${server.url}`)
 ```
 
-Server handles HTTP responses, SSE events, and stable errors. Runtime still
-owns Session and Agent execution. Read the [Server module guide](../modules/nexum-server.md)
-and [Runtime API](../../apis/nexum.md) for route details.
+Server is responsible for:
 
-## 5. Create a Session from the client
+- accepting Session and Prompt requests from the frontend;
+- converting Runtime state into JSON responses;
+- streaming text, tool, Permission, Question, and terminal events over SSE;
+- returning stable error codes.
+
+Server does not own Agent execution. See the [Nexum Runtime API](../../apis/nexum.md).
+
+## Step 5: Create a Session from the frontend
+
+The frontend connects to Server through `nexum/client` and creates a Session:
 
 ```ts
 import { Nexum } from "nexum/client"
 
-const client = Nexum.make({ baseUrl: server.url })
+const API_BASE_URL = "http://127.0.0.1:4097"
+const client = Nexum.make({ baseUrl: API_BASE_URL })
+
 const session = await client.experimental.nexum.session.create({
   directory: "/workspace/demo",
   name: "My first Agent",
 })
 ```
 
-The `directory` is on the Server host. The returned `session.id` is the value
-used by the prompt, history, event, and Chat Surface calls.
+`directory` is an absolute path on the backend host, not a path on the browser
+user's computer. A real application normally derives it from a selected
+project or workspace and does not let the browser submit arbitrary paths.
 
-## 6. List and switch Sessions
+The returned `session.id` is the Session identifier passed to later calls and
+to Chat Surface. All Session operations are listed in the [Session capability
+guide](../capabilities/session.md): list, switch, history, rename, delete,
+cancel, and continue.
 
-Session APIs are grouped under `client.experimental.nexum.session`. Load the
-list in your own sidebar and pass the selected ID to the chat area:
+## Step 6: Query and switch existing Sessions
+
+A real application usually renders a Session list in a sidebar. The list comes
+from the backend SQLite store; the frontend never reads the database directly:
 
 ```tsx
-const sessions = await client.experimental.nexum.session.list()
+import { For, Show, createSignal, onMount } from "solid-js"
+import { Nexum, type NexumSession } from "nexum/client"
 
-function selectSession(sessionID: string) {
-  setSelectedSessionID(sessionID)
+const API_BASE_URL = "http://127.0.0.1:4097"
+
+export function SessionPicker(props: { onSelect: (sessionID: string) => void }) {
+  const client = Nexum.make({ baseUrl: API_BASE_URL })
+  const [sessions, setSessions] = createSignal<readonly NexumSession[]>([])
+  const [selectedSessionID, setSelectedSessionID] = createSignal<string>()
+
+  onMount(async () => {
+    const nextSessions = await client.experimental.nexum.session.list()
+    setSessions(nextSessions)
+    if (nextSessions[0]) {
+      setSelectedSessionID(nextSessions[0].id)
+      props.onSelect(nextSessions[0].id)
+    }
+  })
+
+  async function createSession() {
+    const session = await client.experimental.nexum.session.create({
+      directory: "/workspace/demo",
+      name: `New Agent ${sessions().length + 1}`,
+    })
+    setSessions((current) => [session, ...current])
+    setSelectedSessionID(session.id)
+    props.onSelect(session.id)
+  }
+
+  return (
+    <aside>
+      <button type="button" onClick={() => void createSession()}>
+        New Session
+      </button>
+      <For each={sessions()} fallback={<p>No Sessions yet</p>}>
+        {(session) => (
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedSessionID(session.id)
+              props.onSelect(session.id)
+            }}
+          >
+            {session.name} · {session.status}
+          </button>
+        )}
+      </For>
+      <Show when={selectedSessionID()}>
+        {(sessionID) => <p>Selected Session: {sessionID()}</p>}
+      </Show>
+    </aside>
+  )
 }
 ```
 
-The main values are:
+The two important values are:
 
-| Value | Use |
+| Value | Purpose |
 | --- | --- |
-| `sessions` | Server-provided list for the Session picker |
-| `selectedSessionID` | Current ID passed to Chat Surface |
+| `sessions` | Server-provided list used to render the picker |
+| `selectedSessionID` | The selected ID that drives the chat area |
 
-For a manual UI, the Session API entry points are `list`, `state`, `messages`,
-and `events`. `state()` restores status and pending interactions,
-`messages()` restores history, and `events()` receives live changes.
+Call `session.list()` again when the sidebar needs refreshing. The API entry
+point is `client.experimental.nexum.session`; parameter and return-value
+details are in [Client Session methods](../modules/nexum-client.md#session-methods).
 
-## 7. Switch a Session and show its history
+## Step 7: Switch a Session and show its history
+
+Pass the selected `sessionID` to Chat Surface. Clicking another Session only
+needs to update this value:
 
 ```tsx
+import { Show, createSignal } from "solid-js"
 import { ChatSurface } from "nexum/chat-surface"
 import "nexum/chat-surface/styles.css"
 
-<ChatSurface
-  sessionID={selectedSessionID()}
-  client={{ baseUrl: server.url }}
-  title="My Agent"
-/>
+const API_BASE_URL = "http://127.0.0.1:4097"
+
+export function App() {
+  const [selectedSessionID, setSelectedSessionID] = createSignal<string>()
+
+  return (
+    <div>
+      <SessionPicker onSelect={setSelectedSessionID} />
+      <main>
+        <Show when={selectedSessionID()} fallback={<p>Select a Session first</p>}>
+          <ChatSurface
+            sessionID={selectedSessionID()!}
+            client={{ baseUrl: API_BASE_URL }}
+            title="My Agent"
+          />
+        </Show>
+      </main>
+    </div>
+  )
+}
 ```
 
-When `sessionID` changes, Chat Surface loads the selected Session's history and
-state, subscribes to its SSE events, and renders the existing conversation. It
-also handles streaming text, tool cards, Permission, Questions, cancellation,
-continuation, refresh, and reconnect.
+After `sessionID` changes, Chat Surface automatically:
 
-If you build the UI yourself:
+- loads Session history;
+- loads the current Session state;
+- subscribes to SSE events;
+- shows streaming text and tool calls;
+- displays Permission requests and submits decisions;
+- displays Questions and submits answers;
+- supports cancel and continue;
+- restores state after refresh or reconnect.
+
+The UI does not implement the Coding Loop or infer run state by parsing model
+text. It consumes [Protocol](../modules/nexum-protocol.md) and [Client](../modules/nexum-client.md)
+through [Surface Adapter](../modules/nexum-surface-adapter.md).
+
+If you build your own chat UI, read the selected Session manually:
 
 ```ts
 const state = await client.experimental.nexum.session.state({ sessionID })
-const history = await client.experimental.nexum.session.messages({ sessionID, limit: 50 })
+const history = await client.experimental.nexum.session.messages({
+  sessionID,
+  limit: 50,
+})
 
 for await (const event of client.experimental.nexum.session.events(
   { sessionID },
   { afterSequence: state.lastSequence },
 )) {
-  render(event)
+  console.log(event.type, event.data)
 }
 ```
 
-Read the [Session guide](../capabilities/session.md) for rename, delete,
-cancel, continue, pagination, and recovery. The tutorial keeps those
-operations in one linked reference instead of duplicating them here.
+`state()` restores status, `messages()` restores chat history, and `events()`
+receives live changes. See [Session capability](../capabilities/session.md) and
+[ChatSurface parameters](../modules/nexum-chat-surface.md#parameters).
 
-## 8. Understand the data flow
+## Step 8: Understand one request's data flow
 
-1. The Client sends a Session or Prompt request to Server.
-2. Server forwards the request to the composed Runtime.
-3. Runtime folds the request into durable Session state and runs one step.
-4. Runtime emits ordered events for text, tools, Permission, Questions, and terminal state.
-5. Server streams those events over SSE.
-6. Client or Chat Surface projects the events into UI state.
+When the user sends “Summarize the project structure”, data flows like this:
+
+```text
+ChatSurface
+  ↓ sessionID + text
+Client
+  ↓ HTTP POST /session/:id/prompt
+Server
+  ↓ invokes Runtime
+Coding Loop
+  ↓ reads role prompt, history, tools, and permissions
+Model
+  ↓ emits text or a tool call
+Server
+  ↓ SSE events
+Client / ChatSurface
+  ↓
+User sees the result
+```
+
+- `sessionID` identifies which Session owns the task;
+- `text` is the user's current Prompt;
+- `rolePrompt` is the Runtime's default role;
+- SQLite stores recoverable history and state;
+- SSE sends the running process back to the frontend.
+
+## What can you replace next?
+
+After this tutorial, replace one boundary at a time:
+
+- no persistence during an experiment: use [Memory Persistence](../modules/nexum-persistence-memory.md);
+- JSON-file storage: use [File Persistence](../modules/nexum-persistence-file.md);
+- another model provider: implement or inject [ModelPort](../modules/nexum-core.md#public-api);
+- a different UI: keep [Protocol](../modules/nexum-protocol.md) and [Client](../modules/nexum-client.md), and replace Chat Surface;
+- custom chat interaction: implement [ChatProtocolAdapter](../modules/nexum-surface-adapter.md#public-api).
+
+## Common questions
+
+### Why does the frontend not connect to the model directly?
+
+Model credentials and host capabilities such as files and Shell belong on the
+backend. The frontend connects to Nexum Server and consumes safe state and
+events through Client and Protocol.
+
+### Why is `directory` a backend path?
+
+Agent tools execute in the backend Runtime, so `directory` must be a working
+directory the backend can validate and access. It is not a browser-local path.
+
+### I only want to verify the call chain. What should I do?
+
+Start with [Embed an Agent](embedded-runtime.md). It needs no Server or
+frontend; once the Runtime works, move to this SQLite + HTTP/SSE composition.
 
 ## Next references
 

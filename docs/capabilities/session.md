@@ -70,3 +70,74 @@ confirms removal.
 - [Events and SSE](events.md)
 - [Client module](../modules/nexum-client.md)
 - [Runtime API](../../apis/nexum.md)
+
+## What each Session operation does
+
+| Operation | What the UI normally does | Important input |
+| --- | --- | --- |
+| `create()` | Create a new item and select it | `directory`, optional `name` |
+| `list()` | Fill the Session sidebar | no input |
+| `state()` | Restore status, pending Permission/Question, and cursor | `sessionID` |
+| `messages()` | Restore the conversation, usually page by page | `sessionID`, optional `before`, `limit`, `snapshotID` |
+| `update()` | Rename the selected Session | `sessionID`, `name` |
+| `delete()` | Remove a Session after confirmation | `sessionID` |
+| `prompt()` | Queue a new user task | `sessionID`, `text` |
+| `continue()` | Resume recoverable work | `sessionID` |
+| `cancel()` | Stop the active run or pending interaction | `sessionID` |
+| `events()` | Receive and resume live events | `sessionID`, optional `afterSequence`, `signal` |
+
+The API entry point is always `client.experimental.nexum.session`. The
+browser stores the returned `id`; it never invents an ID or reads the SQLite
+file. The `name` is only a display label. The `directory` is validated on the
+Server host and is not a browser-local file path.
+
+## Create, list, and switch
+
+Create returns the Session snapshot and its stable `id`:
+
+```ts
+const created = await client.experimental.nexum.session.create({
+  directory: "/workspace/demo",
+  name: "Project assistant",
+})
+```
+
+Load `list()` for a picker. When the user clicks another item, set the selected
+ID, call `state()` and `messages()` for that ID, then start `events()` from
+the returned `lastSequence`. Chat Surface performs those three reads when its
+`sessionID` prop changes.
+
+## Rename and delete
+
+```ts
+await client.experimental.nexum.session.update({
+  sessionID,
+  name: "Renamed assistant",
+})
+
+await client.experimental.nexum.session.delete({ sessionID })
+```
+
+After a rename, refresh the sidebar from `list()` or update the local snapshot.
+After deletion, remove the selected ID and do not render Chat Surface with it.
+Deletion is durable: it removes the Session's history and runtime records
+according to the configured Persistence adapter. Ask for explicit user
+confirmation before calling it.
+
+## Persistence and restart recovery
+
+With SQLite or File Persistence, creating a Session writes its durable record to
+the backend store. Prompt admission, messages, events, pending interactions,
+and runtime configuration are then available after a server restart. Memory
+Persistence is process-local and intentionally loses this data when the
+process closes.
+
+The recovery sequence is:
+
+1. call `state()` to obtain the current snapshot and `lastSequence`;
+2. call `messages()` to restore canonical history;
+3. subscribe with `events({ afterSequence: state.lastSequence })`;
+4. deduplicate by `eventID` and keep actions scoped to the selected Session.
+
+Do not decide whether a run completed by looking only at the last visible text;
+use the Session state and terminal events.

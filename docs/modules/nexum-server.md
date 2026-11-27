@@ -45,3 +45,19 @@ the [Runtime API](../../apis/nexum.md) for exact paths and payloads.
 For non-loopback deployment, configure authentication and a safe host policy.
 Server is the transport boundary; Persistence and Application remain the owners
 of storage and runtime composition.
+
+## Capability mapping
+
+| Capability | Server behavior |
+| --- | --- |
+| Health/Capabilities | Return protocol identity, supported operations, and event types |
+| Model/Role Prompt | Read, update, reset, and probe Runtime configuration |
+| Session | Create, list, update, delete, and read state/history |
+| Prompt/Continue/Cancel | Start, resume, or cancel a run |
+| Events | Deliver ordered Session events over SSE |
+| Permission/Question | Expose pending items and replies |
+| Skill | Expose discovery, registration, refresh, validation, and removal |
+
+When a capability is loaded asynchronously, Server returns what is available
+now. Client code should refresh the matching list or item when its update event
+arrives; Server should not turn plugin loading into a request timeout.

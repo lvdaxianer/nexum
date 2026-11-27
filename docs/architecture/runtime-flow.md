@@ -33,3 +33,21 @@ Retryable model failures follow the configured retry policy. Transport clients
 should normalize errors, refresh state when a request is stale, and keep
 Session IDs and event cursors explicit. See [Session](../capabilities/session.md)
 and [Events](../capabilities/events.md).
+
+## A recoverable request
+
+```text
+Prompt admission
+  → durable Session inbox fact
+  → Session runner wakes
+  → reload canonical history
+  → one explicit model step
+  → tool / Permission / Question boundary
+  → ordered events and projection
+  → terminal or recoverable state
+```
+
+The model step continues from reloaded history; the browser does not own an
+in-memory tool loop. A restart resumes from durable facts and the Session
+cursor. A different Surface can consume the same events without changing the
+runtime semantics.

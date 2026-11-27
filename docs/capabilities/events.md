@@ -50,3 +50,32 @@ continued according to its state.
 
 See [Session](session.md), [UI states](../ui/states.md), and the
 [Runtime API](../../apis/nexum.md).
+
+## SSE connection and replay
+
+The stream is opened at:
+
+```text
+GET /api/nexum/session/{sessionID}/events
+```
+
+The response is `text/event-stream; charset=utf-8` with no-store caching. A
+client can resume with `Last-Event-ID`, `after`, or `afterSequence`. Store both
+the event ID and sequence when possible. If a retained event is no longer
+available, rebuild the projection from canonical history and the current
+Session state instead of treating the missing middle event as a server failure.
+
+## Projection rules
+
+1. Deduplicate events by `eventID`.
+2. Accept only a newer `sequence` for the selected Session; recover state when a
+   gap is detected.
+3. Append `assistant.text` and `assistant.reasoning` to the current message.
+4. Associate `tool.request` and `tool.result` by `toolCallID`.
+5. Create pending cards for Permission and Question requests and close them on
+   the matching result or cancellation.
+6. Treat `model.retry` as a retry indicator, not a new user message.
+7. Use terminal events and `run.settled` to release the busy state.
+
+Long-running input, event sequences, permission waits, Questions, compaction,
+and terminal states are all observable and recoverable through this model.

@@ -1,6 +1,6 @@
 # apis
 
-[English](../../README.zh-CN.md)
+[English](../README.md)
 
 `apis/` 保存面向外部调用方的 API 说明。它描述 Nexum Runtime 对外暴露的资源、请求参数、响应结构和事件语义，不承载服务端运行时代码。
 

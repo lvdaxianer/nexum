@@ -40,3 +40,34 @@ canonical Session state and messages. Sensitive paths, credentials, and raw
 command output must remain within the configured redaction boundary.
 
 See [Session](session.md), [Events](events.md), and [Model / Runtime](model-runtime.md).
+
+## What is included in context?
+
+The model-visible request is assembled from the Runtime role prompt, project
+context, selected Skills, canonical Session history, the current user task, and
+the tools allowed by Permission policy. `rolePrompt` is Runtime-level
+configuration; it is not a replacement for the user's `text`.
+
+## History and snapshots
+
+Use `session.messages({ sessionID, before, limit, snapshotID })` for paginated
+history. A snapshot ID keeps a page stable while new events arrive. Render
+canonical messages first and then apply newer events from the SSE cursor; do
+not persist a second browser-only conversation.
+
+## Compaction and recovery
+
+Compaction is different from model retry. Retry handles a transient request
+failure before visible output; compaction handles a context-window limit by
+creating a recoverable summary:
+
+```text
+context.compaction.started
+  → summary and retained messages are written
+  → context.compaction.completed
+  → the next model request continues from canonical history
+```
+
+If compaction fails, the Runtime publishes `context.compaction.failed` and the
+Session remains recoverable according to its state. On restart, call `state()`
+and `messages()` before resuming events.

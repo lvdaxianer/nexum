@@ -2,7 +2,7 @@
 
 [中文](../zh-CN/modules/nexum-test.md)
 
-<!-- 内部模块 -->
+<!-- 内部模块 / Internal module -->
 
 This is an internal cross-layer verification package, not a production Runtime
 or a user-facing demo. It runs real Core, Application, Protocol, Client, Server,

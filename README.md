@@ -96,18 +96,45 @@ replace only the ports you need:
 
 Each example explains the parameters, data flow, and the next document to read.
 
+## When should you replace a module?
+
+| Your goal | Keep | Replace or add |
+| --- | --- | --- |
+| Embed an Agent in one process | Application + Core | Use `createEmbeddedRuntime` |
+| Keep data after a restart | Runtime semantics | File or SQLite Persistence |
+| Support multiple clients | Runtime + Persistence | Server + Protocol + Client |
+| Use another model provider | Core ports | A `ModelPort` Integration |
+| Use a different UI | Runtime + Protocol | Your Surface or a Surface Adapter |
+| Add organization-specific tools | Core loop | Application Tool Registry / Host |
+| Connect an MCP server | Application | MCP Integration and permissions |
+
+The choice is a composition decision, not a rewrite. Keep the Core semantics
+stable and replace the environment adapter, transport, or Surface at the
+boundary that needs to change.
+
 ## How the modules are divided
 
 ```text
-Surface (Web / Chat / CLI / Desktop / TUI)
-        │ Client / Surface Adapter
-Protocol + Client + Server
-        │ runtime composition
-Application (Runtime Composer, tools, Skills, Questions)
-        ├───────────────┬────────────────
-Core (semantics)       Environment (Persistence / Integrations)
-Loop · Session         files · memory · SQLite · Model · Host
-Permission · Context
+┌──────────────────────────────────────────────────────────────┐
+│ Surface: Web · Chat · CLI · Desktop · TUI · enterprise app   │
+│ layout, interaction, and state projection                    │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ Client / Surface Adapter
+┌──────────────────────────────▼───────────────────────────────┐
+│ Protocol / Transport: Protocol · Client · Server              │
+│ versioned contracts, envelopes, errors, events, and HTTP/SSE  │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ Runtime injection
+┌──────────────────────────────▼───────────────────────────────┐
+│ Application: Runtime Composer, Skill, Tool, and Question      │
+│ orchestration                                                 │
+└───────────────┬──────────────────────────────┬────────────────┘
+                │                              │
+┌───────────────▼──────────────┐  ┌────────────▼────────────────┐
+│ Core: runtime semantics       │  │ Environment: Persistence     │
+│ Loop · Session · Permission   │  │ · Integrations               │
+│ Context · Skill · Memory      │  │ file/memory/SQLite/Model/Host│
+└──────────────────────────────┘  └─────────────────────────────┘
 ```
 
 The dependency rule is simple: Core does not import implementation packages;
@@ -117,6 +144,44 @@ protocol state rather than reimplementing the Agent loop.
 
 See [module boundaries](docs/architecture/module-boundaries.md) and the
 [module index](docs/modules/README.md) for the detailed map.
+
+The same map is available in the [Chinese README mirror](README.zh-CN.md).
+
+### Package responsibilities
+
+| Package | Boundary | Responsibility | Typical choice |
+| --- | --- | --- | --- |
+| [`nexum/core`](docs/modules/nexum-core.md) | Runtime foundation | Coding Loop, Session, Permission, Question, Context, Skill, Memory, and ports | Every Runtime |
+| [`nexum/persistence`](docs/modules/nexum-persistence.md) | Persistence contract | Store composition and Event Hub ports | Custom storage |
+| [`nexum/persistence/memory`](docs/modules/nexum-persistence-memory.md) | Persistence implementation | In-process stores without a file or database | Embedding and tests |
+| [`nexum/persistence/file`](docs/modules/nexum-persistence-file.md) | Persistence implementation | Local JSON-file stores with atomic writes | CLI and local apps |
+| [`nexum/persistence/sqlite`](docs/modules/nexum-persistence-sqlite.md) | Persistence implementation | SQLite schema, transactions, and restart recovery | Web/Server |
+| [`nexum/integrations`](docs/modules/nexum-integrations.md) | External integration | Model, Host, project context, Skill source, and MCP adapters | Replace providers or host capabilities |
+| [`nexum/application`](docs/modules/nexum-application.md) | Application composition | Runtime Composer, registries, brokers, and configured loop | Create a complete Runtime |
+| [`nexum/protocol`](docs/modules/nexum-protocol.md) | Protocol model | `nexum.runtime.v1`, envelopes, Session, interaction, and event models | Other languages/transports |
+| [`nexum/client`](docs/modules/nexum-client.md) | Protocol consumer | HTTP requests, validation, error normalization, and SSE | Web, CLI, desktop, custom clients |
+| [`nexum/server`](docs/modules/nexum-server.md) | Protocol binding | Expose a composed Runtime through HTTP/SSE | Local service or backend |
+| [`nexum/surface-adapter`](docs/modules/nexum-surface-adapter.md) | Surface adapter | `ChatProtocolAdapter` and chat operation normalization | Reuse chat transport |
+| [`nexum/chat-surface`](docs/modules/nexum-chat-surface.md) | UI component | Embeddable chat component and Web Component | In-app chat |
+| `nexum/cli` | Terminal Surface | REPL and runtime management commands | Terminal Agent |
+
+### Dependency direction
+
+```text
+nexum/persistence/* ──> nexum/persistence ──> nexum/core
+nexum/integrations ─────────────────────────> nexum/core
+nexum/application ──> nexum/core + persistence/* + integrations
+nexum/protocol       protocol models only; no Runtime implementation
+nexum/client ───────> nexum/protocol
+nexum/server ───────> nexum/core + nexum/application + nexum/protocol
+nexum/surface-adapter ──> nexum/client
+nexum/chat-surface ─────> nexum/surface-adapter
+nexum/cli ──────────────> nexum/surface-adapter + nexum/client
+```
+
+Core never imports implementation packages. Persistence and Integrations
+implement ports; Application composes them; Client does not depend on Core or
+Server; and Surfaces do not copy the Agent Loop.
 
 ## Runtime events and interaction
 
@@ -142,6 +207,10 @@ linked from each step.
 - [Runtime API reference](apis/nexum.md)
 - [UI interaction protocols](docs/ui/interaction-protocol.md)
 - [Architecture](docs/architecture/module-boundaries.md)
+
+Every public usage page has a Chinese mirror. Use the language link at the top
+of a page to switch languages; the two versions keep the same sections,
+examples, module names, and API references.
 
 ## Project status
 
