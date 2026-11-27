@@ -4,7 +4,8 @@
 
 Skills are locally discoverable instruction and tool bundles. Nexum validates a
 Skill before exposing it and returns a safe summary suitable for a UI or
-management command.
+management command. The standalone service scans the current working
+directory's `skills/` root at startup by default.
 
 ## Skill summary
 
@@ -19,9 +20,10 @@ management command.
 
 ## Registry lifecycle
 
-The registry discovers configured roots, validates candidate files, registers a
-ready Skill, and emits update events when the source changes. Invalid or
-conflicting Skills remain visible with diagnostics and are not invoked.
+The registry discovers configured roots at startup, validates candidate files,
+persists the discovered source metadata, and restores those addresses on later
+starts. Invalid or conflicting Skills remain visible with diagnostics and are
+not invoked.
 
 ## Use from a client
 
@@ -48,6 +50,22 @@ configured roots / registered address
 Registering the same normalized address is idempotent. Unregistering removes
 the registry entry but does not delete the source directory. A duplicate ID is
 reported as `conflict`; an invalid or conflicting Skill cannot be activated.
+
+The default standalone service root is `./skills`, with one Skill per direct
+child directory. A host product can pass other roots through `skillRoots` when
+it creates the Runtime. A directory added after startup is not watched or
+discovered automatically; the owning product should call the address-based
+register operation:
+
+```http
+POST /api/nexum/skills/register
+Content-Type: application/json
+
+{ "address": "/path/to/skill" }
+```
+
+Registration records the source address and safe metadata. Nexum does not copy,
+move, or modify the source files.
 
 ## Explicit activation
 

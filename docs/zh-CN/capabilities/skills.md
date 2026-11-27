@@ -6,11 +6,13 @@
 
 权威来源：`packages/nexum-core/src/skill-registry.ts`、`packages/nexum-core/src/skill-invocation.ts`、`packages/nexum-integrations/src/local-skill-source.ts`、`packages/nexum-application/src/skill-registry.ts`
 
-最后核对：2026-11-24
+最后核对：2026-11-27
 
 ## 1. Skill 包与安全摘要
 
 当前只支持 `local-directory` 来源。一个可用 Skill 是目录中的 `SKILL.md` 加可选的 `references/`、`scripts/` 等相对文件。`SKILL.md` 必须有 frontmatter 的 `name` 和 `description`；`version` 可选，Skill ID 必须匹配小写字母、数字和连字符。
+
+默认服务启动时扫描当前工作目录下的 `skills/`，每个一级子目录作为一个候选 Skill。产品内置 Skill 可以随产品放在该目录下，也可以由宿主通过 `skillRoots` 显式配置其他目录。
 
 Registry 对外只返回安全摘要：
 
@@ -37,7 +39,15 @@ Application 负责把 Integration 的 `NexumSkillSource` 和 Persistence 的注�
   → Server 暴露安全摘要
 ```
 
-首次加载已有注册记录；没有注册记录时扫描配置 roots 并持久化发现结果。重复注册同一规范化地址是幂等的；注销只删除注册记录和 Registry 条目，不删除 Skill 源目录。
+服务首次加载且没有已有注册记录时，会扫描配置的 roots，将其中所有一级子目录作为候选并持久化发现结果；后续启动会恢复已持久化的源地址并重新校验。默认独立服务入口的 root 是当前工作目录下的 `skills/`。
+
+运行期间新加入 root 的 Skill 目录不会被自动监听或自动发现。外部产品应在新增 Skill 后调用地址注册接口；重复注册同一规范化地址是幂等的。注销只删除注册记录和 Registry 条目，不删除 Skill 源目录。
+
+```text
+内置 Skill：服务启动时扫描配置 root
+外部新增 Skill：POST /api/nexum/skills/register
+Skill 源文件：始终保留在源目录，不会复制到 Registry
+```
 
 ## 3. 显式激活
 
@@ -56,7 +66,7 @@ Skill 原文进入本轮模型上下文，不进入普通 canonical history。Sk
 
 页面加载 Skill 列表后支持 `@` 建议、选择和已附加 chip；发送 Prompt 后根据 `skill.activated` 或 `skill.failed` 更新运行时间线。校验失败保留诊断，并允许 refresh 或 unregister，不得显示为 ready。
 
-对应 HTTP 操作包括列表、详情、注册、刷新、校验、激活和注销；端点字段与错误码见 [Nexum HTTP API](../../../apis/zh-CN/nexum.md)。
+对应 HTTP 操作包括列表、详情、注册、刷新、校验、激活和注销。外部项目新增 Skill 时提交 `{ "address": "/path/to/skill" }` 到 `POST /api/nexum/skills/register`；端点字段与错误码见 [Nexum HTTP API](../../../apis/zh-CN/nexum.md)。
 
 ## 5. 相关入口
 
