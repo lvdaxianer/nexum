@@ -1,8 +1,8 @@
-# `nexum/core`
+# `nexum-ai/core`
 
 [中文](../zh-CN/modules/nexum-core.md)
 
-Import types and ports from `nexum/core`.
+Import types and ports from `nexum-ai/core`.
 
 ## Responsibility
 

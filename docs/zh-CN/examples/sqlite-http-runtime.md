@@ -23,8 +23,8 @@ Web / Desktop / CLI / 其他语言
 ## 服务端组合
 
 ```ts
-import { createSqliteRuntime } from "nexum/application"
-import { startNexumServer } from "nexum/server"
+import { createSqliteRuntime } from "nexum-ai/application"
+import { startNexumServer } from "nexum-ai/server"
 
 const runtime = await createSqliteRuntime({
   databasePath: ".nexum/nexum.db",
@@ -52,7 +52,7 @@ console.log(server.url)
 ## 客户端组合
 
 ```ts
-import { Nexum } from "nexum/client"
+import { Nexum } from "nexum-ai/client"
 
 const client = Nexum.make({
   baseUrl: "http://127.0.0.1:4097",

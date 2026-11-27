@@ -1,8 +1,8 @@
-# `nexum/application`
+# `nexum-ai/application`
 
 [中文](../zh-CN/modules/nexum-application.md)
 
-Import from the one published package: `nexum/application`.
+Import from the one published package: `nexum-ai/application`.
 
 ## Responsibility
 
@@ -14,7 +14,7 @@ API and does not render UI.
 ## Public API
 
 ```ts
-import { createLocalRuntime } from "nexum/application"
+import { createLocalRuntime } from "nexum-ai/application"
 
 const runtime = createLocalRuntime({ dataDirectory: ".nexum" })
 const session = await runtime.sessionService.create({ directory: process.cwd() })

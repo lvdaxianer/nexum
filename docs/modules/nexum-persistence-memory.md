@@ -1,4 +1,4 @@
-# `nexum/persistence/memory`
+# `nexum-ai/persistence/memory`
 
 [中文](../zh-CN/modules/nexum-persistence-memory.md)
 
@@ -8,7 +8,7 @@ no file or database and each composition starts with independent state.
 ## Public API
 
 ```ts
-import { createMemoryPersistence } from "nexum/persistence/memory"
+import { createMemoryPersistence } from "nexum-ai/persistence/memory"
 
 const persistence = createMemoryPersistence()
 ```

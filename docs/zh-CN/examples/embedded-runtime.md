@@ -10,8 +10,8 @@
 
 ```text
 你的应用
-  └─ nexum/application
-       ├─ nexum/core
+  └─ nexum-ai/application
+       ├─ nexum-ai/core
        ├─ 内存 Persistence
        └─ ModelPort
 ```
@@ -21,7 +21,7 @@
 ## 完整示例
 
 ```ts
-import { createEmbeddedRuntime } from "nexum/application"
+import { createEmbeddedRuntime } from "nexum-ai/application"
 
 const runtime = createEmbeddedRuntime()
 

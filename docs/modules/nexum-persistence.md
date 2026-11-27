@@ -1,9 +1,9 @@
-# `nexum/persistence`
+# `nexum-ai/persistence`
 
 [中文](../zh-CN/modules/nexum-persistence.md)
 
 Persistence provides Store and Event Hub implementations for the Core ports.
-Import its contracts and low-level stores from `nexum/persistence`.
+Import its contracts and low-level stores from `nexum-ai/persistence`.
 
 ## Public API
 
@@ -17,7 +17,7 @@ Import its contracts and low-level stores from `nexum/persistence`.
 | `createInMemoryMemory(options?)` | optional Memory settings | `MemoryPort` | Process-local Memory |
 
 `createLocalRuntime` composes file stores under `.nexum`; `createEmbeddedRuntime`
-uses memory stores. Use `nexum/persistence/sqlite` for transactional SQLite
+uses memory stores. Use `nexum-ai/persistence/sqlite` for transactional SQLite
 recovery. Persistence stores data and replay facts; it does not decide Skills,
 Tools, Permissions, or runtime orchestration.
 
@@ -34,7 +34,7 @@ permission-policies.json  events.json         memory.json
 ```
 
 `createLocalRuntime` chooses file stores under `.nexum`, while
-`createEmbeddedRuntime` uses memory stores. Use `nexum/persistence/sqlite` for
+`createEmbeddedRuntime` uses memory stores. Use `nexum-ai/persistence/sqlite` for
 transactional SQLite recovery. The Application layer decides which stores to
 compose; Server must not duplicate their read/write logic.
 

@@ -1,13 +1,13 @@
 # Nexum Surface Adapter
 
-Surface Adapter 是 UI 与协议之间的稳定边界，发布入口为 `nexum/surface-adapter`。它提供 `ChatProtocolAdapter`、聊天操作和协议错误归一化。
+Surface Adapter 是 UI 与协议之间的稳定边界，发布入口为 `nexum-ai/surface-adapter`。它提供 `ChatProtocolAdapter`、聊天操作和协议错误归一化。
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 ```ts
-import { createChatProtocolAdapter } from "nexum/surface-adapter"
+import { createChatProtocolAdapter } from "nexum-ai/surface-adapter"
 
 const adapter = createChatProtocolAdapter({ baseUrl: "http://127.0.0.1:4097" })
 const history = await adapter.loadHistory({ sessionID })

@@ -1,9 +1,9 @@
-# `nexum/protocol`
+# `nexum-ai/protocol`
 
 [中文](../zh-CN/modules/nexum-protocol.md)
 
 Protocol contains cross-process and cross-language data models. Import types
-from `nexum/protocol`.
+from `nexum-ai/protocol`.
 
 ## Responsibility
 

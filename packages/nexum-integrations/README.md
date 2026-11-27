@@ -1,13 +1,13 @@
 # Nexum Integrations
 
-Integrations 是环境能力适配层，发布入口为 `nexum/integrations`。它提供 OpenAI-compatible Model、本地 Host、目录校验、项目上下文、Skill 文件来源和 MCP 连接器。
+Integrations 是环境能力适配层，发布入口为 `nexum-ai/integrations`。它提供 OpenAI-compatible Model、本地 Host、目录校验、项目上下文、Skill 文件来源和 MCP 连接器。
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 ```ts
-import { createOpenAICompatibleModelPort, createLocalHostAdapter } from "nexum/integrations"
+import { createOpenAICompatibleModelPort, createLocalHostAdapter } from "nexum-ai/integrations"
 
 const model = createOpenAICompatibleModelPort({ baseUrl, apiKey, model })
 const host = createLocalHostAdapter({ directory: process.cwd() })

@@ -21,18 +21,18 @@ not about one UI or one kind of Agent.
 
 ## Install the published package
 
-Nexum publishes one package for users: `nexum`. The internal source packages
+Nexum publishes one package for users: `nexum-ai`. The internal source packages
 are not separate user-facing installation targets. Install the compiled
 artifact and import the pieces you need through subpaths:
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 ```ts
-import { createLocalRuntime } from "nexum/application"
-import { Nexum } from "nexum/client"
-import { createFilePersistence } from "nexum/persistence/file"
+import { createLocalRuntime } from "nexum-ai/application"
+import { Nexum } from "nexum-ai/client"
+import { createFilePersistence } from "nexum-ai/persistence/file"
 ```
 
 See the [module documentation index](docs/modules/README.md) for every public
@@ -89,7 +89,7 @@ replace only the ports you need:
 
 | Example | Main pieces | Use it when |
 | --- | --- | --- |
-| [Embedded Agent](docs/examples/embedded-runtime.md) | `nexum/application` + Core + Memory Persistence | Your application calls the Agent in-process |
+| [Embedded Agent](docs/examples/embedded-runtime.md) | `nexum-ai/application` + Core + Memory Persistence | Your application calls the Agent in-process |
 | [Local file runtime](docs/examples/local-file-runtime.md) | Application + File Persistence | A CLI or desktop app needs restart recovery |
 | [SQLite + HTTP/SSE](docs/examples/sqlite-http-runtime.md) | Application + SQLite + Server + Client | Web, desktop, or another language needs a service |
 | [Chat Surface](docs/examples/chat-surface.md) | Client + Protocol + Surface Adapter + Chat Surface | You need an embeddable chat UI |
@@ -151,32 +151,32 @@ The same map is available in the [Chinese README mirror](README.zh-CN.md).
 
 | Package | Boundary | Responsibility | Typical choice |
 | --- | --- | --- | --- |
-| [`nexum/core`](docs/modules/nexum-core.md) | Runtime foundation | Coding Loop, Session, Permission, Question, Context, Skill, Memory, and ports | Every Runtime |
-| [`nexum/persistence`](docs/modules/nexum-persistence.md) | Persistence contract | Store composition and Event Hub ports | Custom storage |
-| [`nexum/persistence/memory`](docs/modules/nexum-persistence-memory.md) | Persistence implementation | In-process stores without a file or database | Embedding and tests |
-| [`nexum/persistence/file`](docs/modules/nexum-persistence-file.md) | Persistence implementation | Local JSON-file stores with atomic writes | CLI and local apps |
-| [`nexum/persistence/sqlite`](docs/modules/nexum-persistence-sqlite.md) | Persistence implementation | SQLite schema, transactions, and restart recovery | Web/Server |
-| [`nexum/integrations`](docs/modules/nexum-integrations.md) | External integration | Model, Host, project context, Skill source, and MCP adapters | Replace providers or host capabilities |
-| [`nexum/application`](docs/modules/nexum-application.md) | Application composition | Runtime Composer, registries, brokers, and configured loop | Create a complete Runtime |
-| [`nexum/protocol`](docs/modules/nexum-protocol.md) | Protocol model | `nexum.runtime.v1`, envelopes, Session, interaction, and event models | Other languages/transports |
-| [`nexum/client`](docs/modules/nexum-client.md) | Protocol consumer | HTTP requests, validation, error normalization, and SSE | Web, CLI, desktop, custom clients |
-| [`nexum/server`](docs/modules/nexum-server.md) | Protocol binding | Expose a composed Runtime through HTTP/SSE | Local service or backend |
-| [`nexum/surface-adapter`](docs/modules/nexum-surface-adapter.md) | Surface adapter | `ChatProtocolAdapter` and chat operation normalization | Reuse chat transport |
-| [`nexum/chat-surface`](docs/modules/nexum-chat-surface.md) | UI component | Embeddable chat component and Web Component | In-app chat |
-| `nexum/cli` | Terminal Surface | REPL and runtime management commands | Terminal Agent |
+| [`nexum-ai/core`](docs/modules/nexum-core.md) | Runtime foundation | Coding Loop, Session, Permission, Question, Context, Skill, Memory, and ports | Every Runtime |
+| [`nexum-ai/persistence`](docs/modules/nexum-persistence.md) | Persistence contract | Store composition and Event Hub ports | Custom storage |
+| [`nexum-ai/persistence/memory`](docs/modules/nexum-persistence-memory.md) | Persistence implementation | In-process stores without a file or database | Embedding and tests |
+| [`nexum-ai/persistence/file`](docs/modules/nexum-persistence-file.md) | Persistence implementation | Local JSON-file stores with atomic writes | CLI and local apps |
+| [`nexum-ai/persistence/sqlite`](docs/modules/nexum-persistence-sqlite.md) | Persistence implementation | SQLite schema, transactions, and restart recovery | Web/Server |
+| [`nexum-ai/integrations`](docs/modules/nexum-integrations.md) | External integration | Model, Host, project context, Skill source, and MCP adapters | Replace providers or host capabilities |
+| [`nexum-ai/application`](docs/modules/nexum-application.md) | Application composition | Runtime Composer, registries, brokers, and configured loop | Create a complete Runtime |
+| [`nexum-ai/protocol`](docs/modules/nexum-protocol.md) | Protocol model | `nexum.runtime.v1`, envelopes, Session, interaction, and event models | Other languages/transports |
+| [`nexum-ai/client`](docs/modules/nexum-client.md) | Protocol consumer | HTTP requests, validation, error normalization, and SSE | Web, CLI, desktop, custom clients |
+| [`nexum-ai/server`](docs/modules/nexum-server.md) | Protocol binding | Expose a composed Runtime through HTTP/SSE | Local service or backend |
+| [`nexum-ai/surface-adapter`](docs/modules/nexum-surface-adapter.md) | Surface adapter | `ChatProtocolAdapter` and chat operation normalization | Reuse chat transport |
+| [`nexum-ai/chat-surface`](docs/modules/nexum-chat-surface.md) | UI component | Embeddable chat component and Web Component | In-app chat |
+| `nexum-ai/cli` | Terminal Surface | REPL and runtime management commands | Terminal Agent |
 
 ### Dependency direction
 
 ```text
-nexum/persistence/* ──> nexum/persistence ──> nexum/core
-nexum/integrations ─────────────────────────> nexum/core
-nexum/application ──> nexum/core + persistence/* + integrations
-nexum/protocol       protocol models only; no Runtime implementation
-nexum/client ───────> nexum/protocol
-nexum/server ───────> nexum/core + nexum/application + nexum/protocol
-nexum/surface-adapter ──> nexum/client
-nexum/chat-surface ─────> nexum/surface-adapter
-nexum/cli ──────────────> nexum/surface-adapter + nexum/client
+nexum-ai/persistence/* ──> nexum-ai/persistence ──> nexum-ai/core
+nexum-ai/integrations ─────────────────────────────> nexum-ai/core
+nexum-ai/application ──> nexum-ai/core + persistence/* + integrations
+nexum-ai/protocol       protocol models only; no Runtime implementation
+nexum-ai/client ───────> nexum-ai/protocol
+nexum-ai/server ───────> nexum-ai/core + nexum-ai/application + nexum-ai/protocol
+nexum-ai/surface-adapter ──> nexum-ai/client
+nexum-ai/chat-surface ─────> nexum-ai/surface-adapter
+nexum-ai/cli ──────────────> nexum-ai/surface-adapter + nexum-ai/client
 ```
 
 Core never imports implementation packages. Persistence and Integrations

@@ -1,8 +1,8 @@
-# `nexum/application`
+# `nexum-ai/application`
 
 [English](../../modules/nexum-application.md)
 
-源码模块：`@nexum/application`。用户安装唯一公共包 `nexum` 后，从 `nexum/application` 导入。
+源码模块：`@nexum/application`。用户安装唯一公共包 `nexum-ai` 后，从 `nexum-ai/application` 导入。
 
 状态：现状基线
 
@@ -29,7 +29,7 @@ Application 不定义通用存储格式，也不直接处理 HTTP/UI。替换模
 - `createNexumEventHub` 及相关 Event 类型。
 
 ```ts
-import { createLocalRuntime } from "nexum/application"
+import { createLocalRuntime } from "nexum-ai/application"
 
 const runtime = createLocalRuntime({ dataDirectory: ".nexum" })
 const session = await runtime.sessionService.create({ directory: process.cwd() })

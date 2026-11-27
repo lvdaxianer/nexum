@@ -10,9 +10,9 @@
 
 ```text
 本地应用
-  └─ nexum/application
-       ├─ nexum/persistence/file
-       ├─ nexum/core
+  └─ nexum-ai/application
+       ├─ nexum-ai/persistence/file
+       ├─ nexum-ai/core
        └─ ModelPort
 ```
 
@@ -21,7 +21,7 @@
 ## 完整示例
 
 ```ts
-import { createLocalRuntime } from "nexum/application"
+import { createLocalRuntime } from "nexum-ai/application"
 
 const runtime = createLocalRuntime({
   dataDirectory: ".nexum",

@@ -1,4 +1,4 @@
-# `nexum/persistence/sqlite`
+# `nexum-ai/persistence/sqlite`
 
 [中文](../zh-CN/modules/nexum-persistence-sqlite.md)
 
@@ -8,7 +8,7 @@ choice for a Server or any application that must recover after restart.
 ## Public API
 
 ```ts
-import { createSqlitePersistence } from "nexum/persistence/sqlite"
+import { createSqlitePersistence } from "nexum-ai/persistence/sqlite"
 
 const persistence = await createSqlitePersistence({
   databasePath: ".nexum/nexum.db",

@@ -1,14 +1,14 @@
 # Nexum SQLite Persistence
 
-SQLite Persistence 是支持事务和重启恢复的数据库实现，发布入口为 `nexum/persistence/sqlite`。
+SQLite Persistence 是支持事务和重启恢复的数据库实现，发布入口为 `nexum-ai/persistence/sqlite`。
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 ```ts
-import { createSqlitePersistence } from "nexum/persistence/sqlite"
-import { createSqliteRuntime } from "nexum/application"
+import { createSqlitePersistence } from "nexum-ai/persistence/sqlite"
+import { createSqliteRuntime } from "nexum-ai/application"
 
 const persistence = await createSqlitePersistence({ databasePath: ".nexum/nexum.db" })
 const runtime = await createSqliteRuntime({ persistence })

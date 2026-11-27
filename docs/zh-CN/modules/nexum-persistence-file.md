@@ -1,12 +1,12 @@
-# `nexum/persistence/file`
+# `nexum-ai/persistence/file`
 
 [English](../../modules/nexum-persistence-file.md)
 
-这是 `nexum` 包中的 JSON 文件 Persistence 变体。用户安装 `nexum` 后从 `nexum/persistence/file` 导入 `createFilePersistence`。
+这是 `nexum-ai` 包中的 JSON 文件 Persistence 变体。用户安装 `nexum-ai` 后从 `nexum-ai/persistence/file` 导入 `createFilePersistence`。
 
 ```ts
-import { createLocalRuntime } from "nexum/application"
-import { createFilePersistence } from "nexum/persistence/file"
+import { createLocalRuntime } from "nexum-ai/application"
+import { createFilePersistence } from "nexum-ai/persistence/file"
 
 const runtime = createLocalRuntime({ persistence: createFilePersistence({ dataDirectory: ".nexum" }) })
 ```

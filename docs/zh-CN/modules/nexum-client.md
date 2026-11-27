@@ -1,8 +1,8 @@
-# `nexum/client`
+# `nexum-ai/client`
 
 [English](../../modules/nexum-client.md)
 
-源码模块：`@nexum/client`。用户安装唯一公共包 `nexum` 后，从 `nexum/client` 导入。
+源码模块：`@nexum/client`。用户安装唯一公共包 `nexum-ai` 后，从 `nexum-ai/client` 导入。
 
 状态：现状基线
 
@@ -28,7 +28,7 @@
 返回一个 Client 对象。业务方法都位于 `client.experimental.nexum` 下；其中 `session` 负责会话，`rolePrompt` 负责 Runtime 级角色提示词，`model` 负责模型配置，`permissionPolicy` 负责权限策略，`skill` 负责 Skill 管理。
 
 ```ts
-import { Nexum } from "nexum/client"
+import { Nexum } from "nexum-ai/client"
 
 const client = Nexum.make({
   baseUrl: "http://127.0.0.1:4097",

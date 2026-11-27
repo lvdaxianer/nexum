@@ -23,25 +23,25 @@ Application + Core + SQLite Persistence
 Nexum 对外只发布一个 `nexum` 包，所有模块都从 subpath 导入：
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 你会用到这些入口：
 
 | 入口                                                                 | 用来做什么                               |
 | -------------------------------------------------------------------- | ---------------------------------------- |
-| [`nexum/application`](../modules/nexum-application.md)               | 创建 Runtime、Session 和 Coding Loop     |
-| [`nexum/persistence/sqlite`](../modules/nexum-persistence-sqlite.md) | 保存 Session、消息和事件                 |
-| [`nexum/server`](../modules/nexum-server.md)                         | 提供 HTTP/SSE 接口                       |
-| [`nexum/client`](../modules/nexum-client.md)                         | 前端创建 Session、提交 Prompt 和订阅事件 |
-| [`nexum/chat-surface`](../modules/nexum-chat-surface.md)             | 展示聊天界面                             |
+| [`nexum-ai/application`](../modules/nexum-application.md)               | 创建 Runtime、Session 和 Coding Loop     |
+| [`nexum-ai/persistence/sqlite`](../modules/nexum-persistence-sqlite.md) | 保存 Session、消息和事件                 |
+| [`nexum-ai/server`](../modules/nexum-server.md)                         | 提供 HTTP/SSE 接口                       |
+| [`nexum-ai/client`](../modules/nexum-client.md)                         | 前端创建 Session、提交 Prompt 和订阅事件 |
+| [`nexum-ai/chat-surface`](../modules/nexum-chat-surface.md)             | 展示聊天界面                             |
 
 ## 第 2 步：创建后端 Runtime
 
 后端先创建 SQLite Runtime。Runtime 是 Agent 真正运行的地方，负责 Session、模型、工具、权限和事件。
 
 ```ts
-import { createSqliteRuntime } from "nexum/application"
+import { createSqliteRuntime } from "nexum-ai/application"
 
 const runtime = await createSqliteRuntime({
   databasePath: ".nexum/nexum.db",
@@ -87,7 +87,7 @@ await runtime.rolePrompt.update("你是一个可靠的项目助手。回答要�
 将刚刚创建好的 Runtime 交给 Server：
 
 ```ts
-import { startNexumServer } from "nexum/server"
+import { startNexumServer } from "nexum-ai/server"
 
 const server = await startNexumServer({
   runtime,
@@ -109,10 +109,10 @@ console.log(`Nexum Server: ${server.url}`)
 
 ## 第 5 步：前端创建 Session
 
-前端通过 `nexum/client` 连接 Server，并创建一个 Session：
+前端通过 `nexum-ai/client` 连接 Server，并创建一个 Session：
 
 ```ts
-import { Nexum } from "nexum/client"
+import { Nexum } from "nexum-ai/client"
 
 const API_BASE_URL = "http://127.0.0.1:4097"
 const client = Nexum.make({ baseUrl: API_BASE_URL })
@@ -135,7 +135,7 @@ Session 相关用法统一见 [Session 会话能力](../capabilities/session.md)
 
 ```tsx
 import { For, Show, createSignal, onMount } from "solid-js"
-import { Nexum, type NexumSession } from "nexum/client"
+import { Nexum, type NexumSession } from "nexum-ai/client"
 
 const API_BASE_URL = "http://127.0.0.1:4097"
 
@@ -202,8 +202,8 @@ export function SessionPicker(props: { onSelect: (sessionID: string) => void }) 
 
 ```tsx
 import { Show, createSignal } from "solid-js"
-import { ChatSurface } from "nexum/chat-surface"
-import "nexum/chat-surface/styles.css"
+import { ChatSurface } from "nexum-ai/chat-surface"
+import "nexum-ai/chat-surface/styles.css"
 
 const API_BASE_URL = "http://127.0.0.1:4097"
 

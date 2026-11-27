@@ -12,21 +12,21 @@ its ID to the component.
 
 ```text
 Your application
-  └─ nexum/chat-surface
-       └─ nexum/surface-adapter
-            └─ nexum/client
+  └─ nexum-ai/chat-surface
+       └─ nexum-ai/surface-adapter
+            └─ nexum-ai/client
                  └─ HTTP/SSE Server
 ```
 
 ## Install and render
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 ```tsx
-import { ChatSurface } from "nexum/chat-surface"
-import "nexum/chat-surface/styles.css"
+import { ChatSurface } from "nexum-ai/chat-surface"
+import "nexum-ai/chat-surface/styles.css"
 
 export function AgentPanel(props: { sessionID: string; serverUrl: string }) {
   return (

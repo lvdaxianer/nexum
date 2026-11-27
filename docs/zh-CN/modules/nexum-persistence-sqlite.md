@@ -1,11 +1,11 @@
-# `nexum/persistence/sqlite`
+# `nexum-ai/persistence/sqlite`
 
 [English](../../modules/nexum-persistence-sqlite.md)
 
-这是 `nexum` 包中的 SQLite Persistence 变体。用户安装 `nexum` 后从 `nexum/persistence/sqlite` 导入 `createSqlitePersistence`。
+这是 `nexum-ai` 包中的 SQLite Persistence 变体。用户安装 `nexum-ai` 后从 `nexum-ai/persistence/sqlite` 导入 `createSqlitePersistence`。
 
 ```ts
-import { createSqliteRuntime } from "nexum/application"
+import { createSqliteRuntime } from "nexum-ai/application"
 
 const runtime = await createSqliteRuntime({ databasePath: ".nexum/nexum.db" })
 ```

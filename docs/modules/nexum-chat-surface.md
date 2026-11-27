@@ -1,16 +1,16 @@
-# `nexum/chat-surface`
+# `nexum-ai/chat-surface`
 
 [中文](../zh-CN/modules/nexum-chat-surface.md)
 
-Chat Surface is an embeddable Solid UI. Import it from `nexum/chat-surface`.
+Chat Surface is an embeddable Solid UI. Import it from `nexum-ai/chat-surface`.
 It projects Session history, SSE events, streaming text, tools, Permission,
 Questions, cancel/continue, and Skills into a chat component or Web Component.
 
 ## Public API
 
 ```tsx
-import { ChatSurface } from "nexum/chat-surface"
-import "nexum/chat-surface/styles.css"
+import { ChatSurface } from "nexum-ai/chat-surface"
+import "nexum-ai/chat-surface/styles.css"
 
 export function ChatPanel(props: { sessionID: string; apiBaseUrl: string }) {
   return <ChatSurface sessionID={props.sessionID} client={{ baseUrl: props.apiBaseUrl }} />

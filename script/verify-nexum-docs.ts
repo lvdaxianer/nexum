@@ -1,20 +1,21 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
+import { releasePackageName } from "./nexum-package"
 
 const modules = [
-  { package: "nexum-core", subpath: "nexum/core", public: true },
-  { package: "nexum-protocol", subpath: "nexum/protocol", public: true },
-  { package: "nexum-application", subpath: "nexum/application", public: true },
-  { package: "nexum-persistence", subpath: "nexum/persistence", public: true },
-  { package: "nexum-persistence-memory", subpath: "nexum/persistence/memory", public: true },
-  { package: "nexum-persistence-file", subpath: "nexum/persistence/file", public: true },
-  { package: "nexum-persistence-sqlite", subpath: "nexum/persistence/sqlite", public: true },
-  { package: "nexum-integrations", subpath: "nexum/integrations", public: true },
-  { package: "nexum-client", subpath: "nexum/client", public: true },
-  { package: "nexum-server", subpath: "nexum/server", public: true },
-  { package: "nexum-surface-adapter", subpath: "nexum/surface-adapter", public: true },
-  { package: "nexum-chat-surface", subpath: "nexum/chat-surface", public: true },
-  { package: "nexum-cli", subpath: "nexum/cli", public: true },
+  { package: "nexum-core", subpath: `${releasePackageName}/core`, public: true },
+  { package: "nexum-protocol", subpath: `${releasePackageName}/protocol`, public: true },
+  { package: "nexum-application", subpath: `${releasePackageName}/application`, public: true },
+  { package: "nexum-persistence", subpath: `${releasePackageName}/persistence`, public: true },
+  { package: "nexum-persistence-memory", subpath: `${releasePackageName}/persistence/memory`, public: true },
+  { package: "nexum-persistence-file", subpath: `${releasePackageName}/persistence/file`, public: true },
+  { package: "nexum-persistence-sqlite", subpath: `${releasePackageName}/persistence/sqlite`, public: true },
+  { package: "nexum-integrations", subpath: `${releasePackageName}/integrations`, public: true },
+  { package: "nexum-client", subpath: `${releasePackageName}/client`, public: true },
+  { package: "nexum-server", subpath: `${releasePackageName}/server`, public: true },
+  { package: "nexum-surface-adapter", subpath: `${releasePackageName}/surface-adapter`, public: true },
+  { package: "nexum-chat-surface", subpath: `${releasePackageName}/chat-surface`, public: true },
+  { package: "nexum-cli", subpath: `${releasePackageName}/cli`, public: true },
   { package: "nexum-surfaces", subpath: "内部", public: false },
   { package: "nexum-test", subpath: "内部", public: false },
 ] as const
@@ -30,7 +31,9 @@ for (const module of modules) {
   const moduleText = await Bun.file(moduleDoc).text()
   if (!packageText.includes(module.subpath)) failures.push(`${module.package}/README.md 未说明 ${module.subpath}`)
   if (!moduleText.includes(module.subpath)) failures.push(`docs/modules/${module.package}.md 未说明 ${module.subpath}`)
-  if (module.public && !packageText.includes("npm install nexum")) failures.push(`${module.package}/README.md 缺少 npm install nexum`)
+  if (module.public && !packageText.includes(`npm install ${releasePackageName}`)) {
+    failures.push(`${module.package}/README.md 缺少 npm install ${releasePackageName}`)
+  }
   if (!module.public && !packageText.includes("内部")) failures.push(`${module.package}/README.md 未标记内部模块`)
 }
 

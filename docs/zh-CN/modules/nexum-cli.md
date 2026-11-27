@@ -1,8 +1,8 @@
-# `nexum/cli`
+# `nexum-ai/cli`
 
 [English](../../modules/nexum-cli.md)
 
-源码模块：`@nexum/cli`。CLI 是随 `nexum` 发布的终端入口，不需要单独安装 `@nexum/cli`。
+源码模块：`@nexum/cli`。CLI 是随 `nexum-ai` 发布的终端入口，不需要单独安装 `@nexum/cli`。
 
 状态：现状基线
 

@@ -30,7 +30,7 @@ Session 元数据的公共形状如下：
 如果通过 TypeScript Client 使用 Server，Session 的完整调用链是：
 
 ```ts
-import { Nexum } from "nexum/client"
+import { Nexum } from "nexum-ai/client"
 
 const client = Nexum.make({ baseUrl: "http://127.0.0.1:4097" })
 const session = await client.experimental.nexum.session.create({
