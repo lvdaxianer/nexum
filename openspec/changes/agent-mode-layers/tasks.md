@@ -8,9 +8,9 @@
 
 ## 2. Protocol 与 Client 创建契约
 
-- [ ] 2.1 在 `packages/nexum-protocol/src/index.ts` 将 Session 公共响应的 mode 设为规范化必有值，并保持 `NexumSessionCreateInput` 与 `NexumSessionModeInput` 类型一致；运行 `bun run typecheck`（受影响包）确认跨包类型通过。
-- [ ] 2.2 在 `packages/nexum-server/src/index.ts` 核对 Session 创建边界校验、默认值传递和公共投影，增加非法 mode 不落库及显式 mode 覆盖 Runtime 默认的 HTTP 测试；运行 `bun test`（`packages/nexum-server`）确认稳定错误和响应字段。
-- [ ] 2.3 在 `packages/nexum-client/src/index.ts` 及 `packages/nexum-client/test/client.test.ts` 验证创建调用能传递 mode 并读取响应模式；运行 `bun test`（`packages/nexum-client`）确认请求 body 和返回类型。
+- [x] 2.1 在 `packages/nexum-protocol/src/index.ts` 将 Session 公共响应的 mode 设为规范化必有值，并保持 `NexumSessionCreateInput` 与 `NexumSessionModeInput` 类型一致；运行 `bun run typecheck`（受影响包）确认跨包类型通过。
+- [x] 2.2 在 `packages/nexum-server/src/index.ts` 核对 Session 创建边界校验、默认值传递和公共投影，增加非法 mode 不落库及显式 mode 覆盖 Runtime 默认的 HTTP 测试；运行 `bun test`（`packages/nexum-server`）确认稳定错误和响应字段。
+- [x] 2.3 在 `packages/nexum-client/src/index.ts` 及 `packages/nexum-client/test/client.test.ts` 验证创建调用能传递 mode 并读取响应模式；运行 `bun test`（`packages/nexum-client`）确认请求 body 和返回类型。
 
 ## 3. Surface 创建与模式可见性
 

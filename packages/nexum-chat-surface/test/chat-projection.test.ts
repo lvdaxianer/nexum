@@ -47,7 +47,7 @@ test("ChatSurface can replay the previous file-context format", () => {
 test("ChatSurface merges pending state without removing an existing user message", () => {
   const current = [{ id: "user:001", kind: "user", title: "你", content: "刚发送的问题", status: "completed", localTime: "当前" }] satisfies ChatItem[]
   const state = {
-    session: { id: "session_001", name: "测试", directory: "/tmp/nexum", status: "idle", createdAt: "2026-11-26T00:00:00.000Z", updatedAt: "2026-11-26T00:00:00.000Z" },
+    session: { id: "session_001", name: "测试", directory: "/tmp/nexum", status: "idle", mode: "build", createdAt: "2026-11-26T00:00:00.000Z", updatedAt: "2026-11-26T00:00:00.000Z" },
     canContinue: false,
     canCancel: false,
     pendingPermissions: [{ id: "permission_001", sessionID: "session_001", action: "read", resource: "README.md" }],

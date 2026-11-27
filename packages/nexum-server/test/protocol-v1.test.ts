@@ -77,6 +77,25 @@ test("returns a session snapshot with pending collections and last sequence", as
   expect(completedBody.data.canCancel).toBe(false)
 })
 
+test("creates a Session with the requested Agent mode through Protocol", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-protocol-v1-create-mode-"))
+  directories.push(directory)
+  const sessionService = createNexumSessionService()
+  const server = await startNexumServer({ port: 0, sessionService })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/nexum/session", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ directory, mode: "plan" }),
+  })
+  const body = (await response.json()) as { data: { mode: string; id: string } }
+
+  expect(response.status).toBe(200)
+  expect(body.data.mode).toBe("plan")
+  expect(await sessionService.get(body.data.id)).toMatchObject({ mode: "plan" })
+})
+
 test("exposes and updates the Session Agent mode", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-protocol-v1-mode-"))
   directories.push(directory)
