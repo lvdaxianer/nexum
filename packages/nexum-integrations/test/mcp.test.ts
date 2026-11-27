@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { fileURLToPath } from "node:url"
 import type { McpCredentialStore, McpOAuthCredential, McpServerConfig } from "@nexum/core"
 import { createMcpOAuthManager, createMcpOAuthProvider, createMcpSdkConnector } from "../src/index.ts"
 
@@ -7,6 +8,26 @@ const config: McpServerConfig = {
   name: "Remote MCP",
   url: "https://mcp.example.test/server",
 }
+
+test("connects to a local MCP server through stdio and calls its tools", async () => {
+  const connector = createMcpSdkConnector()
+  const connection = await connector.connect({
+    id: "local",
+    name: "Local MCP",
+    transport: "stdio",
+    command: process.execPath,
+    args: [fileURLToPath(new URL("./fixtures/stdio-mcp-server.mjs", import.meta.url))],
+  }, new AbortController().signal)
+
+  await expect(connection.listTools()).resolves.toEqual([
+    { name: "echo", description: "Echo input", inputSchema: { type: "object" } },
+  ])
+  await expect(connection.callTool({ serverID: "local", toolName: "echo", input: { value: "hello" } })).resolves.toEqual({
+    ok: true,
+    output: "hello",
+  })
+  await connection.close()
+})
 
 test("uses the official MCP client for initialize, catalog discovery, calls, and close", async () => {
   const requests: string[] = []

@@ -246,6 +246,13 @@ function validateCredential(credential: McpOAuthCredential): void {
 }
 
 function cloneConfig(config: McpServerConfig): McpServerConfig {
+  if (config.transport === "stdio") {
+    return {
+      ...config,
+      args: [...config.args],
+      ...(config.env ? { env: { ...config.env } } : {}),
+    }
+  }
   return { ...config, ...(config.headers ? { headers: { ...config.headers } } : {}) }
 }
 

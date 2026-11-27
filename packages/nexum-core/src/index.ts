@@ -39,6 +39,12 @@ export {
   type NexumRolePromptSource,
   type NexumRolePromptStore,
 } from "./role-prompt.js"
+export type {
+  NexumLocalFunction,
+  NexumLocalFunctionContext,
+  NexumLocalFunctionMetadata,
+  NexumLocalFunctionProvider,
+} from "./local-function.js"
 import type { NexumRolePromptStore } from "./role-prompt.js"
 import type { NexumHostRisk } from "./host.js"
 
@@ -1836,6 +1842,7 @@ export type {
   McpConnector,
   McpCredentialStore,
   McpErrorSummary,
+  McpHttpServerConfig,
   McpOAuthAttempt,
   McpOAuthAttemptStatus,
   McpOAuthControlPort,
@@ -1850,6 +1857,7 @@ export type {
   McpServerConfig,
   McpServerConfigStore,
   McpServerStatus,
+  McpStdioServerConfig,
   McpTool,
   McpToolCall,
 } from "./mcp.js"

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import {
   createMcpRegistry,
   McpError,
+  normalizeMcpServerConfig,
   type McpConnection,
   type McpServerConfig,
 } from "../src/index.ts"
@@ -37,6 +38,32 @@ test("registers remote servers and rejects invalid or duplicate definitions", as
   await expect(registry.register(config)).rejects.toMatchObject({ code: "server_exists" })
 })
 
+test("normalizes local stdio server definitions without accepting remote fields", () => {
+  expect(normalizeMcpServerConfig({
+    id: "local",
+    name: "Local MCP",
+    transport: "stdio",
+    command: "bun",
+    args: ["run", "server.ts"],
+    cwd: "/workspace/tools",
+  })).toMatchObject({
+    id: "local",
+    transport: "stdio",
+    command: "bun",
+    args: ["run", "server.ts"],
+    cwd: "/workspace/tools",
+  })
+
+  expect(() => normalizeMcpServerConfig({
+    id: "mixed",
+    name: "Mixed MCP",
+    transport: "stdio",
+    command: "bun",
+    args: [],
+    url: "https://example.test/mcp",
+  } as McpServerConfig)).toThrow("MCP Server transport 配置无效")
+})
+
 test("rejects MCP URLs that can target local resources or carry hidden state", async () => {
   const registry = createMcpRegistry({ connector: { connect: async () => connection() }, autoConnect: false })
   const unsafeUrls = [
@@ -64,6 +91,8 @@ test("connects once, exposes a connected snapshot, and delegates MCP operations"
     connector: {
       connect: async (input) => {
         calls += 1
+        expect(input.transport).not.toBe("stdio")
+        if (input.transport === "stdio") throw new Error("expected HTTP MCP config")
         expect(input.url).toBe(config.url)
         return session
       },

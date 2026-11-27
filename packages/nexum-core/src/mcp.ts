@@ -33,15 +33,29 @@ export class McpError extends Error {
   }
 }
 
-export interface McpServerConfig {
+interface McpServerConfigBase {
   readonly id: string
   readonly name: string
-  readonly url: string
-  readonly headers?: Readonly<Record<string, string>>
   readonly disabled?: boolean
   readonly timeoutMs?: number
+}
+
+export interface McpHttpServerConfig extends McpServerConfigBase {
+  readonly transport?: "http"
+  readonly url: string
+  readonly headers?: Readonly<Record<string, string>>
   readonly protocol?: "legacy" | "auto" | "2026-07-28"
 }
+
+export interface McpStdioServerConfig extends McpServerConfigBase {
+  readonly transport: "stdio"
+  readonly command: string
+  readonly args: readonly string[]
+  readonly cwd?: string
+  readonly env?: Readonly<Record<string, string>>
+}
+
+export type McpServerConfig = McpHttpServerConfig | McpStdioServerConfig
 
 export interface McpServerConfigStore {
   readonly list: () => Promise<readonly McpServerConfig[]>
@@ -92,6 +106,7 @@ export interface McpOAuthControlPort {
 export interface McpServer {
   readonly id: string
   readonly name: string
+  readonly transport?: "http" | "stdio"
   readonly status: McpServerStatus | McpLegacyServerStatus
   readonly url?: string
   readonly retryAttempt?: number
@@ -416,6 +431,19 @@ export function validateMcpServerConfig(config: McpServerConfig): void {
 
 export function normalizeMcpServerConfig(config: McpServerConfig): McpServerConfig {
   if (!config.id.trim() || !config.name.trim()) throw new McpError("invalid_config", "MCP Server id/name 不能为空")
+  if (config.transport === "stdio") return normalizeStdioServerConfig(config)
+  return normalizeHttpServerConfig(config)
+}
+
+/**
+ * 规范化远程 HTTP MCP Server 配置。
+ *
+ * @param config - 待规范化的远程 MCP 配置
+ * @returns 可持久化和交给 Connector 使用的配置
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-27
+ */
+function normalizeHttpServerConfig(config: McpHttpServerConfig): McpHttpServerConfig {
   const url = parseMcpUrl(config.url)
   const headers = config.headers ? { ...config.headers } : undefined
   if (Object.keys(headers ?? {}).some((name) => /authorization|cookie|token|secret|password|api[-_]?key/i.test(name))) {
@@ -428,8 +456,34 @@ export function normalizeMcpServerConfig(config: McpServerConfig): McpServerConf
     ...config,
     id: config.id.trim(),
     name: config.name.trim(),
+    ...(config.transport ? { transport: "http" as const } : {}),
     url: url.toString(),
     ...(headers ? { headers } : {}),
+  }
+}
+
+/**
+ * 规范化本地 stdio MCP Server 配置。
+ *
+ * @param config - 待规范化的本地 MCP 配置
+ * @returns 可持久化和交给 Connector 使用的配置
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-27
+ */
+function normalizeStdioServerConfig(config: McpStdioServerConfig): McpStdioServerConfig {
+  // stdio 配置只能启动本地命令，不能混入远程 URL 或空参数。
+  if ("url" in config || !config.command.trim() || config.args.some((argument) => !argument.trim())) {
+    throw new McpError("invalid_config", "MCP Server transport 配置无效")
+  }
+  const env = config.env ? { ...config.env } : undefined
+  return {
+    ...config,
+    id: config.id.trim(),
+    name: config.name.trim(),
+    command: config.command.trim(),
+    args: config.args.map((argument) => argument.trim()),
+    ...(config.cwd?.trim() ? { cwd: config.cwd.trim() } : {}),
+    ...(env ? { env } : {}),
   }
 }
 
@@ -478,7 +532,13 @@ function parseIpv4(value: string): readonly [number, number, number, number] | u
 }
 
 function snapshot(config: McpServerConfig, status: McpServerStatus): McpServer {
-  return { id: config.id, name: config.name, url: config.url, status }
+  return {
+    id: config.id,
+    name: config.name,
+    transport: config.transport === "stdio" ? "stdio" : "http",
+    status,
+    ...(config.transport === "stdio" ? {} : { url: config.url }),
+  }
 }
 
 function summarizeMcpError(error: unknown): McpErrorSummary {

@@ -315,7 +315,7 @@ function createLocalMcpRuntime(options: NexumRuntimeOptions): {
   let mcp: McpRegistry
   let mcpOAuth: McpOAuthControlPort | undefined = options.mcpOAuth
   const connector = options.mcpConnector ?? createMcpSdkConnector({
-    oauth: (config) => createMcpOAuthProvider({
+    oauth: (config) => config.transport === "stdio" ? undefined : createMcpOAuthProvider({
       serverID: config.id,
       serverUrl: config.url,
       credentialStore,
@@ -325,6 +325,7 @@ function createLocalMcpRuntime(options: NexumRuntimeOptions): {
       },
     }),
     onAuthorizationRequired: async (config) => {
+      if (config.transport === "stdio") return
       await mcpOAuth?.start({ serverID: config.id, serverUrl: config.url })
     },
   })
