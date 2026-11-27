@@ -3097,25 +3097,27 @@ footer {
 }
 
 /* --- 表单 --- */
-/* 用 :where() 压低优先级，避免覆盖 ChatSurface 组件对 composer 内 textarea 焦点样式的屏蔽。 */
+/* 宿主表单输入框只出现在 Drawer 里；作用域限定到 .drawer-content，
+   避免全局 textarea 规则命中 ChatSurface 的 composer（其背景必须是透明，
+   否则不透明底色会盖住 composer-card 的圆角边框）。 */
 
-:root[data-theme="dark"] :where(input, textarea) {
+:root[data-theme="dark"] .drawer-content :where(input, textarea) {
   border-color: var(--d-border);
   background: var(--d-bg);
   color: var(--d-text);
 }
 
-:root[data-theme="dark"] :where(input::placeholder, textarea::placeholder) {
+:root[data-theme="dark"] .drawer-content :where(input::placeholder, textarea::placeholder) {
   color: var(--d-muted);
 }
 
-:root[data-theme="dark"] :where(input:focus, textarea:focus) {
+:root[data-theme="dark"] .drawer-content :where(input:focus, textarea:focus) {
   border-color: var(--d-accent);
   background: var(--d-bg);
   box-shadow: 0 0 0 3px rgba(53, 184, 178, 0.18);
 }
 
-:root[data-theme="dark"] :where(input[aria-invalid="true"]) {
+:root[data-theme="dark"] .drawer-content :where(input[aria-invalid="true"]) {
   border-color: var(--d-danger);
   background: var(--d-bg);
 }
