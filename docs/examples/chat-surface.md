@@ -1,50 +1,62 @@
-# 案例：接入聊天 UI
+# Example: Add a Chat Surface
 
-## 适合谁
+[中文](../zh-CN/examples/chat-surface.md)
 
-如果你已经有一个可访问的 Nexum Server，只想在 Web 应用中快速嵌入聊天界面，可以使用 Chat Surface。它会处理历史、流式事件、Permission、Question、取消和继续。
+## When to use this
 
-## 组合关系
+Use Chat Surface when you already have a Nexum Server and want a ready-made
+chat interface. The host application chooses or creates a Session and passes
+its ID to the component.
 
 ```text
-你的 Web 应用
+Your application
   └─ nexum/chat-surface
        └─ nexum/surface-adapter
             └─ nexum/client
-                 └─ nexum/protocol
+                 └─ HTTP/SSE Server
 ```
 
-涉及的公开模块：[Chat Surface](../modules/nexum-chat-surface.md)、[Surface Adapter](../modules/nexum-surface-adapter.md)、[Client](../modules/nexum-client.md) 和 [Protocol](../modules/nexum-protocol.md)。
+## Install and render
 
-## 完整示例
+```bash
+npm install nexum
+```
 
 ```tsx
 import { ChatSurface } from "nexum/chat-surface"
 import "nexum/chat-surface/styles.css"
 
 export function AgentPanel(props: { sessionID: string; serverUrl: string }) {
-  return <ChatSurface sessionID={props.sessionID} client={{ baseUrl: props.serverUrl }} title="项目助手" />
+  return (
+    <ChatSurface
+      sessionID={props.sessionID}
+      client={{ baseUrl: props.serverUrl }}
+      title="Project assistant"
+    />
+  )
 }
 ```
 
-Session 不由 Chat Surface 创建。宿主应用应该先通过 [Client Session API](../capabilities/session.md#session-api-查询) 创建或选择 Session，再把 `session.id` 传给组件。
+The component loads history and state, subscribes to SSE, renders streaming
+text and tool calls, and handles Permission, Question, cancel, and continue
+interactions. It does not create a Session by itself.
 
-## 参数说明
+## Parameters
 
-| 参数             | 类型                  | 说明                                           |
-| ---------------- | --------------------- | ---------------------------------------------- |
-| `sessionID`      | `string`              | 要展示的 Session；必须是 Server 中已存在的会话 |
-| `client.baseUrl` | `string`              | Nexum Server 地址                              |
-| `client.fetch`   | `NexumFetch`          | 可选的自定义请求实现                           |
-| `title`          | `string`              | 聊天面板标题                                   |
-| `adapter`        | `ChatProtocolAdapter` | 需要自定义传输或协议时替换默认适配器           |
+| Parameter | Required | Meaning |
+| --- | --- | --- |
+| `sessionID` | yes | Existing Session to display and operate |
+| `client.baseUrl` | no | Nexum Server URL |
+| `client.fetch` | no | Custom request implementation |
+| `title` | no | Panel title |
+| `adapter` | no | Custom `ChatProtocolAdapter` |
 
-## 什么时候自己实现 Surface
+To switch Sessions, update the `sessionID` prop. Chat Surface stops the old
+subscription, loads the new history/state, and resumes events from the correct
+sequence. See [Session switching](full-stack-chat.md#switch-a-session-and-show-its-history).
 
-如果你需要完全不同的界面，不需要重写 Session、Permission 或事件逻辑。可以继续使用 [Protocol](../modules/nexum-protocol.md) 和 [Client](../modules/nexum-client.md)，或者只实现 [ChatProtocolAdapter](../modules/nexum-surface-adapter.md#公开-api)。
+## Build your own UI
 
-## 相关文档
-
-- [UI 交互协议](../ui/interaction-protocol.md)
-- [UI 状态与恢复](../ui/states.md)
-- [事件与 SSE](../capabilities/events.md)
+Keep using [Client](../modules/nexum-client.md) and [Protocol](../modules/nexum-protocol.md),
+or implement only the [Surface Adapter](../modules/nexum-surface-adapter.md).
+You do not need to reimplement the Coding Loop.

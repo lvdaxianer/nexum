@@ -1,13 +1,15 @@
-# 案例：SQLite + HTTP/SSE 服务
+# Example: SQLite + HTTP/SSE service
 
-## 适合谁
+[中文](../zh-CN/examples/sqlite-http-runtime.md)
 
-如果 Runtime 要被 Web、桌面端、CLI 或其他语言调用，建议把运行时和 UI 分开：Server 负责 HTTP/SSE，Client 负责调用协议，SQLite 负责持久化。
+## When to use this
 
-## 组合关系
+Use this composition when Web, desktop, CLI, or another language needs to call
+the same runtime. The Server owns HTTP/SSE, the Client consumes the protocol,
+and SQLite provides durable storage.
 
 ```text
-Web / Desktop / CLI / 其他语言
+Web / Desktop / CLI / another language
              │
        Protocol + Client
              │ HTTP/SSE
@@ -16,9 +18,7 @@ Web / Desktop / CLI / 其他语言
  Application + Core + SQLite Persistence
 ```
 
-涉及的公开模块：[Application](../modules/nexum-application.md)、[SQLite Persistence](../modules/nexum-persistence-sqlite.md)、[Server](../modules/nexum-server.md)、[Protocol](../modules/nexum-protocol.md) 和 [Client](../modules/nexum-client.md)。
-
-## 服务端组合
+## Create the server runtime
 
 ```ts
 import { createSqliteRuntime } from "nexum/application"
@@ -34,7 +34,7 @@ await runtime.modelConfig.update({
   credentialRef: "MODEL_API_KEY",
 })
 
-await runtime.rolePrompt.update("你是一个可靠的企业内部助手，不编造执行结果。")
+await runtime.rolePrompt.update("You are a reliable internal project assistant.")
 
 const server = await startNexumServer({
   runtime,
@@ -45,17 +45,16 @@ const server = await startNexumServer({
 console.log(server.url)
 ```
 
-`runtime` 负责 Session 和 Agent 执行；`server` 只负责路由、JSON 响应、SSE 事件和错误边界。部署到非回环地址时，还需要配置认证和安全策略，详见 [Server API](../modules/nexum-server.md#公开-api)。
+`databasePath` is the SQLite file used for Session, message, event, and runtime
+data. The Server exposes the already-composed runtime; it does not replace the
+runtime's execution or persistence rules.
 
-## 客户端组合
+## Call it from a client
 
 ```ts
 import { Nexum } from "nexum/client"
 
-const client = Nexum.make({
-  baseUrl: "http://127.0.0.1:4097",
-})
-
+const client = Nexum.make({ baseUrl: "http://127.0.0.1:4097" })
 const session = await client.experimental.nexum.session.create({
   directory: "/workspace/demo",
   name: "demo",
@@ -63,7 +62,7 @@ const session = await client.experimental.nexum.session.create({
 
 await client.experimental.nexum.session.prompt({
   sessionID: session.id,
-  text: "总结这个项目的结构",
+  text: "Summarize this project",
 })
 
 for await (const event of client.experimental.nexum.session.events({
@@ -73,20 +72,14 @@ for await (const event of client.experimental.nexum.session.events({
 }
 ```
 
-## 关键参数
+| Parameter | Passed to | Meaning |
+| --- | --- | --- |
+| `databasePath` | `createSqliteRuntime` | SQLite database file |
+| `baseUrl` | `Nexum.make` | Nexum Server URL, not the model URL |
+| `directory` | `session.create` | Agent working directory on the Server host |
+| `sessionID` | `session.prompt/events` | Target Session identifier |
+| `text` | `session.prompt` | User's task |
+| `afterSequence` | `session.events` | Cursor used to resume after a disconnect |
 
-| 参数            | 传给谁                  | 说明                          |
-| --------------- | ----------------------- | ----------------------------- |
-| `databasePath`  | `createSqliteRuntime`   | SQLite 数据库文件位置         |
-| `baseUrl`       | `Nexum.make`            | Server 地址，不是模型服务地址 |
-| `directory`     | `session.create`        | Agent 的工作目录              |
-| `sessionID`     | `session.prompt/events` | 当前 Session 的标识           |
-| `text`          | `session.prompt`        | 用户本次任务                  |
-| `afterSequence` | `session.events`        | 断线后从哪个事件序号继续接收  |
-
-## 相关协议
-
-- [Session 会话协议](../capabilities/session.md)
-- [事件与 SSE](../capabilities/events.md)
-- [完整 Runtime API](../../apis/nexum.md)
-- [Protocol API](../modules/nexum-protocol.md#公开-api)
+For authentication and non-loopback deployment, read [Server API](../modules/nexum-server.md#public-api).
+For the complete request/response contract, read the [Runtime API](../../apis/nexum.md).

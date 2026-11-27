@@ -1,20 +1,18 @@
 # `nexum/persistence/memory`
 
-这是 `nexum` 包中的进程内 Persistence 变体。用户安装 `nexum` 后从 `nexum/persistence/memory` 导入 `createMemoryPersistence`，不需要安装任何 `@nexum/*` 包。
+[中文](../zh-CN/modules/nexum-persistence-memory.md)
+
+Memory Persistence is useful for embedded runtimes and fast tests. It creates
+no file or database and each composition starts with independent state.
+
+## Public API
 
 ```ts
-import { createEmbeddedRuntime } from "nexum/application"
 import { createMemoryPersistence } from "nexum/persistence/memory"
 
-const runtime = createEmbeddedRuntime({ persistence: createMemoryPersistence() })
+const persistence = createMemoryPersistence()
 ```
 
-## 公开 API
-
-### `createMemoryPersistence()`
-
-无参数，返回完整的 `NexumPersistence` 组合，可传给 `createEmbeddedRuntime({ persistence })`。它没有文件路径、数据库路径或重启恢复参数。
-
-它不创建文件或数据库，每次创建组合都是独立状态，适合嵌入式运行和快速测试；进程重启后不会恢复。需要恢复语义时使用 `nexum/persistence/file` 或 `nexum/persistence/sqlite`。
-
-源码边界：`packages/nexum-persistence-memory/src/index.ts`。
+`createMemoryPersistence()` returns the complete in-memory Persistence
+composition. Data is lost when the process closes. Use [File Persistence](nexum-persistence-file.md)
+or [SQLite Persistence](nexum-persistence-sqlite.md) when recovery is required.

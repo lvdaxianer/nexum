@@ -1,26 +1,17 @@
-# apis
+# API reference
 
-`apis/` 保存面向外部调用方的 API 说明。它描述 Nexum Runtime 对外暴露的资源、请求参数、响应结构和事件语义，不承载服务端运行时代码。
+[中文](zh-CN/README.md)
 
-项目级总入口是根目录的 [`README.md`](../README.md)。当前 Runtime API 的完整业务模块文档是 [`nexum.md`](nexum.md)。
+This directory documents the public Nexum HTTP/SSE contract: resources,
+parameters, responses, errors, authentication, and event semantics. Start with
+the [Nexum Runtime API](nexum.md).
 
-联调时同时参考：[UI 交互协议](../docs/ui/interaction-protocol.md)、[UI 状态](../docs/ui/states.md)、[Session 能力](../docs/capabilities/session.md)、[事件能力](../docs/capabilities/events.md) 和 [`@nexum/server` 模块文档](../docs/modules/nexum-server.md)。
+For a beginner path, read the [documentation hub](../docs/README.md) and the
+[complete Agent tutorial](../docs/examples/full-stack-chat.md) first. For UI
+behavior, also read [interaction protocol](../docs/ui/interaction-protocol.md),
+[UI states](../docs/ui/states.md), [Session](../docs/capabilities/session.md),
+and [Events](../docs/capabilities/events.md).
 
-## 目录职责
-
-- `nexum.md`：Nexum Runtime API 的人工可读说明，适合 UI、集成方和联调人员查阅。
-- 协议字段的权威定义仍在 [`packages/nexum-protocol`](../packages/nexum-protocol/README.md)；这里用于补充使用场景和示例。
-- Nexum 的独立协议模型位于 [`packages/nexum-protocol`](../packages/nexum-protocol/README.md)，HTTP/SSE 实现位于 [`packages/nexum-server`](../packages/nexum-server/README.md)。
-
-## 维护边界
-
-新增或修改接口时，先更新 Protocol Schema 和服务端实现，再同步本目录的使用说明。不要在这里复制一份会与生成客户端漂移的类型定义。
-
-## 验证
-
-从仓库根目录运行：
-
-```bash
-bun run --cwd packages/nexum-protocol typecheck
-bun test --cwd packages/nexum-server
-```
+The protocol package defines the authoritative schemas; this directory explains
+how an HTTP/SSE caller uses them. The public installation is still one compiled
+`nexum` package.
