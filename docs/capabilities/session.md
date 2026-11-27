@@ -31,7 +31,7 @@ protocol version.
 
 | Method | Required input | Result | Use |
 | --- | --- | --- | --- |
-| `create(input)` | `directory`; optional `name` | `NexumSession` | Create a Session |
+| `create(input)` | `directory`; optional `name`, `mode` | `NexumSession` | Create a Session with Plan/Build mode |
 | `list()` | none | `NexumSession[]` | Load the Session picker |
 | `state(input)` | `sessionID` | `NexumSessionState` | Restore status, pending interactions, and `lastSequence` |
 | `messages(input)` | `sessionID`; optional `before`, `limit`, `snapshotID` | `NexumSessionMessages` | Page through history |
@@ -47,6 +47,10 @@ The important parameters are `sessionID` (the ID returned by `create` or
 `list`), `directory` (an absolute path on the Server host), `name` (a user-facing
 label), `mode` (`plan` or `build`), `text` (the current task), `limit` (history page size), and
 `afterSequence` (the last event already processed by the client).
+
+Embedded callers may configure `defaultAgentMode` when constructing the
+Application Runtime. An explicit `mode` on `session.create()` overrides that
+Runtime default; when neither is present, the Core default is `build`.
 
 Plan mode exposes read operations and allows writes only below
 `.nexum/plans/`. Core rejects business-file writes, Shell, MCP, and Skill
@@ -110,6 +114,7 @@ Create returns the Session snapshot and its stable `id`:
 const created = await client.experimental.nexum.session.create({
   directory: "/workspace/demo",
   name: "Project assistant",
+  mode: "plan",
 })
 ```
 

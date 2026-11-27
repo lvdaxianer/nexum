@@ -38,6 +38,7 @@ const capabilities = await client.capabilities()
 const session = await client.experimental.nexum.session.create({
   directory: "/workspace/demo",
   name: "Demo",
+  mode: "plan",
 })
 ```
 
@@ -62,6 +63,10 @@ const session = await client.experimental.nexum.session.create({
 Plan 模式是只读规划阶段：Core 只允许读取项目或写入相对路径
 `.nexum/plans/`，并在 Permission 之前拒绝业务文件写入、Shell、MCP 和
 Skill 管理。Build 模式保留正常执行能力；运行中的 Session 不能切换模式。
+
+`session.create({ mode })` 用于指定该 Session 的初始 Agent 模式。嵌入式
+Application Runtime 可以通过 `defaultAgentMode` 提供默认值，但 Session
+显式传入的 mode 优先；两者都未设置时 Core 默认使用 `build`。
 
 典型的 Session 列表和切换流程如下：
 

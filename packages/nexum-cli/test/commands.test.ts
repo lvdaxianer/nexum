@@ -19,7 +19,7 @@ function fakeClient(handler: (request: Request) => unknown) {
 function fakeAdapter(events: { type: string; data: Record<string, unknown> }[]): ChatProtocolAdapter {
   return {
     loadHistory: async () => ({ messages: [], total: 0, hasMore: false, snapshotID: "snap" }),
-    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
+    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "" }, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
     subscribeEvents: async function* () {
       for (const [index, event] of events.entries()) {
         yield { eventID: `e${index}`, runID: "r1", sessionID: "s1", sequence: index + 1, occurredAt: "", ...event } as never
@@ -38,8 +38,8 @@ function fakeAdapter(events: { type: string; data: Record<string, unknown> }[]):
 test("cmdSessionList prints a table with colored status", async () => {
   const io = memoryIO()
   const client = fakeClient(() => [
-    { id: "7f3a9c21aa", name: "login-重试", directory: "/work/app", status: "completed", createdAt: "", updatedAt: "2026-11-24T10:00:00Z" },
-    { id: "b2e91d04bb", name: "api-重构", directory: "/work/api", status: "idle", createdAt: "", updatedAt: "2026-11-24T09:00:00Z" },
+    { id: "7f3a9c21aa", name: "login-重试", directory: "/work/app", status: "completed", mode: "build", createdAt: "", updatedAt: "2026-11-24T10:00:00Z" },
+    { id: "b2e91d04bb", name: "api-重构", directory: "/work/api", status: "idle", mode: "build", createdAt: "", updatedAt: "2026-11-24T09:00:00Z" },
   ])
   await cmdSessionList(client, io)
   const out = io.plain()
@@ -52,15 +52,15 @@ test("cmdSessionList prints a table with colored status", async () => {
 
 test("cmdSessionCreate prints the created session id", async () => {
   const io = memoryIO()
-  const client = fakeClient(() => ({ id: "new_session_1", name: "x", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }))
+  const client = fakeClient(() => ({ id: "new_session_1", name: "x", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "" }))
   await cmdSessionCreate(client, io, { directory: "/tmp" })
   expect(io.plain()).toContain("new_session_1")
 })
 
 test("latestSessionID returns the most recently updated session, undefined when empty", async () => {
   const client = fakeClient(() => [
-    { id: "old", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "2026-11-20T00:00:00Z" },
-    { id: "new", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "2026-11-24T00:00:00Z" },
+    { id: "old", name: "", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "2026-11-20T00:00:00Z" },
+    { id: "new", name: "", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "2026-11-24T00:00:00Z" },
   ])
   expect(await latestSessionID(client)).toBe("new")
   expect(await latestSessionID(fakeClient(() => []))).toBeUndefined()
@@ -82,8 +82,8 @@ test("cmdSessionDelete deletes by id and prints it", async () => {
 test("cmdResume lists sessions and returns the picked id", async () => {
   const io = memoryIO()
   const client = fakeClient(() => [
-    { id: "7f3a9c21aa", name: "login-重试", directory: "/work/app", status: "completed", createdAt: "", updatedAt: "2026-11-24T10:00:00Z" },
-    { id: "b2e91d04bb", name: "api-重构", directory: "/work/api", status: "idle", createdAt: "", updatedAt: "2026-11-24T09:00:00Z" },
+    { id: "7f3a9c21aa", name: "login-重试", directory: "/work/app", status: "completed", mode: "build", createdAt: "", updatedAt: "2026-11-24T10:00:00Z" },
+    { id: "b2e91d04bb", name: "api-重构", directory: "/work/api", status: "idle", mode: "build", createdAt: "", updatedAt: "2026-11-24T09:00:00Z" },
   ])
   const picked = await cmdResume(client, io, async () => "2")
   expect(picked).toBe("b2e91d04bb")
@@ -96,7 +96,7 @@ test("cmdResume lists sessions and returns the picked id", async () => {
 
 test("cmdPrompt streams events and maps run result to exit codes", async () => {
   const io = memoryIO()
-  const client = fakeClient(() => ({ id: "s_new", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }))
+  const client = fakeClient(() => ({ id: "s_new", name: "", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "" }))
   const completed = await cmdPrompt({ client, adapter: fakeAdapter([{ type: "assistant.text", data: { content: "你好" } }, { type: "run.settled", data: { result: "completed" } }]), io, prompter: async () => "", text: "hi", directory: "/tmp" })
   expect(completed).toBe(0)
   const failed = await cmdPrompt({ client, adapter: fakeAdapter([{ type: "run.settled", data: { result: "failed" } }]), io, prompter: async () => "", text: "hi", sessionID: "s1", directory: "/tmp" })
@@ -108,11 +108,11 @@ test("cmdPrompt streams events and maps run result to exit codes", async () => {
 
 test("cmdPrompt prints the permission outcome before replying and renders tool.result after the pause", async () => {
   const io = memoryIO({ anim: true })
-  const client = fakeClient(() => ({ id: "s1", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }))
+  const client = fakeClient(() => ({ id: "s1", name: "", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "" }))
   let outputAtReply = ""
   const adapter: ChatProtocolAdapter = {
     loadHistory: async () => ({ messages: [], total: 0, hasMore: false, snapshotID: "snap" }),
-    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "", }, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
+    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "", }, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
     subscribeEvents: async function* () {
       yield { eventID: "e1", runID: "r1", sessionID: "s1", sequence: 1, occurredAt: "", type: "tool.request", data: { toolCallID: "t1", toolName: "read" } } as never
       yield { eventID: "e2", runID: "r1", sessionID: "s1", sequence: 2, occurredAt: "", type: "permission.requested", data: { requestID: "p1", action: "edit", resource: "a.ts" } } as never
@@ -146,7 +146,7 @@ test("cmdPrompt auto-denies permission and auto-cancels question when not TTY", 
   const replies: string[] = []
   const adapter: ChatProtocolAdapter = {
     loadHistory: async () => ({ messages: [], total: 0, hasMore: false, snapshotID: "snap" }),
-    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
+    loadState: async () => ({ session: { id: "s1", name: "s", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "" }, canContinue: false, canCancel: false, pendingPermissions: [], pendingQuestions: [], lastSequence: 0 }),
     subscribeEvents: async function* () {
       yield { eventID: "e1", runID: "r1", sessionID: "s1", sequence: 1, occurredAt: "", type: "permission.requested", data: { requestID: "p1", action: "edit", resource: "a.ts" } } as never
       yield { eventID: "e2", runID: "r1", sessionID: "s1", sequence: 2, occurredAt: "", type: "question.request", data: { requestID: "q1", toolCallID: "t1", questions: [{ header: "h", question: "q?", options: [{ label: "A", description: "" }] }] } } as never
@@ -166,7 +166,7 @@ test("cmdPrompt auto-denies permission and auto-cancels question when not TTY", 
     cancelRun: async () => {},
     continueRun: async () => {},
   }
-  const client = fakeClient(() => ({ id: "s1", name: "", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "" }))
+  const client = fakeClient(() => ({ id: "s1", name: "", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "" }))
   const code = await cmdPrompt({ client, adapter, io, prompter: async () => "1", text: "hi", sessionID: "s1", directory: "/tmp" })
   expect(code).toBe(0)
   expect(replies).toEqual(["permission:deny", "question:cancel"])

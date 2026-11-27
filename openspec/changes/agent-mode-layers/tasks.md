@@ -20,9 +20,9 @@
 
 ## 4. 文档、审查与集成验证
 
-- [ ] 4.1 更新 `apis/nexum.md`、`docs/capabilities/session.md`、`docs/zh-CN/capabilities/session.md`、`docs/modules/nexum-client.md` 和 `docs/zh-CN/modules/nexum-client.md`，写明 Application 默认、Session 覆盖、创建请求和页面展示；用文档中的 curl/代码示例做一次手工核对。
-- [ ] 4.2 对照本变更的 `proposal.md`、`design.md`、三个 delta spec 和代码做实现一致性审计，检查三层边界、错误契约、旧数据兼容和页面失败回滚；记录审计结果并修复发现项。
-- [ ] 4.3 在任务 worktree 运行 `bun run check`、所有受影响包测试和 `git diff --check`，确认无新增未跟踪构建产物后提交本任务。
+- [x] 4.1 更新 `apis/nexum.md`、`docs/capabilities/session.md`、`docs/zh-CN/capabilities/session.md`、`docs/modules/nexum-client.md` 和 `docs/zh-CN/modules/nexum-client.md`，写明 Application 默认、Session 覆盖、创建请求和页面展示；已核对文档中的 TypeScript 示例与实际 API。
+- [x] 4.2 对照本变更的 `proposal.md`、`design.md`、三个 delta spec 和代码做实现一致性审计，检查三层边界、错误契约、旧数据兼容和页面失败回滚；审计结果记录在 `docs/superpowers/reviews/2026-11-27-agent-mode-layers-final-audit.md`。
+- [x] 4.3 在任务 worktree 运行 `bun run check`、所有受影响包测试和 `git diff --check`，确认无新增未跟踪构建产物后提交本任务。
 
 ## Workflow follow-up
 

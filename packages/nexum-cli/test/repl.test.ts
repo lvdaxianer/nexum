@@ -11,6 +11,7 @@ const session: NexumSession = {
   name: "测试",
   directory: "/tmp/nexum",
   status: "idle",
+  mode: "build",
   createdAt: "2026-11-24T00:00:00.000Z",
   updatedAt: "2026-11-24T00:00:00.000Z",
 }
@@ -212,7 +213,7 @@ test("repl slash commands: /skills lists ready skills, /cancel calls cancelRun, 
 test("repl /resume switches session and replays its history", async () => {
   const io = memoryIO()
   const { adapter } = fakeAdapter({})
-  const client = fakeClient([{ id: "session_002", name: "另一个", directory: "/tmp", status: "idle", createdAt: "", updatedAt: "2026-11-24T10:00:00Z" }])
+  const client = fakeClient([{ id: "session_002", name: "另一个", directory: "/tmp", status: "idle", mode: "build", createdAt: "", updatedAt: "2026-11-24T10:00:00Z" }])
   await runRepl({ adapter, client, io, sessionID: session.id, lineSource: slowLineSource(["/resume", "/quit"]), prompter: async () => "1" })
   const out = io.plain()
   expect(out).toContain("选择会话")

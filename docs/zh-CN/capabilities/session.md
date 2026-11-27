@@ -62,7 +62,7 @@ for await (const event of client.experimental.nexum.session.events({
 
 | 方法                     | 参数                                                   | 返回值                      | 用途                                              |
 | ------------------------ | ------------------------------------------------------ | --------------------------- | ------------------------------------------------- |
-| `create(input)`          | `directory` 必填；`name`、`mode` 可选                  | `NexumSession`              | 创建一个绑定工作目录的会话                        |
+| `create(input)`          | `directory` 必填；`name`、`mode` 可选                  | `NexumSession`              | 创建一个绑定工作目录和 Agent 模式的会话            |
 | `list()`                 | 无                                                     | `NexumSession[]`            | 查询当前 Runtime 的会话列表                       |
 | `state(input)`           | `sessionID` 必填                                       | `NexumSessionState`         | 查询状态、待处理权限/反问和事件游标               |
 | `messages(input)`        | `sessionID` 必填；`before`、`limit`、`snapshotID` 可选 | `NexumSessionMessages`      | 分页读取消息历史；当前为实验性接口                |
@@ -88,10 +88,13 @@ for await (const event of client.experimental.nexum.session.events({
 | `snapshotID`    | 历史分页使用的快照          | 第一次 `messages()` 返回的 `snapshotID`                    |
 | `afterSequence` | 从哪个事件序号之后继续接收  | `state().lastSequence` 或本地已处理的最大序号              |
 
+嵌入式调用方可以在实例化 Application Runtime 时配置 `defaultAgentMode`。
+`session.create()` 显式传入的 `mode` 优先于 Runtime 默认值；两者都未指定时由 Core 使用 `build`。
+
 ### Session 和 Prompt 的关系
 
 ```text
-create({ directory, name })
+create({ directory, name, mode })
           ↓
       session.id
           ↓
