@@ -972,6 +972,48 @@ function App() {
     sessionStorage.removeItem("nexum.sessionID")
   }
 
+  /**
+   * 输入栏控制组只创建一次，内部信号以细粒度 effect 原地更新。
+   *
+   * 若直接写在 composerExtras 的 getter 里，ChatSurface 每次求值都会重建整棵
+   * DOM（模式徽章、Plan/Build、权限 chip），切换 Agent 模式时会明显闪烁。
+   */
+  const composerControls = (
+    <div class="composer-control-group" role="group" aria-label="Agent 模式和权限设置">
+      <span class={`agent-mode-current agent-mode-current-${currentAgentMode()}`} aria-label={`当前 Agent 模式：${agentModeLabel(currentAgentMode())}`}>
+        {agentModeLabel(currentAgentMode())}
+      </span>
+      <div class="agent-mode-toggle" classList={{ "is-switching": agentModeBusy() }} role="group" aria-label="Agent 模式" aria-busy={agentModeBusy()}>
+        <button
+          type="button"
+          class="agent-mode-button"
+          classList={{ "is-active": currentAgentMode() === "plan" }}
+          aria-pressed={currentAgentMode() === "plan"}
+          title="Plan：只读取项目或写入 .nexum/plans/ 计划文件"
+          disabled={!currentSession() || currentSession()?.status === "running"}
+          onClick={() => void setAgentMode("plan")}
+        >
+          Plan
+        </button>
+        <button
+          type="button"
+          class="agent-mode-button"
+          classList={{ "is-active": currentAgentMode() === "build" }}
+          aria-pressed={currentAgentMode() === "build"}
+          title="Build：允许按权限策略执行完整任务"
+          disabled={!currentSession() || currentSession()?.status === "running"}
+          onClick={() => void setAgentMode("build")}
+        >
+          Build
+        </button>
+      </div>
+      <button ref={setPolicyAnchorEl} type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>
+        <span aria-hidden="true">{permissionModeOption()?.icon ?? "🛡"}</span>
+        <span class="perm-chip-label extras-label">{permissionModeOption()?.label ?? "权限策略"}</span>
+      </button>
+    </div>
+  )
+
   return (
     <Popover
       open={policyPopoverOpen()}
@@ -1626,41 +1668,7 @@ function App() {
             onSessionStatusChange={(id, status) => setSessions((current) => mergeSessionStatus(current, id, status))}
             onSkillUpdated={scheduleSkillReload}
             onOpenPermissionSettings={openPolicyPopover}
-            composerExtras={
-              <div class="composer-control-group" role="group" aria-label="Agent 模式和权限设置">
-                <span class={`agent-mode-current agent-mode-current-${currentAgentMode()}`} aria-label={`当前 Agent 模式：${agentModeLabel(currentAgentMode())}`}>
-                  {agentModeLabel(currentAgentMode())}
-                </span>
-                <div class="agent-mode-toggle" role="group" aria-label="Agent 模式">
-                  <button
-                    type="button"
-                    class="agent-mode-button"
-                    classList={{ "is-active": currentAgentMode() === "plan" }}
-                    aria-pressed={currentAgentMode() === "plan"}
-                    title="Plan：只读取项目或写入 .nexum/plans/ 计划文件"
-                    disabled={!currentSession() || agentModeBusy() || currentSession()?.status === "running"}
-                    onClick={() => void setAgentMode("plan")}
-                  >
-                    {agentModeBusy() && currentAgentMode() !== "plan" ? "切换中…" : "Plan"}
-                  </button>
-                  <button
-                    type="button"
-                    class="agent-mode-button"
-                    classList={{ "is-active": currentAgentMode() === "build" }}
-                    aria-pressed={currentAgentMode() === "build"}
-                    title="Build：允许按权限策略执行完整任务"
-                    disabled={!currentSession() || agentModeBusy() || currentSession()?.status === "running"}
-                    onClick={() => void setAgentMode("build")}
-                  >
-                    {agentModeBusy() && currentAgentMode() !== "build" ? "切换中…" : "Build"}
-                  </button>
-                </div>
-                <button ref={setPolicyAnchorEl} type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>
-                  <span aria-hidden="true">{permissionModeOption()?.icon ?? "🛡"}</span>
-                  <span class="perm-chip-label extras-label">{permissionModeOption()?.label ?? "权限策略"}</span>
-                </button>
-              </div>
-            }
+            composerExtras={composerControls}
           />
         </section>
 

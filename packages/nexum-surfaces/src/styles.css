@@ -1375,6 +1375,9 @@ input[aria-invalid="true"]:focus {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
 }
 
 .agent-mode-current-plan {
@@ -1394,6 +1397,11 @@ input[aria-invalid="true"]:focus {
   border: 1px solid #d9e0e8;
   border-radius: 999px;
   background: #f7f9fc;
+  transition: opacity 160ms ease;
+}
+
+.agent-mode-toggle.is-switching {
+  opacity: 0.6;
 }
 
 .agent-mode-button {
@@ -1406,6 +1414,9 @@ input[aria-invalid="true"]:focus {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
 }
 
 .agent-mode-button:hover:not(:disabled),
