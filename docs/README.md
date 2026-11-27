@@ -37,6 +37,7 @@
 | 接入 MCP             | [MCP 能力](capabilities/mcp.md)                           | Server、工具、资源、Prompt 和授权                |
 | 了解上下文和历史     | [Context 与 History](capabilities/context-and-history.md) | 项目上下文、消息历史、压缩和恢复                 |
 | 开发自己的 UI        | [UI 交互协议](ui/interaction-protocol.md)                 | Client、状态投影、交互和恢复流程                 |
+| 适配样式与主题       | [样式与主题适配](ui/theming.md)                           | 响应式断点、明暗主题、变量覆盖和验证方式         |
 
 ## API 参数查询
 

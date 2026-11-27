@@ -175,7 +175,7 @@ Core 产生运行事实，Protocol 表达事实，Surface 决定呈现：
 
 从 [Nexum 文档中心](docs/README.md) 开始。文档中心按新手入门、Session/事件等运行能力、模块 API 参数、HTTP/SSE 协议和架构说明组织内容。
 
-如果你已经知道要调用哪个模块，也可以直接查看[模块文档索引](docs/modules/README.md)；如果要做跨语言或自定义 UI 集成，查看[完整 Runtime API](apis/nexum.md)。
+如果你已经知道要调用哪个模块，也可以直接查看[模块文档索引](docs/modules/README.md)；如果要做跨语言或自定义 UI 集成，查看[完整 Runtime API](apis/nexum.md)；如果在做 Web 界面的响应式布局或明暗主题适配，查看[样式与主题适配](docs/ui/theming.md)。
 
 ## 项目状态
 
