@@ -166,11 +166,18 @@ export type NexumRolePromptInput = {
 
 export type NexumSessionStatus = "idle" | "running" | "completed" | "failed" | "cancelled"
 
+export type NexumAgentMode = "plan" | "build"
+
+export type NexumSessionModeInput = {
+  readonly mode: NexumAgentMode
+}
+
 export type NexumSession = {
   readonly id: string
   readonly name: string
   readonly directory: string
   readonly status: NexumSessionStatus
+  readonly mode?: NexumAgentMode
   readonly createdAt: string
   readonly updatedAt: string
 }

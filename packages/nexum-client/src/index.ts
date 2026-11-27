@@ -4,6 +4,7 @@ import {
   NEXUM_PROTOCOL_VERSION,
   type JsonObject,
   type NexumCapabilities,
+  type NexumAgentMode,
   type NexumEnvelope,
   type NexumErrorPayload,
   type NexumEvent,
@@ -21,6 +22,7 @@ import {
   type NexumRolePromptInput,
   type NexumResponse,
   type NexumSession,
+  type NexumSessionModeInput,
   type NexumSessionDeleteResult,
   type NexumExecutionRecovery,
   type NexumSessionMessages,
@@ -42,6 +44,7 @@ import {
 export type {
   JsonObject,
   NexumCapabilities,
+  NexumAgentMode,
   NexumEnvelope,
   NexumErrorPayload,
   NexumEvent,
@@ -63,6 +66,7 @@ export type {
   NexumRolePromptInput,
   NexumResponse,
   NexumSession,
+  NexumSessionModeInput,
   NexumSessionDeleteResult,
   NexumExecutionRecovery,
   NexumSessionMessages,
@@ -156,7 +160,7 @@ export const Nexum = {
               }),
           },
           session: {
-            create: (input: { readonly directory: string; readonly name?: string }) =>
+            create: (input: { readonly directory: string; readonly name?: string; readonly mode?: NexumAgentMode }) =>
               request<NexumSession>("/session", { method: "POST", body: JSON.stringify(input) }),
             list: () => request<readonly NexumSession[]>("/session"),
             state: (input: { readonly sessionID: string }) => request<NexumSessionState>(`/session/${encodeURIComponent(input.sessionID)}/state`),
@@ -180,6 +184,11 @@ export const Nexum = {
               request<NexumSession>(`/session/${encodeURIComponent(input.sessionID)}`, {
                 method: "PUT",
                 body: JSON.stringify({ name: input.name }),
+              }),
+            setMode: (input: { readonly sessionID: string } & NexumSessionModeInput) =>
+              request<NexumSession>(`/session/${encodeURIComponent(input.sessionID)}/mode`, {
+                method: "PUT",
+                body: JSON.stringify({ mode: input.mode }),
               }),
             delete: (input: { readonly sessionID: string }) =>
               request<NexumSessionDeleteResult>(`/session/${encodeURIComponent(input.sessionID)}`, { method: "DELETE" }),

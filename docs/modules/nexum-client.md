@@ -20,10 +20,11 @@ path) and an optional `fetch` implementation for SSR, tests, or a host runtime.
 
 | Method | Required | Optional | Purpose |
 | --- | --- | --- | --- |
-| `session.create(input)` | `directory` | `name` | Create a Session |
+| `session.create(input)` | `directory` | `name`, `mode` (`plan` or `build`) | Create a Session |
 | `session.list()` | none | none | Query Sessions for a picker |
 | `session.state(input)` | `sessionID` | none | Read status, pending interactions, and cursor |
 | `session.messages(input)` | `sessionID` | `before`, `limit`, `snapshotID` | Read paginated history |
+| `session.setMode(input)` | `sessionID`, `mode` (`plan` or `build`) | none | Switch Agent mode while idle |
 | `session.prompt(input)` | `sessionID`, `text` | none | Submit a user task |
 | `session.continue(input)` | `sessionID` | none | Continue recoverable work |
 | `session.cancel(input)` | `sessionID` | none | Cancel the current run |
@@ -33,6 +34,11 @@ The current protocol exposes these methods under
 `client.experimental.nexum.session`. `session.id` becomes the `sessionID` for
 later calls. Configure the default role prompt separately with
 `rolePrompt.update({ prompt })`; do not put it in `session.prompt`.
+
+Plan mode is the read-and-plan phase: Core permits reads and writes only below
+`.nexum/plans/` and rejects business-file writes, Shell, MCP, and Skill
+management before permission evaluation. Build mode keeps the normal execution
+behavior. A running Session cannot switch modes.
 
 ## Other groups
 

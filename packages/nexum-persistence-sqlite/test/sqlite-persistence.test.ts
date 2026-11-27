@@ -21,6 +21,7 @@ test("persists runtime records across database reopen", async () => {
     name: "SQLite",
     directory,
     status: "idle" as const,
+    mode: "plan" as const,
     createdAt: "2026-11-25T00:00:00.000Z",
     updatedAt: "2026-11-25T00:00:00.000Z",
   }

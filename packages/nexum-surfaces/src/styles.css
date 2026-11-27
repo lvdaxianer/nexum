@@ -1329,7 +1329,45 @@ input[aria-invalid="true"]:focus {
   min-height: 0;
 }
 
-/* 聊天输入栏内的权限模式入口（由宿主注入 ChatSurface 的 composerExtras 插槽） */
+/* 聊天输入栏内的 Agent/权限控制（由宿主注入 ChatSurface 的 composerExtras 插槽） */
+.composer-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid #d9e0e8;
+  border-radius: 999px;
+  background: #f7f9fc;
+}
+
+.agent-mode-button {
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #637287;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.agent-mode-button:hover:not(:disabled),
+.agent-mode-button.is-active {
+  background: #138b8b;
+  color: #fff;
+}
+
+.agent-mode-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .perm-chip {
   display: inline-flex;
   align-items: center;
@@ -1351,6 +1389,10 @@ input[aria-invalid="true"]:focus {
 }
 
 @media (pointer: coarse) {
+  .agent-mode-button {
+    min-height: 40px;
+  }
+
   .perm-chip {
     min-height: 44px;
   }
@@ -2993,6 +3035,21 @@ footer {
   border-color: var(--d-border);
   background: var(--d-panel-2);
   color: var(--d-text);
+}
+
+:root[data-theme="dark"] .agent-mode-toggle {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+}
+
+:root[data-theme="dark"] .agent-mode-button {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .agent-mode-button:hover:not(:disabled),
+:root[data-theme="dark"] .agent-mode-button.is-active {
+  background: var(--d-accent);
+  color: #fff;
 }
 
 :root[data-theme="dark"] .perm-chip:hover {

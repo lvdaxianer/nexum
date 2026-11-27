@@ -6,6 +6,8 @@ A Session is a durable, recoverable Agent task. It has a stable ID, a working
 directory, a display name, lifecycle status, message history, pending
 interactions, and an event cursor. The browser or UI should store the ID and
 ask the Server for data; it should not read the Persistence database directly.
+Each Session also persists an Agent mode: `plan` for read-and-plan work or
+`build` for normal execution. Existing Sessions default to `build`.
 
 ## Minimal flow
 
@@ -13,6 +15,7 @@ ask the Server for data; it should not read the Persistence database directly.
 const session = await client.experimental.nexum.session.create({
   directory: "/workspace/demo",
   name: "My Agent",
+  mode: "plan",
 })
 
 await client.experimental.nexum.session.prompt({
@@ -33,6 +36,7 @@ protocol version.
 | `state(input)` | `sessionID` | `NexumSessionState` | Restore status, pending interactions, and `lastSequence` |
 | `messages(input)` | `sessionID`; optional `before`, `limit`, `snapshotID` | `NexumSessionMessages` | Page through history |
 | `update(input)` | `sessionID`, `name` | `NexumSession` | Rename a Session |
+| `setMode(input)` | `sessionID`, `mode` (`plan` or `build`) | `NexumSession` | Switch Agent mode when idle |
 | `delete(input)` | `sessionID` | `{ id, deleted: true }` | Delete the Session and its history |
 | `prompt(input)` | `sessionID`, `text` | accepted result | Queue new user input |
 | `continue(input)` | `sessionID` | accepted result | Continue recoverable work |
@@ -41,8 +45,14 @@ protocol version.
 
 The important parameters are `sessionID` (the ID returned by `create` or
 `list`), `directory` (an absolute path on the Server host), `name` (a user-facing
-label), `text` (the current task), `limit` (history page size), and
+label), `mode` (`plan` or `build`), `text` (the current task), `limit` (history page size), and
 `afterSequence` (the last event already processed by the client).
+
+Plan mode exposes read operations and allows writes only below
+`.nexum/plans/`. Core rejects business-file writes, Shell, MCP, and Skill
+management before permission evaluation. Build mode keeps the normal tool and
+permission behavior. A running Session cannot switch mode; retry after it
+reaches a terminal state or cancel the run first.
 
 ## List and switch Sessions
 
@@ -80,6 +90,7 @@ confirms removal.
 | `state()` | Restore status, pending Permission/Question, and cursor | `sessionID` |
 | `messages()` | Restore the conversation, usually page by page | `sessionID`, optional `before`, `limit`, `snapshotID` |
 | `update()` | Rename the selected Session | `sessionID`, `name` |
+| `setMode()` | Change Plan/Build behavior | `sessionID`, `mode` |
 | `delete()` | Remove a Session after confirmation | `sessionID` |
 | `prompt()` | Queue a new user task | `sessionID`, `text` |
 | `continue()` | Resume recoverable work | `sessionID` |

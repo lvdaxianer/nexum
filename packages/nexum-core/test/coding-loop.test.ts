@@ -80,6 +80,111 @@ test("runs model text, tool request, tool result, continuation, and completion i
   expect(permissionRequests[0]).toMatchObject({ action: "read", resource: "README.md" })
 })
 
+test("limits Plan mode tools and injects the current plan path", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-loop-plan-tools-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory, mode: "plan" })
+  const prompts: Array<Parameters<ModelPort["prompt"]>[0]> = []
+  const model: ModelPort = {
+    async *prompt(input) {
+      prompts.push(input)
+      yield { type: "completed" }
+    },
+  }
+
+  await createNexumCodingLoop({
+    model,
+    tool: { async execute() { return { ok: true, output: "unused" } } },
+    permission: { async evaluate() { return "allow" } },
+    sessions,
+    events: { async publish() {} },
+    tools: [
+      { name: "read", description: "read", parameters: {} },
+      { name: "write", description: "write", parameters: {} },
+      { name: "edit", description: "edit", parameters: {} },
+      { name: "shell", description: "shell", parameters: {} },
+      { name: "mcp__github", description: "mcp", parameters: {} },
+      { name: "skill_registry", description: "skills", parameters: {} },
+    ],
+  }).run({ sessionID: session.sessionID, text: "制定实现计划" })
+
+  expect(prompts[0]?.tools?.map((tool) => tool.name)).toEqual(["read", "write", "edit", "skill_registry"])
+  expect(prompts[0]?.messages).toContainEqual({
+    role: "system",
+    content: `当前是 Plan 模式。只允许读取项目，或写入当前 Session 的计划文件 .nexum/plans/${session.sessionID}.md；禁止修改业务文件、执行 Shell、调用 MCP 或管理 Skill。`,
+    sourceID: "runtime:agent-mode",
+  })
+})
+
+test("rejects a Plan mode business write before permission and tool execution", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-loop-plan-restricted-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory, mode: "plan" })
+  let permissionCalls = 0
+  let toolCalls = 0
+  const events: Array<{ type: string; data?: Record<string, unknown> }> = []
+  const model: ModelPort = {
+    async *prompt(input) {
+      if (input.toolResults?.length) {
+        yield { type: "completed" }
+        return
+      }
+      yield { type: "tool-call", toolName: "write", toolInput: { path: "src/index.ts", content: "危险修改" } }
+    },
+  }
+
+  await createNexumCodingLoop({
+    model,
+    tool: { async execute() { toolCalls += 1; return { ok: true, output: "unexpected" } } },
+    permission: { async evaluate() { permissionCalls += 1; return "allow" } },
+    sessions,
+    events: { async publish(event) { events.push({ type: event.type, data: event.data }) } },
+  }).run({ sessionID: session.sessionID, text: "修改业务代码" })
+
+  expect(permissionCalls).toBe(0)
+  expect(toolCalls).toBe(0)
+  expect(events).toContainEqual({
+    type: "tool.result",
+    data: {
+      toolCallID: expect.any(String),
+      ok: false,
+      errorCode: "plan_mode_restricted",
+      status: "failed",
+      output: "Plan 模式禁止此工具操作；只能读取项目或写入 .nexum/plans/ 计划文件",
+    },
+  })
+})
+
+test("allows Plan mode writes under the plan directory", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-loop-plan-file-"))
+  temporaryDirectories.push(directory)
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory, mode: "plan" })
+  const requests: ToolRequest[] = []
+  const model: ModelPort = {
+    async *prompt(input) {
+      if (input.toolResults?.length) {
+        yield { type: "completed" }
+        return
+      }
+      yield { type: "tool-call", toolName: "write", toolInput: { path: `.nexum/plans/${session.sessionID}.md`, content: "计划" } }
+    },
+  }
+
+  await createNexumCodingLoop({
+    model,
+    tool: { async execute(request) { requests.push(request); return { ok: true, output: "计划已保存" } } },
+    permission: { async evaluate() { return "allow" } },
+    sessions,
+    events: { async publish() {} },
+  }).run({ sessionID: session.sessionID, text: "写入计划" })
+
+  expect(requests).toHaveLength(1)
+  expect(requests[0]).toMatchObject({ action: "write", resource: `.nexum/plans/${session.sessionID}.md` })
+})
+
 test("publishes streamed reasoning without persisting it as visible assistant text", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-loop-reasoning-"))
   temporaryDirectories.push(directory)

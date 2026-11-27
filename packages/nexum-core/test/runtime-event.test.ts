@@ -33,6 +33,9 @@ test("gives events a run identity and keeps sequence monotonic across prompts", 
     async update(_sessionID: string, input) {
       return { ...session, name: input.name }
     },
+    async setMode(_sessionID, mode) {
+      return { ...session, mode }
+    },
     async setStatus(_sessionID: string, nextStatus: SessionRecord["status"]) {
       return { ...session, status: nextStatus }
     },
@@ -103,6 +106,9 @@ test("continues event sequence after loading the persisted session cursor", asyn
     async update(_sessionID: string, input) {
       return { ...session, name: input.name }
     },
+    async setMode(_sessionID, mode) {
+      return { ...session, mode }
+    },
     async setStatus(_sessionID: string, status: SessionRecord["status"]) {
       return { ...session, status }
     },
@@ -164,6 +170,9 @@ test("uses the EventSink allocator when one is available", async () => {
     },
     async update(_sessionID, input) {
       return { ...session, name: input.name }
+    },
+    async setMode(_sessionID, mode) {
+      return { ...session, mode }
     },
     async setStatus(_sessionID, status) {
       return { ...session, status }

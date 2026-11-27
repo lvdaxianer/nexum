@@ -18,6 +18,7 @@ test("文件组合在重启后恢复 Session", async () => {
     name: "file",
     directory: dataDirectory,
     status: "idle" as const,
+    mode: "plan" as const,
     createdAt: "2026-11-25T00:00:00.000Z",
     updatedAt: "2026-11-25T00:00:00.000Z",
   }

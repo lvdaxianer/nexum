@@ -19,6 +19,7 @@ import {
   type NexumInteractionStore,
   type NexumExecutionRecord,
   type NexumExecutionStore,
+  type NexumAgentMode,
   type NexumModelConfig,
   type NexumModelConfigInput,
   type NexumModelConfigStore,
@@ -40,18 +41,24 @@ import { deleteRecord, readRecord, readRecords, writeRecord } from "./records.ts
 export function createSqliteSessionStore(database: Database): SessionStore {
   return {
     async get(sessionID) {
-      return readRecord<SessionRecord>(database, "session", sessionID)
+      const session = readRecord<SessionRecord>(database, "session", sessionID)
+      return session ? normalizeSessionRecord(session) : undefined
     },
     async list() {
-      return readRecords<SessionRecord>(database, "session").sort(sortSessions)
+      return readRecords<SessionRecord>(database, "session").map(normalizeSessionRecord).sort(sortSessions)
     },
     async save(session) {
-      writeRecord(database, "session", session.sessionID, session)
+      writeRecord(database, "session", session.sessionID, normalizeSessionRecord(session))
     },
     async delete(sessionID) {
       deleteRecord(database, "session", sessionID)
     },
   }
+}
+
+function normalizeSessionRecord(session: SessionRecord): SessionRecord {
+  const mode: NexumAgentMode = session.mode === "plan" ? "plan" : "build"
+  return session.mode === mode ? { ...session } : { ...session, mode }
 }
 
 export function createSqliteExecutionStore(database: Database): NexumExecutionStore {

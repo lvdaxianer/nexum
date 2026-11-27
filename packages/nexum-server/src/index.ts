@@ -88,7 +88,7 @@ const NEXUM_CAPABILITIES = [
     id: "session",
     version: "1",
     status: "enabled",
-    operations: ["create", "list", "get", "update", "delete", "continue", "recovery"],
+    operations: ["create", "list", "get", "update", "update_mode", "delete", "continue", "recovery"],
   },
   { id: "context", version: "1", status: "enabled", operations: ["load", "compact"] },
   {
@@ -528,6 +528,11 @@ async function handleRequest(
   }
 
   const updateSessionMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)$/)
+  const sessionModeMatch = url.pathname.match(/^\/api\/nexum\/session\/([^/]+)\/mode$/)
+  if (sessionModeMatch) {
+    if (request.method !== "PUT") return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 PUT 请求", traceId)
+    return updateSessionMode(request, decodeURIComponent(sessionModeMatch[1]!), sessionService, traceId)
+  }
   if (updateSessionMatch) {
     const sessionID = decodeURIComponent(updateSessionMatch[1]!)
     if (request.method === "PUT") return updateSession(request, sessionID, sessionService, traceId)
@@ -1246,15 +1251,20 @@ function skillRegistryUnavailable(traceId: string): Response {
 
 /** 返回所有可供页面恢复的 Nexum Session。 */
 async function listSessions(sessionService: NexumSessionService, traceId: string): Promise<Response> {
-  const data = (await sessionService.list()).map((session) => ({
+  const data = (await sessionService.list()).map(toPublicSession)
+  return jsonResponse({ data }, traceId)
+}
+
+function toPublicSession(session: SessionRecord) {
+  return {
     id: session.sessionID,
     name: session.name,
     directory: session.directory,
     status: session.status,
+    mode: session.mode ?? "build",
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
-  }))
-  return jsonResponse({ data }, traceId)
+  } as const
 }
 
 /** 返回 Session 的安全 canonical 消息分页。 */
@@ -1762,12 +1772,7 @@ async function getSessionState(
     {
       data: {
         session: {
-          id: session.sessionID,
-          name: session.name,
-          directory: session.directory,
-          status: session.status,
-          createdAt: session.createdAt,
-          updatedAt: session.updatedAt,
+          ...toPublicSession(session),
         },
         canContinue: codingLoop?.canContinue ? await codingLoop.canContinue(sessionID) : false,
         canCancel: canCancelSessionStatus(session.status),
@@ -2192,32 +2197,30 @@ async function createSession(
     !isRecord(payload) ||
     typeof payload.directory !== "string" ||
     payload.directory.trim() === "" ||
-    (payload.name !== undefined && typeof payload.name !== "string")
+    (payload.name !== undefined && typeof payload.name !== "string") ||
+    (payload.mode !== undefined && payload.mode !== "plan" && payload.mode !== "build")
   ) {
-    return errorResponse(400, "NEXUM_INVALID_REQUEST", "directory 必须是非空字符串", traceId)
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "directory 必须是非空字符串，mode 必须是 plan 或 build", traceId)
   }
 
   try {
     const session = await sessionService.create({
       directory: payload.directory,
       ...(payload.name !== undefined ? { name: payload.name } : {}),
+      ...(payload.mode !== undefined ? { mode: payload.mode } : {}),
     })
     return jsonResponse(
       {
-        data: {
-          id: session.sessionID,
-          name: session.name,
-          directory: session.directory,
-          status: session.status,
-          createdAt: session.createdAt,
-          updatedAt: session.updatedAt,
-        },
+        data: toPublicSession(session),
       },
       traceId,
     )
   } catch (error) {
     if (error instanceof NexumSessionError && error.code === "invalid_directory") {
       return errorResponse(400, "NEXUM_INVALID_DIRECTORY", "工作目录不存在或不可读写", traceId)
+    }
+    if (error instanceof NexumSessionError && error.code === "invalid_mode") {
+      return errorResponse(400, "NEXUM_INVALID_REQUEST", "mode 必须是 plan 或 build", traceId)
     }
     return errorResponse(500, "NEXUM_SESSION_CREATE_FAILED", "Session 创建失败", traceId)
   }
@@ -2247,14 +2250,7 @@ async function updateSession(
     const session = await sessionService.update(sessionID, { name: payload.name })
     return jsonResponse(
       {
-        data: {
-          id: session.sessionID,
-          name: session.name,
-          directory: session.directory,
-          status: session.status,
-          createdAt: session.createdAt,
-          updatedAt: session.updatedAt,
-        },
+        data: toPublicSession(session),
       },
       traceId,
     )
@@ -2266,6 +2262,35 @@ async function updateSession(
       return errorResponse(400, "NEXUM_INVALID_REQUEST", "Session 名称不能为空", traceId)
     }
     return errorResponse(500, "NEXUM_SESSION_UPDATE_FAILED", "Session 更新失败", traceId)
+  }
+}
+
+/** 更新 Session 的 Agent 模式；运行中的 Session 不允许切换。 */
+async function updateSessionMode(
+  request: Request,
+  sessionID: string,
+  sessionService: NexumSessionService,
+  traceId: string,
+): Promise<Response> {
+  const payload = await readJsonRequest(request)
+  if (!isRecord(payload) || (payload.mode !== "plan" && payload.mode !== "build")) {
+    return errorResponse(400, "NEXUM_INVALID_REQUEST", "mode 必须是 plan 或 build", traceId)
+  }
+
+  try {
+    const session = await sessionService.setMode(sessionID, payload.mode)
+    return jsonResponse({ data: toPublicSession(session) }, traceId)
+  } catch (error) {
+    if (error instanceof NexumSessionError && error.code === "session_not_found") {
+      return errorResponse(404, "NEXUM_SESSION_NOT_FOUND", "Session 不存在", traceId)
+    }
+    if (error instanceof NexumSessionError && error.code === "session_busy") {
+      return errorResponse(409, "NEXUM_SESSION_RUN_CONFLICT", "Session 当前正在运行，不能切换 Agent 模式", traceId)
+    }
+    if (error instanceof NexumSessionError && error.code === "invalid_mode") {
+      return errorResponse(400, "NEXUM_INVALID_REQUEST", "mode 必须是 plan 或 build", traceId)
+    }
+    return errorResponse(500, "NEXUM_SESSION_MODE_UPDATE_FAILED", "Session Agent 模式更新失败", traceId)
   }
 }
 

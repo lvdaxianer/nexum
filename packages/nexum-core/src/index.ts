@@ -115,7 +115,7 @@ export interface ToolResult {
   readonly ok: boolean
   readonly output: string
   readonly toolCallID?: string
-  readonly errorCode?: "timeout" | "cancelled" | "tool_failed"
+  readonly errorCode?: "timeout" | "cancelled" | "tool_failed" | "plan_mode_restricted"
   readonly status?: "timeout" | "cancelled" | "failed"
 }
 
@@ -150,11 +150,17 @@ export interface PermissionPort {
 }
 
 /** Session 的最小持久化记录。 */
+export type NexumAgentMode = "plan" | "build"
+
 export interface SessionRecord {
   readonly sessionID: string
   readonly name: string
   readonly directory: string
   readonly status: "idle" | "running" | "completed" | "failed" | "cancelled"
+  /**
+   * 旧 Store 记录可能缺失该字段，Session Service 返回的新记录始终补齐。
+   */
+  readonly mode?: NexumAgentMode
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -228,11 +234,13 @@ export type NexumSessionErrorCode =
   | "invalid_transition"
   | "session_busy"
   | "session_not_cancellable"
+  | "invalid_mode"
 
 /** Nexum Session 创建请求。 */
 export interface NexumSessionCreateInput {
   readonly directory: string
   readonly name?: string
+  readonly mode?: NexumAgentMode
 }
 
 /** Nexum Session 的可变展示元数据。 */
@@ -251,6 +259,7 @@ export interface NexumSessionService {
   readonly list: () => Promise<readonly SessionRecord[]>
   readonly get: (sessionID: string) => Promise<SessionRecord | undefined>
   readonly update: (sessionID: string, input: NexumSessionUpdateInput) => Promise<SessionRecord>
+  readonly setMode: (sessionID: string, mode: NexumAgentMode) => Promise<SessionRecord>
   readonly setStatus: (sessionID: string, status: NexumSessionStatus) => Promise<SessionRecord>
   readonly delete: (sessionID: string, beforeDelete?: () => Promise<void>) => Promise<void>
 }
@@ -343,12 +352,14 @@ export function createNexumSessionService(options: NexumSessionServiceOptions): 
       const directory = normalize(trimmedDirectory)
       await directoryValidator.validate(directory)
       const name = normalizeSessionName(input.name, directory)
+      const mode = requireAgentMode(input.mode ?? "build")
       const timestamp = new Date().toISOString()
       const session: SessionRecord = {
         sessionID: crypto.randomUUID(),
         name,
         directory,
         status: "idle",
+        mode,
         createdAt: timestamp,
         updatedAt: timestamp,
       }
@@ -356,10 +367,10 @@ export function createNexumSessionService(options: NexumSessionServiceOptions): 
       return session
     },
     list() {
-      return store.list()
+      return store.list().then((sessions) => sessions.map(withDefaultAgentMode))
     },
     get(sessionID) {
-      return store.get(sessionID)
+      return store.get(sessionID).then((session) => session ? withDefaultAgentMode(session) : undefined)
     },
     update(sessionID, input) {
       return enqueueSessionOperation(sessionID, async () => {
@@ -368,7 +379,23 @@ export function createNexumSessionService(options: NexumSessionServiceOptions): 
           throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
         }
         const name = requireSessionName(input.name)
-        const next = { ...current, name, updatedAt: nextSessionTimestamp(current.updatedAt) }
+        const mode: NexumAgentMode = current.mode === "plan" ? "plan" : "build"
+        const next = { ...current, name, mode, updatedAt: nextSessionTimestamp(current.updatedAt) }
+        await store.save(next)
+        return next
+      })
+    },
+    setMode(sessionID, mode) {
+      return enqueueSessionOperation(sessionID, async () => {
+        const current = await store.get(sessionID)
+        if (!current) throw new NexumSessionError("session_not_found", "Session 不存在", sessionID)
+        const nextMode = requireAgentMode(mode)
+        const currentMode = current.mode === "plan" ? "plan" : "build"
+        if (current.status === "running" && currentMode !== nextMode) {
+          throw new NexumSessionError("session_busy", "Session 当前正在运行，不能切换 Agent 模式", sessionID)
+        }
+        if (currentMode === nextMode && current.mode === nextMode) return current
+        const next = { ...current, mode: nextMode, updatedAt: nextSessionTimestamp(current.updatedAt) }
         await store.save(next)
         return next
       })
@@ -387,7 +414,8 @@ export function createNexumSessionService(options: NexumSessionServiceOptions): 
             sessionID,
           )
         }
-        const next = { ...current, status, updatedAt: nextSessionTimestamp(current.updatedAt) }
+        const mode: NexumAgentMode = current.mode === "plan" ? "plan" : "build"
+        const next = { ...current, mode, status, updatedAt: nextSessionTimestamp(current.updatedAt) }
         await store.save(next)
         return next
       })
@@ -428,6 +456,18 @@ function requireSessionName(name: string): string {
     throw new NexumSessionError("invalid_name", "Session 名称不能为空")
   }
   return candidate
+}
+
+function requireAgentMode(mode: string): NexumAgentMode {
+  if (mode !== "plan" && mode !== "build") {
+    throw new NexumSessionError("invalid_mode", "Agent 模式必须是 plan 或 build")
+  }
+  return mode
+}
+
+function withDefaultAgentMode(session: SessionRecord): SessionRecord {
+  const mode = session.mode === "plan" ? "plan" : "build"
+  return session.mode === mode ? session : { ...session, mode }
 }
 
 function nextSessionTimestamp(previous: string): string {
@@ -558,6 +598,8 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       if (activeRuns.get(input.sessionID) === runState) activeRuns.delete(input.sessionID)
       throw new NexumSessionError("session_not_found", "Session 不存在", input.sessionID)
     }
+    const agentMode = session.mode === "plan" ? "plan" : "build"
+    const toolDefinitions = selectAgentTools(agentMode, options.tools)
 
     const history = await messageStore.load(input.sessionID)
     const continuation = "mode" in input && (input.mode === "continue" || input.mode === "recovery")
@@ -638,13 +680,26 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
       const roleSystemMessages = rolePrompt
         ? [{ role: "system" as const, content: rolePrompt.prompt, sourceID: "runtime:default-role" }]
         : []
+      const agentModeMessages = agentMode === "plan"
+        ? [{
+            role: "system" as const,
+            content: `当前是 Plan 模式。只允许读取项目，或写入当前 Session 的计划文件 .nexum/plans/${input.sessionID}.md；禁止修改业务文件、执行 Shell、调用 MCP 或管理 Skill。`,
+            sourceID: "runtime:agent-mode",
+          }]
+        : []
       for (const message of roleSystemMessages) {
+        if (message.sourceID) temporarySourceIDs.add(message.sourceID)
+      }
+      for (const message of agentModeMessages) {
         if (message.sourceID) temporarySourceIDs.add(message.sourceID)
       }
       for (const message of skillSystemMessages) {
         if (message.role === "system" && message.sourceID) temporarySourceIDs.add(message.sourceID)
       }
-      const withTemporarySystemMessages = insertSystemMessages([...roleSystemMessages, ...skillSystemMessages], history)
+      const withTemporarySystemMessages = insertSystemMessages(
+        [...roleSystemMessages, ...agentModeMessages, ...skillSystemMessages],
+        history,
+      )
       return restoreProjectContext(
         input.sessionID,
         withTemporarySystemMessages,
@@ -673,7 +728,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
         sessionID: input.sessionID,
         text: promptText,
         messages: modelMessages,
-        ...(options.tools ? { tools: options.tools } : {}),
+        ...(toolDefinitions ? { tools: toolDefinitions } : {}),
       }
       let step = 0
       let outputContinuations = 0
@@ -694,8 +749,8 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
           messages: finalizing ? [...modelMessages, { role: "user", content: MAX_STEPS_PROMPT }] : modelMessages,
           ...(finalizing
             ? { tools: [], toolChoice: "none" as const }
-            : options.tools
-              ? { tools: options.tools, toolChoice: "auto" as const }
+            : toolDefinitions
+              ? { tools: toolDefinitions, toolChoice: "auto" as const }
               : {}),
         }
         let continued = false
@@ -730,7 +785,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                     sessionID: input.sessionID,
                     text: OUTPUT_CONTINUATION_PROMPT,
                     messages: modelMessages,
-                    ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
+                    ...(toolDefinitions ? { tools: toolDefinitions, toolChoice: "auto" as const } : {}),
                   }
                   continued = true
                   break
@@ -774,7 +829,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                   text: promptText,
                   toolResults: [result],
                   messages: modelMessages,
-                  ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
+                  ...(toolDefinitions ? { tools: toolDefinitions, toolChoice: "auto" as const } : {}),
                 }
                 continued = true
                 break
@@ -800,6 +855,26 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                   toolName: request.toolName,
                   input: redactNexumSensitiveValue(request.input) as Record<string, unknown>,
                 })
+                const planRestriction = agentMode === "plan" ? restrictPlanToolRequest(request) : undefined
+                if (planRestriction) {
+                  const result = {
+                    ok: false as const,
+                    output: planRestriction,
+                    errorCode: "plan_mode_restricted" as const,
+                    status: "failed" as const,
+                  }
+                  const toolResult = { ...result, toolCallID }
+                  toolResults.push(toolResult)
+                  await publish("tool.result", {
+                    toolCallID,
+                    ok: false,
+                    errorCode: result.errorCode,
+                    status: result.status,
+                    output: result.output,
+                  })
+                  appendCanonical([{ role: "tool", toolCallID, content: result.output }])
+                  continue
+                }
                 // pending 请求由权限端口主动通知，保证 permission.requested 先于阻塞等待发布。
                 const stopObserving = options.permission.observe?.((pending) => {
                   if (pending.sessionID !== request.sessionID || pending.action !== request.action) return
@@ -868,7 +943,7 @@ export function createNexumCodingLoop(options: NexumCodingLoopOptions): NexumCod
                 text: promptText,
                 toolResults,
                 messages: modelMessages,
-                ...(options.tools ? { tools: options.tools, toolChoice: "auto" as const } : {}),
+                  ...(toolDefinitions ? { tools: toolDefinitions, toolChoice: "auto" as const } : {}),
               }
               continued = true
               break
@@ -1310,6 +1385,27 @@ function calculateRetryDelay(baseDelay: number, attempt: number, error: unknown,
 function throwIfCancelled(run: ActiveRun): void {
   if (run.timedOut) throw new NexumRunError("timeout", "Coding Loop 运行超时")
   if (run.cancelled || run.controller.signal.aborted) throw new NexumCancellationError()
+}
+
+function selectAgentTools(
+  mode: NexumAgentMode,
+  tools: readonly ModelToolDefinition[] | undefined,
+): readonly ModelToolDefinition[] | undefined {
+  if (!tools || mode === "build") return tools
+  return tools.filter((tool) => tool.name === "read" || tool.name === "write" || tool.name === "edit" || tool.name === "skill_registry")
+}
+
+function restrictPlanToolRequest(request: ToolRequest): string | undefined {
+  if (request.toolName === "read") return
+  if (request.toolName === "skill_registry" && request.action === "skill.read") return
+  if ((request.toolName === "write" || request.toolName === "edit") && isPlanFileResource(request.resource)) return
+  return "Plan 模式禁止此工具操作；只能读取项目或写入 .nexum/plans/ 计划文件"
+}
+
+function isPlanFileResource(resource: string): boolean {
+  if (isAbsolute(resource) || /^[A-Za-z]:\//.test(resource)) return false
+  const normalized = normalize(resource)
+  return normalized !== ".nexum/plans" && normalized.startsWith(".nexum/plans/")
 }
 
 /** 从模型增量构造规范化工具请求。 */
