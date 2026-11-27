@@ -8,6 +8,8 @@ Use this composition when your application already owns the UI, routing, and
 task system and only needs to call an Agent in the same process. It does not
 need HTTP or a Server. The default setup uses in-memory Persistence.
 
+## Composition
+
 ```text
 Your application
   └─ nexum/application
@@ -63,6 +65,12 @@ await runtime.close()
 In-memory data disappears when the process closes. For restart recovery, use
 [local file Persistence](local-file-runtime.md); for Web or another language,
 use [SQLite + HTTP/SSE](sqlite-http-runtime.md).
+
+## When to choose another example
+
+This composition is process-local. Switch to [local file Persistence](local-file-runtime.md)
+for restart recovery, or [SQLite + HTTP/SSE](sqlite-http-runtime.md) when the
+Runtime must be called by Web, desktop, CLI, or another language.
 
 ## Related references
 

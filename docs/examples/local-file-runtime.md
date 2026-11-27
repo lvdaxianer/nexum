@@ -7,6 +7,8 @@
 Use File Persistence for a local CLI, desktop, or single-user application that
 must keep Sessions, messages, events, and role configuration after restart.
 
+## Composition
+
 ```text
 Local application
   └─ nexum/application
@@ -48,6 +50,15 @@ await runtime.close()
 
 `dataDirectory` is where Nexum stores runtime data. `directory` is where the
 Agent is allowed to work; they are different values.
+
+## Parameters
+
+| Parameter | Meaning |
+| --- | --- |
+| `dataDirectory` | Persistence directory for Sessions, messages, events, interactions, and configuration |
+| `directory` | Agent working directory; it is not the Persistence directory |
+| `rolePrompt` | Runtime-level role instruction stored with the configuration |
+| `text` | Current user task; previous history is loaded by Nexum |
 
 ## What is persisted?
 
