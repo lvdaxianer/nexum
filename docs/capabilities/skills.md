@@ -32,3 +32,38 @@ waiting for the Server to load plugins first.
 
 See [Application](../modules/nexum-application.md), [Client](../modules/nexum-client.md),
 and [Events](events.md).
+
+## Registration lifecycle
+
+Application combines a local Skill source with the Persistence registry:
+
+```text
+configured roots / registered address
+  → scan and validate SKILL.md
+  → aggregate candidates and detect duplicates
+  → persist address, digest, status, and diagnostics
+  → expose a safe summary to Server and Client
+```
+
+Registering the same normalized address is idempotent. Unregistering removes
+the registry entry but does not delete the source directory. A duplicate ID is
+reported as `conflict`; an invalid or conflicting Skill cannot be activated.
+
+## Explicit activation
+
+When a user writes `@<skill-id>` in a Prompt, the Runtime preserves mention
+positions, keeps the first occurrence of duplicate IDs, looks up the safe
+registry summary, and checks that the status is `ready`. Each Skill then passes
+through a `skill.use` Permission request. After approval, `SKILL.md` becomes a
+temporary system message for the current model run and the Runtime emits
+`skill.activated` or `skill.failed`.
+
+Skill source text is not copied into ordinary canonical history. Shell, file,
+and external calls made by a Skill still use the normal Tool and Permission
+boundaries; a Skill cannot bypass the host sandbox.
+
+## UI behavior
+
+A Surface can use the list for `@` autocomplete, show validation diagnostics,
+and refresh after `skill.updated`. It should show `invalid` and `conflict`
+items as actionable diagnostics rather than as ready-to-run Skills.

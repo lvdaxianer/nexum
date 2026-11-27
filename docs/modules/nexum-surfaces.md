@@ -2,7 +2,7 @@
 
 [中文](../zh-CN/modules/nexum-surfaces.md)
 
-<!-- 内部模块 -->
+<!-- 内部模块 / Internal module -->
 
 This is an internal reference Web Surface and protocol acceptance entry point.
 It is not a public reusable package or an installation target. It combines

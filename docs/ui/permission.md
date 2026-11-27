@@ -30,3 +30,24 @@ cross-Session request must be removed and state refreshed rather than retried.
 Policy management is exposed through the Runtime API. See [interaction
 protocol](interaction-protocol.md), [events](../capabilities/events.md), and
 [Runtime API](../../apis/nexum.md).
+
+## HTTP operations
+
+| Operation | Path | Purpose |
+| --- | --- | --- |
+| List | `GET /api/nexum/session/{sessionID}/permission` | Read pending requests |
+| Reply | `POST /api/nexum/session/{sessionID}/permission/{requestID}/reply` | Submit a decision |
+| List policy | `GET /api/nexum/permission/policy` | Read policy rules |
+| Create/update/delete policy | `POST`, `PUT`, `DELETE` under `/api/nexum/permission/policy` | Manage reusable rules |
+
+The reply must contain the request ID, selected decision, and owning Session.
+`allow_once` affects one request; `allow_always` persists an exact matching
+rule; `deny` rejects the operation. A stale or cross-Session request is a
+protocol error: remove the card, refresh state, and do not retry the old ID.
+
+## Persistence and restart
+
+Pending Permission requests may be restored by File or SQLite Persistence. A
+request that can no longer be resumed is exposed as stale/orphaned and must not
+be answered by the UI. Policy data is persisted separately from the Core
+decision logic.

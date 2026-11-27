@@ -7,6 +7,24 @@ This is the HTTP/SSE reference for Nexum Server. The base API prefix is
 All responses use the versioned JSON envelope and Session events are available
 as ordered SSE frames.
 
+| Item | Contract |
+| --- | --- |
+| Module | Nexum Runtime HTTP/SSE API (`apis/nexum.md`) |
+| Responsibility | Expose Runtime capabilities, Session lifecycle, interactions, events, Skills, and MCP to a Client |
+| Base prefixes | Stable `/api/nexum`; experimental `/api/experimental/nexum` |
+| Callers | Nexum Client, Chat Surface, CLI, Web, desktop, and other-language clients |
+| Authentication | Loopback may be anonymous; non-loopback requires the configured Bearer token |
+
+### Controller/route coverage
+
+| Route group | Endpoints documented in this module |
+| --- | --- |
+| Health and discovery | Health, capabilities, model, role prompt |
+| Session | List/create, update/delete, state, prompt, cancel, events, messages, continue |
+| Human interaction | Permission requests, policy rules, Questions |
+| Skills | List, detail, register, refresh, validate, activate, unregister |
+| MCP | Registration, connection control, catalogs, OAuth |
+
 ## Beginner request flow
 
 1. `GET /api/nexum/capabilities` to discover the protocol and enabled features.
@@ -139,5 +157,339 @@ Session/request IDs in the error context when showing a recoverable UI error.
 Non-loopback deployments must configure authentication; health endpoints and
 credential storage follow the Server deployment policy.
 
-For complete field-level examples and the Chinese reference, use the [中文 API
-document](zh-CN/nexum.md). For TypeScript calls, use the [Client module](../docs/modules/nexum-client.md).
+For the Chinese translation, use the [中文 API document](zh-CN/nexum.md). For
+TypeScript calls, use the [Client module](../docs/modules/nexum-client.md).
+
+## Protocol conventions
+
+### Authentication boundary
+
+Loopback development can run without a token. A non-loopback Server must
+configure authentication and a safe Host policy. The browser may receive a
+credential reference or an authenticated session, but the Server must never
+return the model credential, OAuth token, cookie, or secret in a response,
+event, history item, or error detail.
+
+### JSON envelope
+
+Successful JSON responses use the versioned envelope:
+
+```json
+{
+  "data": {},
+  "meta": {
+    "protocolVersion": "nexum.runtime.v1"
+  }
+}
+```
+
+Errors keep a stable `errorCode`, human-readable `message`, and optional
+`traceId`. Clients should branch on `errorCode`, not on English message text.
+
+## Route coverage
+
+| Area | Stable routes | Experimental routes |
+| --- | --- | --- |
+| Health and discovery | `/health/live`, `/health/ready`, `/api/nexum/capabilities` | — |
+| Model and role | `/api/nexum/model`, `/api/nexum/model/probe`, `/api/nexum/role-prompt` | — |
+| Session | `/api/nexum/session`, `/api/nexum/session/{sessionID}` | `messages`, `continue` |
+| Run and events | `prompt`, `cancel`, `events` | — |
+| Permission and Question | pending/list/reply/cancel routes | — |
+| Skills | list/detail/register/refresh/validate/activate/unregister | — |
+| MCP | — | `/api/experimental/nexum/mcp/...` |
+
+Experimental routes may change without compatibility guarantees. Use the
+generated Client namespace shown in the module documentation rather than
+hard-coding a different path.
+
+### Complete endpoint index
+
+The following index keeps the public route list in one place. `{sessionID}`,
+`{requestID}`, `{ruleID}`, `{id}`, and `{attemptID}` are URL path parameters and
+must be encoded as path segments.
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/health/live` |
+| `GET` | `/health/ready` |
+| `GET` | `/api/nexum/capabilities` |
+| `GET`, `PUT` | `/api/nexum/model` |
+| `POST` | `/api/nexum/model/probe` |
+| `GET`, `PUT`, `DELETE` | `/api/nexum/role-prompt` |
+| `GET`, `POST` | `/api/nexum/session` |
+| `PUT`, `DELETE` | `/api/nexum/session/{sessionID}` |
+| `GET` | `/api/nexum/session/{sessionID}/state` |
+| `POST` | `/api/nexum/session/{sessionID}/prompt` |
+| `POST` | `/api/nexum/session/{sessionID}/cancel` |
+| `GET` | `/api/nexum/session/{sessionID}/events` |
+| `GET` | `/api/nexum/session/{sessionID}/permission` |
+| `POST` | `/api/nexum/session/{sessionID}/permission/{requestID}/reply` |
+| `GET` | `/api/nexum/session/{sessionID}/question` |
+| `POST` | `/api/nexum/session/{sessionID}/question/{requestID}/reply` |
+| `POST` | `/api/nexum/session/{sessionID}/question/{requestID}/cancel` |
+| `GET` | `/api/nexum/permission/policy` |
+| `POST` | `/api/nexum/permission/policy` |
+| `PUT` | `/api/nexum/permission/policy/{ruleID}` |
+| `DELETE` | `/api/nexum/permission/policy/{ruleID}` |
+| `GET` | `/api/nexum/skills` |
+| `GET` | `/api/nexum/skills/{id}` |
+| `POST` | `/api/nexum/skills/register` |
+| `POST` | `/api/nexum/skills/refresh` |
+| `POST` | `/api/nexum/skills/validate` |
+| `POST` | `/api/nexum/skills/{id}/activate` |
+| `DELETE` | `/api/nexum/skills/{id}` |
+| `GET` | `/api/experimental/nexum/session/{sessionID}/messages` |
+| `POST` | `/api/experimental/nexum/session/{sessionID}/continue` |
+| `GET` | `/api/experimental/nexum/mcp` |
+| `POST` | `/api/experimental/nexum/mcp` |
+| `POST` | `/api/experimental/nexum/mcp/{id}/connect` |
+| `POST` | `/api/experimental/nexum/mcp/{id}/disconnect` |
+| `DELETE` | `/api/experimental/nexum/mcp/{id}` |
+| `GET` | `/api/experimental/nexum/mcp/{id}/tools` |
+| `GET` | `/api/experimental/nexum/mcp/{id}/resources` |
+| `GET` | `/api/experimental/nexum/mcp/{id}/prompts` |
+| `POST` | `/api/experimental/nexum/mcp/{id}/oauth/authorize` |
+| `GET` | `/api/experimental/nexum/mcp/oauth/{attemptID}` |
+| `POST` | `/api/experimental/nexum/mcp/oauth/{attemptID}/complete` |
+| `POST` | `/api/experimental/nexum/mcp/oauth/{attemptID}/cancel` |
+
+## Health, capabilities, and model details
+
+### Health
+
+`GET /health/live` reports that the process is alive. `GET /health/ready`
+reports that the Server can accept Runtime requests. Both are lightweight JSON
+responses and may be called anonymously; they do not require a request body or
+cookie. A caller should use the readiness result before creating a Session.
+
+### Capabilities
+
+`GET /api/nexum/capabilities` returns the protocol version, enabled feature
+names, supported operations, event types, and interaction capabilities. Use the
+returned status instead of assuming that an optional Model, Skill, Question, or
+MCP port is configured.
+
+### `GET` and `PUT /api/nexum/model`
+
+The public model view contains safe configuration only:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `baseUrl` | string | Upstream OpenAI-compatible endpoint |
+| `model` | string | Upstream model name |
+| `credentialConfigured` | boolean | Whether the backend has credentials |
+| `credentialRef` | string, optional | Name/reference of the backend credential source |
+
+`PUT` accepts the model configuration and saves it through the Runtime store.
+It must not include credentials in a browser-visible response.
+
+### `POST /api/nexum/model/probe`
+
+The optional body is `{ "mode": "text" | "function_calling" | "both" }`;
+the default is `both`. A successful probe reports capability status, not model
+content or credential values. Invalid mode, missing configuration, upstream
+authentication, timeout, and provider failures have distinct stable error
+codes.
+
+### Role prompt
+
+`GET /api/nexum/role-prompt` returns `{ prompt, source, updatedAt? }`.
+`PUT` accepts `{ "prompt": "..." }` with a non-empty string, and `DELETE`
+restores the built-in default. The role prompt is injected as a Runtime system
+message before model execution and is not copied into Session history. It is
+not the same field as `session.prompt({ text })`.
+
+## Detailed Session requests
+
+### `GET /api/nexum/session`
+
+Returns `NexumSession[]`. Use it to render a sidebar. The response includes the
+stable `id`, display `name`, working `directory`, lifecycle `status`, and other
+safe summary fields. It does not include the full message history.
+
+### `POST /api/nexum/session`
+
+Request body:
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `directory` | `string` | yes | Absolute working directory on the Server host |
+| `name` | `string` | no | User-facing display label |
+
+The response contains the newly created stable `session.id`. With File or
+SQLite Persistence, the Session record is written to the backend store before
+the response is returned. The browser must use the returned ID for later calls.
+
+### `PUT /api/nexum/session/{sessionID}`
+
+Use this endpoint to change the display name:
+
+```json
+{
+  "name": "Renamed Agent"
+}
+```
+
+This does not change the working directory, history, role prompt, or model.
+Refresh the list or replace the local sidebar snapshot after success.
+
+### `DELETE /api/nexum/session/{sessionID}`
+
+Deletion is durable and destructive. It removes the Session's messages,
+interactions, events, and runtime records according to the Persistence adapter;
+it does not delete the working directory or global model configuration. The UI
+should ask for confirmation, then clear the selected ID after success.
+
+### `GET /api/nexum/session/{sessionID}/state`
+
+Returns `NexumSessionState`, including the Session snapshot, `canContinue`,
+pending Permission and Question requests, and `lastSequence`. It is the first
+request after a page load or reconnect.
+
+## Session history
+
+### `GET /api/experimental/nexum/session/{sessionID}/messages`
+
+Query parameters:
+
+| Parameter | Type | Meaning |
+| --- | --- | --- |
+| `before` | string | Page boundary for older messages |
+| `limit` | non-negative integer | Maximum number of messages |
+| `snapshotID` | string | Keep pagination stable while new messages arrive |
+
+The response is `NexumSessionMessages` with `messages`, `total`, `hasMore`, and
+an optional `snapshotID`. Load `state()` first, load the initial history, then
+subscribe to events from `state.lastSequence`. A custom UI should follow this
+same order when switching Sessions.
+
+## Run control details
+
+### Prompt
+
+```http
+POST /api/nexum/session/{sessionID}/prompt
+Content-Type: application/json
+
+{ "text": "Summarize this project" }
+```
+
+The response only confirms durable admission. The model result arrives through
+SSE. `text` is the user's current task; the Runtime role prompt is configured
+separately through `/api/nexum/role-prompt`.
+
+### Cancel and continue
+
+`POST /api/nexum/session/{sessionID}/cancel` requests cancellation of the active
+run and pending interaction. `POST
+/api/experimental/nexum/session/{sessionID}/continue` resumes only when state
+reports that continuation is allowed. Both operations should be followed by a
+state read and event subscription.
+
+## Permission policy
+
+Pending requests are Session-scoped:
+
+```http
+GET /api/nexum/session/{sessionID}/permission
+POST /api/nexum/session/{sessionID}/permission/{requestID}/reply
+```
+
+The reply decision is one of `allow_once`, `allow_always`, or `deny`. Policy
+rules are managed separately:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/nexum/permission/policy` | List rules |
+| `POST` | `/api/nexum/permission/policy` | Create a rule |
+| `PUT` | `/api/nexum/permission/policy/{ruleID}` | Update a rule |
+| `DELETE` | `/api/nexum/permission/policy/{ruleID}` | Remove a rule |
+
+The server validates the request ID and owning Session. A stale, missing, or
+cross-Session ID must return a stable error; the client should refresh rather
+than retry the old card.
+
+## Question operations
+
+| Method | Path | Body |
+| --- | --- | --- |
+| `GET` | `/api/nexum/session/{sessionID}/question` | — |
+| `POST` | `/api/nexum/session/{sessionID}/question/{requestID}/reply` | Ordered two-dimensional answer array |
+| `POST` | `/api/nexum/session/{sessionID}/question/{requestID}/cancel` | — |
+
+The answer array preserves the original Question order and supports both
+single- and multi-select options. A UI should disable duplicate submission,
+observe the matching event, and refresh state after a protocol error.
+
+## Skill registration
+
+Skill operations use safe summaries and never return absolute source paths,
+secrets, or raw command output:
+
+| Operation | Purpose |
+| --- | --- |
+| list/detail | Read registered Skill metadata and diagnostics |
+| register | Register a normalized source address |
+| refresh | Rescan the source and update the digest/status |
+| validate | Check the source without activating it |
+| activate | Use a ready Skill for a Session after Permission |
+| unregister | Remove the registry entry without deleting source files |
+
+`ready`, `invalid`, and `conflict` are distinct states. A duplicate Skill ID
+is not silently selected. Activation emits `skill.activated` or `skill.failed`.
+
+## MCP lifecycle and OAuth
+
+The experimental prefix is `/api/experimental/nexum`:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/mcp` | List safe connection status |
+| `POST` | `/mcp` | Register a remote URL |
+| `POST` | `/mcp/{id}/connect` | Connect |
+| `POST` | `/mcp/{id}/disconnect` | Disconnect |
+| `DELETE` | `/mcp/{id}` | Remove registration |
+| `GET` | `/mcp/{id}/tools` | Read tools |
+| `GET` | `/mcp/{id}/resources` | Read resources |
+| `GET` | `/mcp/{id}/prompts` | Read prompts |
+
+OAuth is an attempt lifecycle: create an authorization attempt, query its
+status, complete it with a loopback/redirect URL, or cancel it. Tokens and
+client secrets are stored on the backend and are not returned by these routes.
+
+## Event semantics
+
+The SSE request is:
+
+```http
+GET /api/nexum/session/{sessionID}/events?afterSequence=42
+Accept: text/event-stream
+```
+
+Each frame contains an event ID and a JSON `NexumEvent`. Clients should store
+both `eventID` and `sequence`, deduplicate by event ID, and keep events scoped to
+one Session. Terminal events are `session.completed`, `session.failed`, and
+`session.cancelled`; `run.settled` can be used to release a local busy lock.
+
+## Minimal client example
+
+```ts
+const sessions = await client.experimental.nexum.session.list()
+const sessionID = sessions[0]?.id
+
+if (sessionID) {
+  const state = await client.experimental.nexum.session.state({ sessionID })
+  const history = await client.experimental.nexum.session.messages({ sessionID, limit: 50 })
+
+  for await (const event of client.experimental.nexum.session.events(
+    { sessionID },
+    { afterSequence: state.lastSequence },
+  )) {
+    render(history, event)
+  }
+}
+```
+
+This is the complete restore pattern: query the Session, read its state and
+history, then subscribe from the returned cursor. For the beginner walkthrough,
+see [Build a complete Agent application](../docs/examples/full-stack-chat.md).

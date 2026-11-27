@@ -33,3 +33,15 @@ Application and Integration modules provide the default implementations.
 
 Core must not depend on HTTP, a UI, a concrete model SDK, or a concrete
 Persistence adapter. See [module boundaries](../architecture/module-boundaries.md).
+
+## Runtime semantics in one request
+
+The Coding Loop receives a Session ID and user `text`, reloads canonical
+history, adds the Runtime role prompt, project context, Skills, and allowed
+tools, then performs one explicit model step. Tool calls, Permission, Question,
+compaction, retry, cancellation, and terminal states are emitted as facts for
+the Protocol and Surface layers.
+
+`ModelPort`, `ToolPort`, `PermissionPort`, `SessionStore`, `MessageStore`,
+`HostPort`, `MemoryPort`, and `McpPort` are replacement boundaries. Core owns
+their contracts and domain errors, not their external implementations.

@@ -8,6 +8,8 @@ Use Chat Surface when you already have a Nexum Server and want a ready-made
 chat interface. The host application chooses or creates a Session and passes
 its ID to the component.
 
+## Composition
+
 ```text
 Your application
   └─ nexum/chat-surface
@@ -53,10 +55,16 @@ interactions. It does not create a Session by itself.
 
 To switch Sessions, update the `sessionID` prop. Chat Surface stops the old
 subscription, loads the new history/state, and resumes events from the correct
-sequence. See [Session switching](full-stack-chat.md#switch-a-session-and-show-its-history).
+sequence. See [Session switching](full-stack-chat.md#step-7-switch-a-session-and-show-its-history).
 
 ## Build your own UI
 
 Keep using [Client](../modules/nexum-client.md) and [Protocol](../modules/nexum-protocol.md),
 or implement only the [Surface Adapter](../modules/nexum-surface-adapter.md).
 You do not need to reimplement the Coding Loop.
+
+## Related references
+
+- [UI interaction protocol](../ui/interaction-protocol.md)
+- [UI states and recovery](../ui/states.md)
+- [Events and SSE](../capabilities/events.md)

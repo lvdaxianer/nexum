@@ -48,3 +48,25 @@ The most common members are `sessionService`, `codingLoop`, `rolePrompt`,
 `permissionBroker`, `questionPort`, `eventHub`, and `messageStore`. See the
 [Session guide](../capabilities/session.md) for the next call after creating a
 Runtime.
+
+## Runtime and port mapping
+
+| Application member | Composed from | Responsibility |
+| --- | --- | --- |
+| `sessionService`, `codingLoop` | Core + stores + Model/Host | Session lifecycle and execution |
+| `permissionBroker`, `questionPort` | Core + interaction/policy stores | Pending interactions and replies |
+| `skillRegistry`, `skillInvocation`, `toolRegistry` | Core + Skill/Host | Discovery, permission, and execution |
+| `eventHub`, `messageStore` | Persistence | Event delivery and message history |
+| `modelConfig`, `rolePrompt`, `modelProbe` | Persistence + Integrations | Model setup, role prompt, and probing |
+| `memory`, `host`, `mcp` | Persistence/Integrations | Context memory, files, and external capabilities |
+
+Application is the layer that composes these pieces. Server maps the result to
+Protocol; a UI must not depend on Application's internal composition objects.
+
+## Choosing a Runtime creator
+
+Use `createEmbeddedRuntime()` for in-process experiments and short-lived tasks,
+`createLocalRuntime()` for a local application that needs file recovery, and
+`createSqliteRuntime()` for a Server or a transactional durable store. Start
+with a creator and replace an option only when a boundary really needs to
+change.

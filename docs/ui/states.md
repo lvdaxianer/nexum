@@ -26,3 +26,37 @@ to the active Session.
 
 See [Session](../capabilities/session.md), [Events](../capabilities/events.md),
 [Permission](permission.md), and [Question](question.md).
+
+## Submit, cancel, and continue
+
+### Prompt
+
+Disable duplicate submission while the current request is being admitted, then
+show the run from ordered events. A Prompt is durable before execution begins;
+refreshing the page must not create a second task from the same user action.
+
+### Question and Permission
+
+Keep the card pending until the matching protocol response is observed. Disable
+the reply control after submission and show an error/reload state if the request
+is stale or belongs to another Session.
+
+### Cancel and continue
+
+`cancel()` targets the active Session run and should be followed by state
+refresh. `continue()` is available only when `state().canContinue` says the
+Session can recover. A cancelled or failed run is not automatically retried by
+the browser.
+
+## A reliable initialization sequence
+
+```text
+selected session ID
+  → state()
+  → messages() with snapshot/page cursor
+  → events({ afterSequence: state.lastSequence })
+  → deduplicate by eventID
+```
+
+Use the same sequence after reconnect or Session switching, and always scope
+actions and event subscriptions to the selected Session ID.

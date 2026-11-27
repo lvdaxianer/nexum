@@ -1,6 +1,6 @@
 # Nexum 文档中心
 
-[English](../../README.zh-CN.md)
+[English](../../README.md)
 
 这里是 Nexum 的唯一文档入口。你不需要先了解源码或模块内部实现，先按自己的目标选择一条路径即可。
 

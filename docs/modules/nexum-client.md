@@ -42,3 +42,31 @@ schemas are defined by [Protocol](nexum-protocol.md) and the [Runtime API](../..
 
 The Client validates JSON envelopes, protocol versions, SSE events, and stable
 errors. It does not own Session rules or UI state.
+
+### Role prompt methods
+
+| Method | Input | Purpose |
+| --- | --- | --- |
+| `rolePrompt.get()` | none | Read the current prompt and source |
+| `rolePrompt.update({ prompt })` | `prompt` | Update the Runtime-level default role |
+| `rolePrompt.reset()` | none | Restore the default prompt |
+
+The role prompt is configured separately from `session.prompt({ text })`. The
+former is a Runtime instruction; the latter is the user's current task.
+
+### Other method groups
+
+| Group | Methods | Purpose |
+| --- | --- | --- |
+| Capabilities | `capabilities()` | Discover enabled operations, events, and interactions |
+| Model | `experimental.nexum.model.get/update/probe()` | Read, update, and probe model configuration |
+| Permission | `session.permission.list/reply()` | Read pending requests and submit decisions |
+| Permission policy | `experimental.nexum.permissionPolicy.list/create/update/remove()` | Manage policy rules |
+| Question | `session.question.list/reply/cancel()` | Read, answer, or cancel Questions |
+| Skill | `session.skill.list/detail/register/refresh/validate/unregister()` | Discover and manage Skills |
+
+JSON requests use `Accept: application/json` and `Content-Type:
+application/json`; SSE uses `Accept: text/event-stream`. Client errors expose a
+stable code, status, message, and optional trace ID. An `AbortSignal` controls
+the lifetime of an event subscription; the Surface owns event deduplication and
+UI projection.

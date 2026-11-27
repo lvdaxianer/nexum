@@ -30,3 +30,22 @@ needs to implement the same versioned envelope and event rules.
 
 Protocol has no runtime dependency on Core, Application, Server, or UI. See the
 [event guide](../capabilities/events.md) and the [Runtime API](../../apis/nexum.md).
+
+## Protocol identity and envelope
+
+The protocol identity is `nexum.runtime.v1`; the default HTTP prefix is
+`/api/nexum`. JSON responses use `data` and `meta.protocolVersion`. SSE frames
+use the same event envelope and keep `eventID`, `sessionID`, `sequence`, and
+`type` explicit.
+
+| Model | Used by | Purpose |
+| --- | --- | --- |
+| `NexumSession`, `NexumSessionState`, `NexumSessionMessages` | Server, Client, Chat Surface | Session lifecycle, recovery, and paginated history |
+| `NexumEvent` | Server, Client, Surfaces | Ordered text, tool, interaction, and terminal facts |
+| `NexumPermission`, `NexumQuestion` | Application, Server, Chat Surface | Human-in-the-loop requests and replies |
+| `NexumPermissionPolicyRule` | Server, Client, CLI | Policy lookup and management |
+| `NexumCapabilities` | Server, Client, Surfaces | Feature discovery and UI switches |
+| `NexumSkill`, `NexumModelConfig`, `NexumRolePrompt` | Server, Client, Surfaces | Skill, model, and role configuration |
+
+Protocol only describes data. Use Client or HTTP/SSE to create Sessions,
+persist messages, and execute the model.

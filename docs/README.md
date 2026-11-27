@@ -7,6 +7,9 @@ not need to understand the source tree first: choose a goal, follow one
 composition example, and open the linked module or protocol reference when you
 need its parameters.
 
+The English pages are the default public entry. The [Chinese mirror](zh-CN/README.md)
+contains the same learning path and API details.
+
 ## Start here
 
 If this is your first time using Nexum, read in this order:
@@ -80,6 +83,14 @@ boundaries:
 
 - [Module boundaries](architecture/module-boundaries.md)
 - [Runtime flow](architecture/runtime-flow.md)
+
+## How to use this documentation
+
+Use the examples when you are deciding how to combine Nexum. Use capability
+pages when you know what behavior you need, such as Session recovery or model
+configuration. Use module pages to look up import paths, parameters, return
+values, and replacement boundaries. Use the [Runtime API](../apis/nexum.md)
+when your client is another process or another language.
 
 ## Language policy
 
