@@ -1,8 +1,8 @@
-# `nexum/integrations`
+# `nexum-ai/integrations`
 
 [English](../../modules/nexum-integrations.md)
 
-源码模块：`@nexum/integrations`。用户安装唯一公共包 `nexum` 后，从 `nexum/integrations` 导入外部系统适配器。
+源码模块：`@nexum/integrations`。用户安装唯一公共包 `nexum-ai` 后，从 `nexum-ai/integrations` 导入外部系统适配器。
 
 状态：现状基线
 
@@ -24,7 +24,7 @@
 - `createNexumProjectContextPort`、`createLocalSkillSource`：提供项目上下文和本地 Skill 文件来源。
 
 ```ts
-import { createLocalHostAdapter, createOpenAICompatibleModelPort } from "nexum/integrations"
+import { createLocalHostAdapter, createOpenAICompatibleModelPort } from "nexum-ai/integrations"
 
 const host = createLocalHostAdapter()
 const model = createOpenAICompatibleModelPort({ config: modelConfig })

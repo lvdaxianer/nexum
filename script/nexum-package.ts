@@ -1,6 +1,8 @@
 import { join } from "node:path"
 
 export const artifactRoot = join(process.cwd(), "artifacts", "nexum")
+export const releasePackageName = "nexum-ai"
+export const releasePackageVersion = "0.1.0-beta.0"
 
 export const publicEntries = {
   ".": { source: "script/nexum-entry.ts", output: "index" },
@@ -22,19 +24,19 @@ export const publicEntries = {
 export const publicSubpaths = Object.keys(publicEntries)
 
 export const workspacePackageToSubpath = {
-  "@nexum/core": "nexum/core",
-  "@nexum/protocol": "nexum/protocol",
-  "@nexum/application": "nexum/application",
-  "@nexum/persistence": "nexum/persistence",
-  "@nexum/persistence-memory": "nexum/persistence/memory",
-  "@nexum/persistence-file": "nexum/persistence/file",
-  "@nexum/persistence-sqlite": "nexum/persistence/sqlite",
-  "@nexum/integrations": "nexum/integrations",
-  "@nexum/client": "nexum/client",
-  "@nexum/server": "nexum/server",
-  "@nexum/surface-adapter": "nexum/surface-adapter",
-  "@nexum/chat-surface": "nexum/chat-surface",
-  "@nexum/cli": "nexum/cli",
+  "@nexum/core": `${releasePackageName}/core`,
+  "@nexum/protocol": `${releasePackageName}/protocol`,
+  "@nexum/application": `${releasePackageName}/application`,
+  "@nexum/persistence": `${releasePackageName}/persistence`,
+  "@nexum/persistence-memory": `${releasePackageName}/persistence/memory`,
+  "@nexum/persistence-file": `${releasePackageName}/persistence/file`,
+  "@nexum/persistence-sqlite": `${releasePackageName}/persistence/sqlite`,
+  "@nexum/integrations": `${releasePackageName}/integrations`,
+  "@nexum/client": `${releasePackageName}/client`,
+  "@nexum/server": `${releasePackageName}/server`,
+  "@nexum/surface-adapter": `${releasePackageName}/surface-adapter`,
+  "@nexum/chat-surface": `${releasePackageName}/chat-surface`,
+  "@nexum/cli": `${releasePackageName}/cli`,
 } as const
 
 export function outputPath(entry: (typeof publicEntries)[keyof typeof publicEntries]) {

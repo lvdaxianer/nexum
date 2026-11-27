@@ -1,14 +1,14 @@
-# `nexum/surface-adapter`
+# `nexum-ai/surface-adapter`
 
 [中文](../zh-CN/modules/nexum-surface-adapter.md)
 
 Surface Adapter is the stable boundary between a chat UI and Nexum transport.
-Import it from `nexum/surface-adapter`.
+Import it from `nexum-ai/surface-adapter`.
 
 ## Public API
 
 ```ts
-import { createChatProtocolAdapter } from "nexum/surface-adapter"
+import { createChatProtocolAdapter } from "nexum-ai/surface-adapter"
 
 const adapter = createChatProtocolAdapter({ baseUrl: "http://127.0.0.1:4097" })
 const state = await adapter.loadState(sessionID)

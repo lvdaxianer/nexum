@@ -1,14 +1,14 @@
-# `nexum/client`
+# `nexum-ai/client`
 
 [中文](../zh-CN/modules/nexum-client.md)
 
 The Client is the TypeScript consumer for Nexum HTTP/SSE. Import it from
-`nexum/client`.
+`nexum-ai/client`.
 
 ## Public API
 
 ```ts
-import { Nexum } from "nexum/client"
+import { Nexum } from "nexum-ai/client"
 
 const client = Nexum.make({ baseUrl: "http://127.0.0.1:4097" })
 ```

@@ -1,8 +1,8 @@
-# `nexum/server`
+# `nexum-ai/server`
 
 [English](../../modules/nexum-server.md)
 
-源码模块：`@nexum/server`。用户安装唯一公共包 `nexum` 后，从 `nexum/server` 导入 HTTP/SSE Server。
+源码模块：`@nexum/server`。用户安装唯一公共包 `nexum-ai` 后，从 `nexum-ai/server` 导入 HTTP/SSE Server。
 
 状态：现状基线
 
@@ -21,7 +21,7 @@ Server 不拥有 Core 的工具和权限决策，也不把 UI 规则下沉到 HT
 入口 [`src/index.ts`](../../../packages/nexum-server/src/index.ts) 导出 `startNexumServer(options)` 和 `NexumServer` 句柄。
 
 ```ts
-import { startNexumServer } from "nexum/server"
+import { startNexumServer } from "nexum-ai/server"
 
 const server = await startNexumServer({
   hostname: "127.0.0.1",

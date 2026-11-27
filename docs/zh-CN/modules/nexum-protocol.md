@@ -1,8 +1,8 @@
-# `nexum/protocol`
+# `nexum-ai/protocol`
 
 [English](../../modules/nexum-protocol.md)
 
-源码模块：`@nexum/protocol`。用户安装唯一公共包 `nexum` 后，从 `nexum/protocol` 导入协议类型。
+源码模块：`@nexum/protocol`。用户安装唯一公共包 `nexum-ai` 后，从 `nexum-ai/protocol` 导入协议类型。
 
 状态：现状基线
 
@@ -38,14 +38,14 @@
 | `NexumRolePrompt`                   | `prompt`、`source`、`updatedAt?`                                                   | Runtime 角色提示词快照 |
 | `NexumPermission` / `NexumQuestion` | 请求 ID、Session ID 和交互内容                                                     | 待处理的人机交互       |
 
-Protocol 只描述数据，不负责创建 Session、保存消息或执行模型。需要调用接口时使用 `nexum/client` 或 HTTP/SSE API。
+Protocol 只描述数据，不负责创建 Session、保存消息或执行模型。需要调用接口时使用 `nexum-ai/client` 或 HTTP/SSE API。
 
 ## 协议使用方式
 
 Server 将模型编码为 JSON Envelope 或 SSE 事件；Client 校验 `meta.protocolVersion` 并把结果恢复为协议类型；UI 只消费协议数据和事件，不直接依赖 Server 内部实现。
 
 ```ts
-import type { NexumEvent, NexumSession } from "nexum/protocol"
+import type { NexumEvent, NexumSession } from "nexum-ai/protocol"
 
 function renderSession(session: NexumSession) {
   return `${session.id}: ${session.status}`

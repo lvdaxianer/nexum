@@ -23,8 +23,8 @@ Web / Desktop / CLI / another language
 ## Server composition
 
 ```ts
-import { createSqliteRuntime } from "nexum/application"
-import { startNexumServer } from "nexum/server"
+import { createSqliteRuntime } from "nexum-ai/application"
+import { startNexumServer } from "nexum-ai/server"
 
 const runtime = await createSqliteRuntime({
   databasePath: ".nexum/nexum.db",
@@ -54,7 +54,7 @@ runtime's execution or persistence rules.
 ## Client composition
 
 ```ts
-import { Nexum } from "nexum/client"
+import { Nexum } from "nexum-ai/client"
 
 const client = Nexum.make({ baseUrl: "http://127.0.0.1:4097" })
 const session = await client.experimental.nexum.session.create({

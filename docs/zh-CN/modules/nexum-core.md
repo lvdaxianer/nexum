@@ -1,8 +1,8 @@
-# `nexum/core`
+# `nexum-ai/core`
 
 [English](../../modules/nexum-core.md)
 
-源码模块：`@nexum/core`。用户安装唯一公共包 `nexum` 后，从 `nexum/core` 导入类型和端口。
+源码模块：`@nexum/core`。用户安装唯一公共包 `nexum-ai` 后，从 `nexum-ai/core` 导入类型和端口。
 
 状态：现状基线
 

@@ -1,8 +1,8 @@
-# `nexum/cli`
+# `nexum-ai/cli`
 
 [中文](../zh-CN/modules/nexum-cli.md)
 
-The CLI is the terminal Surface shipped with `nexum`; install the package once
+The CLI is the terminal Surface shipped with `nexum-ai`; install the package once
 and use the `nexum` binary. It consumes the same protocol as Web surfaces and
 does not own Core execution or business decisions.
 

@@ -1,9 +1,16 @@
 import { mkdir, readdir, rm } from "node:fs/promises"
 import { basename, dirname, join, relative, resolve } from "node:path"
-import { artifactRoot, declarationPath, outputPath, publicEntries, workspacePackageToSubpath } from "./nexum-package"
+import {
+  artifactRoot,
+  declarationPath,
+  outputPath,
+  publicEntries,
+  releasePackageName,
+  releasePackageVersion,
+  workspacePackageToSubpath,
+} from "./nexum-package"
 
 const externalDependencies = ["@modelcontextprotocol/sdk", "dompurify", "marked", "solid-js"]
-const packageVersion = "0.1.0"
 
 await rm(artifactRoot, { recursive: true, force: true })
 await mkdir(join(artifactRoot, "dist"), { recursive: true })
@@ -87,11 +94,17 @@ for (const [subpath, entry] of Object.entries(publicEntries)) {
 }
 
 const manifest = {
-  name: "nexum",
-  version: packageVersion,
+  name: releasePackageName,
+  version: releasePackageVersion,
   description: "Composable, UI-agnostic Agent Runtime",
   type: "module",
-  bin: { nexum: "./dist/cli.js" },
+  engines: { bun: ">=1.4.4" },
+  repository: { type: "git", url: "git+https://github.com/lvdaxianer/nexum.git" },
+  homepage: "https://github.com/lvdaxianer/nexum",
+  bugs: { url: "https://github.com/lvdaxianer/nexum/issues" },
+  keywords: ["agent", "runtime", "ai", "bun"],
+  publishConfig: { tag: "beta" },
+  bin: { nexum: "dist/cli.js" },
   exports: {
     ".": { types: "./dist/index.d.ts", import: "./dist/index.js", default: "./dist/index.js" },
     ...Object.fromEntries(
@@ -160,7 +173,7 @@ async function rewriteDeclarations() {
       if (!subpath) return name
       const suffix = name.slice(base.length)
       return `${subpath}${suffix}`
-    }).replace(/nexum\/persistence\/internal\/([a-z0-9-]+)/g, "../persistence/$1.js")
+    }).replace(/nexum-ai\/persistence\/internal\/([a-z0-9-]+)/g, "../persistence/$1.js")
     await Bun.write(path, rewritten)
   }
 }

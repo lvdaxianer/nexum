@@ -1,8 +1,8 @@
-# `nexum/chat-surface`
+# `nexum-ai/chat-surface`
 
 [English](../../modules/nexum-chat-surface.md)
 
-源码模块：`@nexum/chat-surface`。用户安装唯一公共包 `nexum` 后，从 `nexum/chat-surface` 导入聊天组件。
+源码模块：`@nexum/chat-surface`。用户安装唯一公共包 `nexum-ai` 后，从 `nexum-ai/chat-surface` 导入聊天组件。
 
 状态：现状基线
 
@@ -29,8 +29,8 @@
 Solid 接入：
 
 ```tsx
-import { ChatSurface } from "nexum/chat-surface"
-import "nexum/chat-surface/styles.css"
+import { ChatSurface } from "nexum-ai/chat-surface"
+import "nexum-ai/chat-surface/styles.css"
 
 export function ChatPanel(props: { sessionID: string; apiBaseUrl: string }) {
   return <ChatSurface sessionID={props.sessionID} client={{ baseUrl: props.apiBaseUrl }} title="Nexum Chat" />

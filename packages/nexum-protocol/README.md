@@ -1,13 +1,13 @@
 # Nexum Protocol
 
-Protocol 是版本化的数据模型和事件契约，发布入口为 `nexum/protocol`。它定义 `nexum.runtime.v1`、JSON Envelope、能力发现、Session、Permission、Question、Skill、事件和 SSE 数据结构。
+Protocol 是版本化的数据模型和事件契约，发布入口为 `nexum-ai/protocol`。它定义 `nexum.runtime.v1`、JSON Envelope、能力发现、Session、Permission、Question、Skill、事件和 SSE 数据结构。
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 ```ts
-import { NEXUM_API_PREFIX, NEXUM_PROTOCOL_VERSION, type NexumEvent } from "nexum/protocol"
+import { NEXUM_API_PREFIX, NEXUM_PROTOCOL_VERSION, type NexumEvent } from "nexum-ai/protocol"
 
 console.log(NEXUM_PROTOCOL_VERSION, NEXUM_API_PREFIX)
 function consume(event: NexumEvent) { /* 按事件类型更新 UI */ }

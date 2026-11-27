@@ -25,16 +25,16 @@ Model provider
 Nexum publishes one `nexum` package. Import public modules through subpaths:
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 | Entry point | Purpose |
 | --- | --- |
-| [`nexum/application`](../modules/nexum-application.md) | Create the Runtime, Session, and Coding Loop |
-| [`nexum/persistence/sqlite`](../modules/nexum-persistence-sqlite.md) | Store Sessions, messages, and events |
-| [`nexum/server`](../modules/nexum-server.md) | Provide the HTTP/SSE boundary |
-| [`nexum/client`](../modules/nexum-client.md) | Create Sessions, submit Prompts, and subscribe to events |
-| [`nexum/chat-surface`](../modules/nexum-chat-surface.md) | Render the chat UI |
+| [`nexum-ai/application`](../modules/nexum-application.md) | Create the Runtime, Session, and Coding Loop |
+| [`nexum-ai/persistence/sqlite`](../modules/nexum-persistence-sqlite.md) | Store Sessions, messages, and events |
+| [`nexum-ai/server`](../modules/nexum-server.md) | Provide the HTTP/SSE boundary |
+| [`nexum-ai/client`](../modules/nexum-client.md) | Create Sessions, submit Prompts, and subscribe to events |
+| [`nexum-ai/chat-surface`](../modules/nexum-chat-surface.md) | Render the chat UI |
 
 ## Step 2: Create the backend Runtime
 
@@ -42,7 +42,7 @@ The Runtime is where the Agent actually runs. It owns Sessions, models, tools,
 permissions, and events.
 
 ```ts
-import { createSqliteRuntime } from "nexum/application"
+import { createSqliteRuntime } from "nexum-ai/application"
 
 const runtime = await createSqliteRuntime({
   databasePath: ".nexum/nexum.db",
@@ -92,7 +92,7 @@ Read [Model / Runtime](../capabilities/model-runtime.md) and
 Pass the composed Runtime to Server:
 
 ```ts
-import { startNexumServer } from "nexum/server"
+import { startNexumServer } from "nexum-ai/server"
 
 const server = await startNexumServer({
   runtime,
@@ -114,10 +114,10 @@ Server does not own Agent execution. See the [Nexum Runtime API](../../apis/nexu
 
 ## Step 5: Create a Session from the frontend
 
-The frontend connects to Server through `nexum/client` and creates a Session:
+The frontend connects to Server through `nexum-ai/client` and creates a Session:
 
 ```ts
-import { Nexum } from "nexum/client"
+import { Nexum } from "nexum-ai/client"
 
 const API_BASE_URL = "http://127.0.0.1:4097"
 const client = Nexum.make({ baseUrl: API_BASE_URL })
@@ -144,7 +144,7 @@ from the backend SQLite store; the frontend never reads the database directly:
 
 ```tsx
 import { For, Show, createSignal, onMount } from "solid-js"
-import { Nexum, type NexumSession } from "nexum/client"
+import { Nexum, type NexumSession } from "nexum-ai/client"
 
 const API_BASE_URL = "http://127.0.0.1:4097"
 
@@ -216,8 +216,8 @@ needs to update this value:
 
 ```tsx
 import { Show, createSignal } from "solid-js"
-import { ChatSurface } from "nexum/chat-surface"
-import "nexum/chat-surface/styles.css"
+import { ChatSurface } from "nexum-ai/chat-surface"
+import "nexum-ai/chat-surface/styles.css"
 
 const API_BASE_URL = "http://127.0.0.1:4097"
 

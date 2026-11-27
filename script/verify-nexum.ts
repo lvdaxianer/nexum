@@ -1,7 +1,15 @@
 import { existsSync, mkdtempSync } from "node:fs"
 import { join, relative } from "node:path"
 import { tmpdir } from "node:os"
-import { artifactRoot, declarationPath, outputPath, publicEntries, publicSubpaths } from "./nexum-package"
+import {
+  artifactRoot,
+  declarationPath,
+  outputPath,
+  publicEntries,
+  publicSubpaths,
+  releasePackageName,
+  releasePackageVersion,
+} from "./nexum-package"
 
 const failures: string[] = []
 
@@ -18,7 +26,12 @@ if (!existsSync(manifestPath)) {
   fail("缺少 artifacts/nexum/package.json")
 } else {
   const manifest = await Bun.file(manifestPath).json()
-  if (manifest.name !== "nexum") fail(`发布包名必须是 nexum，当前为 ${String(manifest.name)}`)
+  if (manifest.name !== releasePackageName) fail(`发布包名必须是 ${releasePackageName}，当前为 ${String(manifest.name)}`)
+  if (manifest.version !== releasePackageVersion) {
+    fail(`发布包版本必须是 ${releasePackageVersion}，当前为 ${String(manifest.version)}`)
+  }
+  if (manifest.engines?.bun !== ">=1.4.4") fail("发布包必须声明 Bun >=1.4.4")
+  if (manifest.publishConfig?.tag !== "beta") fail("内测包必须使用 beta dist-tag")
   if (manifest.private === true) fail("发布包不能标记为 private")
   if (manifest.dependencies && Object.keys(manifest.dependencies).some((name) => name.startsWith("@nexum/"))) {
     fail("发布 dependencies 不能包含 @nexum/*")
@@ -51,7 +64,7 @@ if (existsSync(artifactRoot)) {
   for (const file of await Array.fromAsync(new Bun.Glob("dist/**/*.{js,d.ts,css}").scan({ cwd: artifactRoot, onlyFiles: true }))) {
     const contents = await Bun.file(join(artifactRoot, file)).text()
     if (contents.includes("@nexum/")) fail(`${file} 泄漏了 @nexum/* 引用`)
-    if (contents.includes("nexum/persistence/internal/")) fail(`${file} 泄漏了 persistence internal 引用`)
+    if (contents.includes("nexum-ai/persistence/internal/")) fail(`${file} 泄漏了 persistence internal 引用`)
     if (contents.includes("/src/") || contents.includes("packages/")) fail(`${file} 泄漏了源码路径`)
   }
 }
@@ -73,7 +86,7 @@ async function verifyConsumer(tarball: string) {
   const consumer = mkdtempSync(join(tmpdir(), "nexum-consumer-"))
   await Bun.write(
     join(consumer, "package.json"),
-    `${JSON.stringify({ type: "module", private: true, dependencies: { nexum: `file:${tarball}` }, scripts: { typecheck: "tsc --noEmit" } }, null, 2)}\n`,
+    `${JSON.stringify({ type: "module", private: true, dependencies: { [releasePackageName]: `file:${tarball}` }, scripts: { typecheck: "tsc --noEmit" } }, null, 2)}\n`,
   )
   const install = Bun.spawnSync(["bun", "install", "--no-progress"], { cwd: consumer, stdout: "pipe", stderr: "pipe" })
   if (install.exitCode !== 0) {
@@ -83,20 +96,20 @@ async function verifyConsumer(tarball: string) {
   await Bun.write(
     join(consumer, "imports.mjs"),
     `
-      await import("nexum")
-      await import("nexum/core")
-      await import("nexum/protocol")
-      await import("nexum/application")
-      await import("nexum/persistence")
-      await import("nexum/persistence/memory")
-      await import("nexum/persistence/file")
-      await import("nexum/persistence/sqlite")
-      await import("nexum/integrations")
-      await import("nexum/client")
-      await import("nexum/server")
-      await import("nexum/surface-adapter")
-      await import("nexum/chat-surface")
-      await import("nexum/cli")
+      await import("${releasePackageName}")
+      await import("${releasePackageName}/core")
+      await import("${releasePackageName}/protocol")
+      await import("${releasePackageName}/application")
+      await import("${releasePackageName}/persistence")
+      await import("${releasePackageName}/persistence/memory")
+      await import("${releasePackageName}/persistence/file")
+      await import("${releasePackageName}/persistence/sqlite")
+      await import("${releasePackageName}/integrations")
+      await import("${releasePackageName}/client")
+      await import("${releasePackageName}/server")
+      await import("${releasePackageName}/surface-adapter")
+      await import("${releasePackageName}/chat-surface")
+      await import("${releasePackageName}/cli")
     `,
   )
   const imports = Bun.spawnSync(["bun", "run", "imports.mjs"], { cwd: consumer, stdout: "pipe", stderr: "pipe" })
@@ -104,7 +117,7 @@ async function verifyConsumer(tarball: string) {
 
   await Bun.write(
     join(consumer, "types.ts"),
-    `/// <reference types="bun" />\nimport { createEmbeddedRuntime } from "nexum/application"\nimport { Nexum } from "nexum/client"\nimport { createMemoryPersistence } from "nexum/persistence/memory"\nvoid createEmbeddedRuntime\nvoid Nexum\nvoid createMemoryPersistence\n`,
+    `/// <reference types="bun" />\nimport { createEmbeddedRuntime } from "${releasePackageName}/application"\nimport { Nexum } from "${releasePackageName}/client"\nimport { createMemoryPersistence } from "${releasePackageName}/persistence/memory"\nvoid createEmbeddedRuntime\nvoid Nexum\nvoid createMemoryPersistence\n`,
   )
   const typecheck = Bun.spawnSync(
     ["bunx", "--bun", "tsc", "--noEmit", "--module", "NodeNext", "--moduleResolution", "NodeNext", "--target", "ES2022", "types.ts"],
@@ -118,7 +131,7 @@ async function verifyConsumer(tarball: string) {
 
   const cli = Bun.spawnSync([join(consumer, "node_modules/.bin/nexum"), "--help"], { cwd: consumer, stdout: "pipe", stderr: "pipe" })
   if (cli.exitCode !== 0) fail(`仓库外 consumer CLI 检查失败:\n${new TextDecoder().decode(cli.stderr)}`)
-  if (!existsSync(join(consumer, "node_modules/nexum/dist/chat-surface.css"))) fail("仓库外 consumer 缺少 Chat Surface CSS")
+  if (!existsSync(join(consumer, `node_modules/${releasePackageName}/dist/chat-surface.css`))) fail("仓库外 consumer 缺少 Chat Surface CSS")
 
   const tar = Bun.spawnSync(["tar", "-tzf", tarball], { stdout: "pipe", stderr: "pipe" })
   if (tar.exitCode !== 0) {

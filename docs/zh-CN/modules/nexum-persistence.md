@@ -1,8 +1,8 @@
-# `nexum/persistence`
+# `nexum-ai/persistence`
 
 [English](../../modules/nexum-persistence.md)
 
-源码模块：`@nexum/persistence`。用户安装唯一公共包 `nexum` 后，从 `nexum/persistence` 导入持久化契约和 Store 实现。
+源码模块：`@nexum/persistence`。用户安装唯一公共包 `nexum-ai` 后，从 `nexum-ai/persistence` 导入持久化契约和 Store 实现。
 
 状态：现状基线
 
@@ -35,7 +35,7 @@
 | `createNexumEventHub(options?)`   | `filePath?`、保留策略选项 | `NexumEventHub` | 发布、订阅和回放 Runtime 事件 |
 | `createInMemoryMemory(options?)`  | Memory 配置可选           | `MemoryPort`    | 创建进程内记忆实现            |
 
-具体 Runtime 组合优先使用 `nexum/application` 的创建器；只有需要替换单个 Store 或实现自定义 Persistence 时，才直接调用这些 API。
+具体 Runtime 组合优先使用 `nexum-ai/application` 的创建器；只有需要替换单个 Store 或实现自定义 Persistence 时，才直接调用这些 API。
 
 ## 持久化与恢复
 

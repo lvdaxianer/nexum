@@ -1,8 +1,8 @@
-# `nexum/surface-adapter`
+# `nexum-ai/surface-adapter`
 
 [English](../../modules/nexum-surface-adapter.md)
 
-源码模块：`@nexum/surface-adapter`。用户安装唯一公共包 `nexum` 后，从 `nexum/surface-adapter` 导入聊天协议适配器。
+源码模块：`@nexum/surface-adapter`。用户安装唯一公共包 `nexum-ai` 后，从 `nexum-ai/surface-adapter` 导入聊天协议适配器。
 
 状态：现状基线
 
@@ -21,7 +21,7 @@
 入口 [`src/index.ts`](../../../packages/nexum-surface-adapter/src/index.ts) 导出 `CHAT_PROTOCOL_METHODS`、`ChatProtocolAdapter`、`ChatProtocolError`、`normalizeChatProtocolError`、`createChatProtocolAdapter` 以及请求/标识类型，并重新导出 `NexumEvent`、`NexumPermission`、`NexumQuestion`、`NexumSession`、`NexumSessionMessages`、`NexumSkill` 协议类型。
 
 ```ts
-import { createChatProtocolAdapter } from "nexum/surface-adapter"
+import { createChatProtocolAdapter } from "nexum-ai/surface-adapter"
 
 const adapter = createChatProtocolAdapter({ baseUrl: "http://127.0.0.1:4097" })
 

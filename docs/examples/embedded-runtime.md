@@ -12,8 +12,8 @@ need HTTP or a Server. The default setup uses in-memory Persistence.
 
 ```text
 Your application
-  └─ nexum/application
-       ├─ nexum/core
+  └─ nexum-ai/application
+       ├─ nexum-ai/core
        ├─ Memory Persistence
        └─ ModelPort
 ```
@@ -25,7 +25,7 @@ See [Application](../modules/nexum-application.md), [Core](../modules/nexum-core
 ## Example
 
 ```ts
-import { createEmbeddedRuntime } from "nexum/application"
+import { createEmbeddedRuntime } from "nexum-ai/application"
 
 const runtime = createEmbeddedRuntime()
 

@@ -10,10 +10,10 @@
 
 ```text
 你的 Web 应用
-  └─ nexum/chat-surface
-       └─ nexum/surface-adapter
-            └─ nexum/client
-                 └─ nexum/protocol
+  └─ nexum-ai/chat-surface
+       └─ nexum-ai/surface-adapter
+            └─ nexum-ai/client
+                 └─ nexum-ai/protocol
 ```
 
 涉及的公开模块：[Chat Surface](../modules/nexum-chat-surface.md)、[Surface Adapter](../modules/nexum-surface-adapter.md)、[Client](../modules/nexum-client.md) 和 [Protocol](../modules/nexum-protocol.md)。
@@ -21,8 +21,8 @@
 ## 完整示例
 
 ```tsx
-import { ChatSurface } from "nexum/chat-surface"
-import "nexum/chat-surface/styles.css"
+import { ChatSurface } from "nexum-ai/chat-surface"
+import "nexum-ai/chat-surface/styles.css"
 
 export function AgentPanel(props: { sessionID: string; serverUrl: string }) {
   return <ChatSurface sessionID={props.sessionID} client={{ baseUrl: props.serverUrl }} title="项目助手" />

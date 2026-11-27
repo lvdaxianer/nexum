@@ -1,9 +1,9 @@
-# `nexum/integrations`
+# `nexum-ai/integrations`
 
 [中文](../zh-CN/modules/nexum-integrations.md)
 
 Integrations connect external systems to Core ports. Import them from
-`nexum/integrations`.
+`nexum-ai/integrations`.
 
 ## Public API
 

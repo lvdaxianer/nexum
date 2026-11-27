@@ -12,16 +12,16 @@ Nexum 不是绑定某个 UI 的完整聊天产品，也不是把所有能力塞�
 
 ## 发布包安装
 
-Nexum 对用户只发布一个 `nexum` 包，不发布独立的 application、core 或 client 包。安装编译后的产物后，通过 subpath 使用模块：
+Nexum 对用户只发布一个 `nexum-ai` 包，不发布独立的 application、core 或 client 包。安装编译后的产物后，通过 subpath 使用模块：
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 ```ts
-import { createLocalRuntime } from "nexum/application"
-import { Nexum } from "nexum/client"
-import { createFilePersistence } from "nexum/persistence/file"
+import { createLocalRuntime } from "nexum-ai/application"
+import { Nexum } from "nexum-ai/client"
+import { createFilePersistence } from "nexum-ai/persistence/file"
 ```
 
 完整入口和每个模块的使用说明见[模块文档索引](docs/zh-CN/modules/README.md)。
@@ -69,8 +69,8 @@ Application 提供默认 Runtime Composer。不要从零开始拼接所有模块
 
 | 组合案例                                                  | 主要模块                                                                                               | 适合场景                     |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------- |
-| [进程内嵌入 Agent](docs/zh-CN/examples/embedded-runtime.md)     | `nexum/application` + `nexum/core` + Memory Persistence                                                | 在自己的程序里直接调用 Agent |
-| [本地文件 Runtime](docs/zh-CN/examples/local-file-runtime.md)   | `nexum/application` + File Persistence                                                                 | CLI、桌面端和单机应用        |
+| [进程内嵌入 Agent](docs/zh-CN/examples/embedded-runtime.md)     | `nexum-ai/application` + `nexum-ai/core` + Memory Persistence                                                | 在自己的程序里直接调用 Agent |
+| [本地文件 Runtime](docs/zh-CN/examples/local-file-runtime.md)   | `nexum-ai/application` + File Persistence                                                                 | CLI、桌面端和单机应用        |
 | [SQLite + HTTP/SSE](docs/zh-CN/examples/sqlite-http-runtime.md) | Application + SQLite + [Server](docs/zh-CN/modules/nexum-server.md) + [Client](docs/zh-CN/modules/nexum-client.md) | Web、多端和跨语言接入        |
 | [聊天 UI](docs/zh-CN/examples/chat-surface.md)                  | [Client](docs/zh-CN/modules/nexum-client.md) + [Protocol](docs/zh-CN/modules/nexum-protocol.md) + Chat Surface     | 快速嵌入聊天界面             |
 
@@ -106,36 +106,36 @@ Application 提供默认 Runtime Composer。不要从零开始拼接所有模块
 
 | 包                                                                     | 所在边界     | 负责什么                                                                                            | 典型选择                       |
 | ---------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------- | ------------------------------ |
-| [`nexum/core`](docs/zh-CN/modules/nexum-core.md)                             | 运行时基础   | Coding Loop、Session、Permission、Question、Context、Skill、Memory/Host/Model/Store Port 和领域错误 | 所有 Runtime 的核心            |
-| [`nexum/persistence`](docs/zh-CN/modules/nexum-persistence.md)               | 持久化契约   | `NexumPersistence`、Store 组合契约和事件 Hub Port，不包含具体存储                                   | 自定义持久化实现的公共边界     |
-| [`nexum/persistence/memory`](docs/zh-CN/modules/nexum-persistence-memory.md) | 持久化实现   | 进程内内存 Store，不创建文件或数据库                                                                | 嵌入式运行、快速测试           |
-| [`nexum/persistence/file`](docs/zh-CN/modules/nexum-persistence-file.md)     | 持久化实现   | 本地 JSON 文件 Store，支持数据目录和原子写入                                                        | CLI、本地单机运行              |
-| [`nexum/persistence/sqlite`](docs/zh-CN/modules/nexum-persistence-sqlite.md) | 持久化实现   | SQLite Store、Schema 初始化、事务和重启恢复                                                         | Web/Server、真实持久化测试     |
-| [`nexum/integrations`](docs/zh-CN/modules/nexum-integrations.md)             | 外部集成     | OpenAI-compatible Model、本地 Host、目录校验、项目上下文、Skill 文件来源和 MCP                      | 替换模型、执行环境或 MCP SDK   |
-| [`nexum/application`](docs/zh-CN/modules/nexum-application.md)               | 应用编排     | Skill Registry、Tool Registry、Question Broker、Configured Coding Loop 和 Runtime Composer          | 创建完整 Runtime               |
-| [`nexum/protocol`](docs/zh-CN/modules/nexum-protocol.md)                     | 协议模型     | `nexum.runtime.v1`、JSON Envelope、能力、Session、交互和事件模型                                    | 实现其他语言或传输绑定         |
-| [`nexum/client`](docs/zh-CN/modules/nexum-client.md)                         | 协议消费     | HTTP 请求、响应校验、错误归一化和 SSE 消费                                                          | Web、CLI、桌面端和自定义客户端 |
-| [`nexum/server`](docs/zh-CN/modules/nexum-server.md)                         | 协议绑定     | 将已组合 Runtime 暴露为 HTTP/SSE，负责路由、错误边界和事件投递                                      | 独立本地服务或应用后端         |
-| [`nexum/surface-adapter`](docs/zh-CN/modules/nexum-surface-adapter.md)       | Surface 适配 | `ChatProtocolAdapter`、聊天操作和协议错误归一化                                                     | 复用聊天协议接入不同 UI        |
-| [`nexum/chat-surface`](docs/zh-CN/modules/nexum-chat-surface.md)             | UI 组件      | 可嵌入聊天组件、聊天交互和 Web Component                                                            | 在应用内嵌入聊天体验           |
+| [`nexum-ai/core`](docs/zh-CN/modules/nexum-core.md)                             | 运行时基础   | Coding Loop、Session、Permission、Question、Context、Skill、Memory/Host/Model/Store Port 和领域错误 | 所有 Runtime 的核心            |
+| [`nexum-ai/persistence`](docs/zh-CN/modules/nexum-persistence.md)               | 持久化契约   | `NexumPersistence`、Store 组合契约和事件 Hub Port，不包含具体存储                                   | 自定义持久化实现的公共边界     |
+| [`nexum-ai/persistence/memory`](docs/zh-CN/modules/nexum-persistence-memory.md) | 持久化实现   | 进程内内存 Store，不创建文件或数据库                                                                | 嵌入式运行、快速测试           |
+| [`nexum-ai/persistence/file`](docs/zh-CN/modules/nexum-persistence-file.md)     | 持久化实现   | 本地 JSON 文件 Store，支持数据目录和原子写入                                                        | CLI、本地单机运行              |
+| [`nexum-ai/persistence/sqlite`](docs/zh-CN/modules/nexum-persistence-sqlite.md) | 持久化实现   | SQLite Store、Schema 初始化、事务和重启恢复                                                         | Web/Server、真实持久化测试     |
+| [`nexum-ai/integrations`](docs/zh-CN/modules/nexum-integrations.md)             | 外部集成     | OpenAI-compatible Model、本地 Host、目录校验、项目上下文、Skill 文件来源和 MCP                      | 替换模型、执行环境或 MCP SDK   |
+| [`nexum-ai/application`](docs/zh-CN/modules/nexum-application.md)               | 应用编排     | Skill Registry、Tool Registry、Question Broker、Configured Coding Loop 和 Runtime Composer          | 创建完整 Runtime               |
+| [`nexum-ai/protocol`](docs/zh-CN/modules/nexum-protocol.md)                     | 协议模型     | `nexum.runtime.v1`、JSON Envelope、能力、Session、交互和事件模型                                    | 实现其他语言或传输绑定         |
+| [`nexum-ai/client`](docs/zh-CN/modules/nexum-client.md)                         | 协议消费     | HTTP 请求、响应校验、错误归一化和 SSE 消费                                                          | Web、CLI、桌面端和自定义客户端 |
+| [`nexum-ai/server`](docs/zh-CN/modules/nexum-server.md)                         | 协议绑定     | 将已组合 Runtime 暴露为 HTTP/SSE，负责路由、错误边界和事件投递                                      | 独立本地服务或应用后端         |
+| [`nexum-ai/surface-adapter`](docs/zh-CN/modules/nexum-surface-adapter.md)       | Surface 适配 | `ChatProtocolAdapter`、聊天操作和协议错误归一化                                                     | 复用聊天协议接入不同 UI        |
+| [`nexum-ai/chat-surface`](docs/zh-CN/modules/nexum-chat-surface.md)             | UI 组件      | 可嵌入聊天组件、聊天交互和 Web Component                                                            | 在应用内嵌入聊天体验           |
 | 仓库内部参考 Surface                                                   | 参考 UI      | Web 参考 Surface，把协议事件投影成聊天、卡片、抽屉和状态视图                                        | 参考实现，不作为公共入口       |
-| `nexum/cli`                                                            | 终端 Surface | REPL、思考动画、交互问答和管理面命令                                                                | 终端 Agent                     |
+| `nexum-ai/cli`                                                            | 终端 Surface | REPL、思考动画、交互问答和管理面命令                                                                | 终端 Agent                     |
 | 仓库内部验证组合                                                       | 验证组合     | Server、Runtime、Client 和 Surface 的跨层 POC 与持久化恢复验证                                      | Test Workbench，不作为生产依赖 |
 
-Persistence 实现的细节见 [`nexum/persistence/memory`](docs/zh-CN/modules/nexum-persistence-memory.md)、[`nexum/persistence/file`](docs/zh-CN/modules/nexum-persistence-file.md) 和 [`nexum/persistence/sqlite`](docs/zh-CN/modules/nexum-persistence-sqlite.md)。每个主要模块的实现边界见[模块文档索引](docs/zh-CN/modules/README.md)。
+Persistence 实现的细节见 [`nexum-ai/persistence/memory`](docs/zh-CN/modules/nexum-persistence-memory.md)、[`nexum-ai/persistence/file`](docs/zh-CN/modules/nexum-persistence-file.md) 和 [`nexum-ai/persistence/sqlite`](docs/zh-CN/modules/nexum-persistence-sqlite.md)。每个主要模块的实现边界见[模块文档索引](docs/zh-CN/modules/README.md)。
 
 ### 依赖方向
 
 ```text
-nexum/persistence/* ──> nexum/persistence ──> nexum/core
-nexum/integrations ─────────────────────────> nexum/core
-nexum/application ──> nexum/core + persistence/* + integrations
-nexum/protocol       纯协议模型，不依赖 Runtime 实现
-nexum/client ───────> nexum/protocol
-nexum/server ───────> nexum/core + nexum/application + nexum/protocol
-nexum/surface-adapter ──> nexum/client
-nexum/chat-surface ─────> nexum/surface-adapter
-nexum/cli ──────────────> nexum/surface-adapter + nexum/client
+nexum-ai/persistence/* ──> nexum-ai/persistence ──> nexum-ai/core
+nexum-ai/integrations ─────────────────────────> nexum-ai/core
+nexum-ai/application ──> nexum-ai/core + persistence/* + integrations
+nexum-ai/protocol       纯协议模型，不依赖 Runtime 实现
+nexum-ai/client ───────> nexum-ai/protocol
+nexum-ai/server ───────> nexum-ai/core + nexum-ai/application + nexum-ai/protocol
+nexum-ai/surface-adapter ──> nexum-ai/client
+nexum-ai/chat-surface ─────> nexum-ai/surface-adapter
+nexum-ai/cli ──────────────> nexum-ai/surface-adapter + nexum-ai/client
 参考 Surface ──────────> Client + Chat Surface，并组合本地运行时依赖
 Test Workbench ────────> Application + Server + Client + Core
 ```
@@ -151,7 +151,7 @@ Test Workbench ────────> Application + Server + Client + Core
 | 需要服务重启后恢复 Session 和事件     | [SQLite + HTTP/SSE](docs/zh-CN/examples/sqlite-http-runtime.md)           |
 | 使用企业模型网关                      | 注入自己的 `ModelPort` 或 Provider Catalog                          |
 | 限制文件和 Shell 能力                 | 注入自己的 `HostPort`/Sandbox，并保留 Core Permission               |
-| 使用远程数据库或事件总线              | 实现 `nexum/persistence` 的 Store/Event Port                        |
+| 使用远程数据库或事件总线              | 实现 `nexum-ai/persistence` 的 Store/Event Port                        |
 | 换成另一种 UI                         | [接入聊天 UI](docs/zh-CN/examples/chat-surface.md) 或复用 Protocol/Client |
 
 适配器只负责把 Core Port 接到外部技术。Permission Policy 是 Core 的领域策略；Skill Registry、Tool Registry 和 Question Broker 是 Application 服务，不应被误认为 Persistence 或 Integrations 的实现细节。

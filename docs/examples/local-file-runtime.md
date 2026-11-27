@@ -11,16 +11,16 @@ must keep Sessions, messages, events, and role configuration after restart.
 
 ```text
 Local application
-  └─ nexum/application
-       ├─ nexum/persistence/file
-       ├─ nexum/core
+  └─ nexum-ai/application
+       ├─ nexum-ai/persistence/file
+       ├─ nexum-ai/core
        └─ ModelPort
 ```
 
 ## Example
 
 ```ts
-import { createLocalRuntime } from "nexum/application"
+import { createLocalRuntime } from "nexum-ai/application"
 
 const runtime = createLocalRuntime({
   dataDirectory: ".nexum",

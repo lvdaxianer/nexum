@@ -1,4 +1,4 @@
-# `nexum/persistence/file`
+# `nexum-ai/persistence/file`
 
 [中文](../zh-CN/modules/nexum-persistence-file.md)
 
@@ -9,7 +9,7 @@ single-machine applications.
 ## Public API
 
 ```ts
-import { createFilePersistence } from "nexum/persistence/file"
+import { createFilePersistence } from "nexum-ai/persistence/file"
 
 const persistence = createFilePersistence({
   dataDirectory: ".nexum",

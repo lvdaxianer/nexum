@@ -1,8 +1,8 @@
-# `nexum/server`
+# `nexum-ai/server`
 
 [中文](../zh-CN/modules/nexum-server.md)
 
-Import `startNexumServer` from `nexum/server` to expose a composed Runtime over
+Import `startNexumServer` from `nexum-ai/server` to expose a composed Runtime over
 HTTP/SSE.
 
 ## Responsibility
@@ -14,7 +14,7 @@ It does not own Core decisions or UI rendering.
 ## Public API
 
 ```ts
-import { startNexumServer } from "nexum/server"
+import { startNexumServer } from "nexum-ai/server"
 
 const server = await startNexumServer({
   hostname: "127.0.0.1",

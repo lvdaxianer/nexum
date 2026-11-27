@@ -47,18 +47,18 @@
 
 | 模块            | 公开导入路径                                                                                          | API 文档                                                         |
 | --------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Application     | `nexum/application`                                                                                   | [Application API](modules/nexum-application.md#公开-api)         |
-| Core            | `nexum/core`                                                                                          | [Core API](modules/nexum-core.md#公开-api)                       |
-| Persistence     | `nexum/persistence`、`nexum/persistence/memory`、`nexum/persistence/file`、`nexum/persistence/sqlite` | [Persistence API](modules/nexum-persistence.md#公开-api)         |
-| Integrations    | `nexum/integrations`                                                                                  | [Integrations API](modules/nexum-integrations.md#公开-api)       |
-| Protocol        | `nexum/protocol`                                                                                      | [Protocol API](modules/nexum-protocol.md#公开-api)               |
-| Client          | `nexum/client`                                                                                        | [Client API](modules/nexum-client.md#公开-api)                   |
-| Server          | `nexum/server`                                                                                        | [Server API](modules/nexum-server.md#公开-api)                   |
-| Surface Adapter | `nexum/surface-adapter`                                                                               | [Surface Adapter API](modules/nexum-surface-adapter.md#公开-api) |
-| Chat Surface    | `nexum/chat-surface`                                                                                  | [Chat Surface API](modules/nexum-chat-surface.md#公开-api)       |
-| CLI             | `nexum/cli`                                                                                           | [CLI API](modules/nexum-cli.md#公开-api)                         |
+| Application     | `nexum-ai/application`                                                                                   | [Application API](modules/nexum-application.md#公开-api)         |
+| Core            | `nexum-ai/core`                                                                                          | [Core API](modules/nexum-core.md#公开-api)                       |
+| Persistence     | `nexum-ai/persistence`、`nexum-ai/persistence/memory`、`nexum-ai/persistence/file`、`nexum-ai/persistence/sqlite` | [Persistence API](modules/nexum-persistence.md#公开-api)         |
+| Integrations    | `nexum-ai/integrations`                                                                                  | [Integrations API](modules/nexum-integrations.md#公开-api)       |
+| Protocol        | `nexum-ai/protocol`                                                                                      | [Protocol API](modules/nexum-protocol.md#公开-api)               |
+| Client          | `nexum-ai/client`                                                                                        | [Client API](modules/nexum-client.md#公开-api)                   |
+| Server          | `nexum-ai/server`                                                                                        | [Server API](modules/nexum-server.md#公开-api)                   |
+| Surface Adapter | `nexum-ai/surface-adapter`                                                                               | [Surface Adapter API](modules/nexum-surface-adapter.md#公开-api) |
+| Chat Surface    | `nexum-ai/chat-surface`                                                                                  | [Chat Surface API](modules/nexum-chat-surface.md#公开-api)       |
+| CLI             | `nexum-ai/cli`                                                                                           | [CLI API](modules/nexum-cli.md#公开-api)                         |
 
-每个 API 参数都应该说明：类型、是否必填、用途、默认值、数据来源、返回值和常见错误。用户安装的是唯一公共包 `nexum`；文档中的 `@nexum/*` 只表示仓库内部源码包，不是独立安装命令。
+每个 API 参数都应该说明：类型、是否必填、用途、默认值、数据来源、返回值和常见错误。用户安装的是唯一公共包 `nexum-ai`；文档中的 `@nexum/*` 只表示仓库内部源码包，不是独立安装命令。
 
 ## HTTP / SSE 协议
 
@@ -68,14 +68,14 @@
 
 | 你的目标                      | 推荐入口                                            |
 | ----------------------------- | --------------------------------------------------- |
-| 只想在自己的程序里嵌入 Agent  | `nexum/application` + `createEmbeddedRuntime`       |
-| 需要本地保存 Session          | `nexum/application` + `createLocalRuntime`          |
-| 需要 SQLite 和重启恢复        | `nexum/application` + `createSqliteRuntime`         |
-| 想提供 HTTP/SSE 服务          | `nexum/server`                                      |
-| 想从 Web 或桌面端调用 Runtime | `nexum/client`                                      |
-| 想替换模型                    | `nexum/core` 的 `ModelPort` + `nexum/integrations`  |
-| 想接入自己的存储              | `nexum/persistence` 的 Store Port                   |
-| 想换 UI                       | `nexum/protocol` + `nexum/client` + Surface Adapter |
+| 只想在自己的程序里嵌入 Agent  | `nexum-ai/application` + `createEmbeddedRuntime`       |
+| 需要本地保存 Session          | `nexum-ai/application` + `createLocalRuntime`          |
+| 需要 SQLite 和重启恢复        | `nexum-ai/application` + `createSqliteRuntime`         |
+| 想提供 HTTP/SSE 服务          | `nexum-ai/server`                                      |
+| 想从 Web 或桌面端调用 Runtime | `nexum-ai/client`                                      |
+| 想替换模型                    | `nexum-ai/core` 的 `ModelPort` + `nexum-ai/integrations`  |
+| 想接入自己的存储              | `nexum-ai/persistence` 的 Store Port                   |
+| 想换 UI                       | `nexum-ai/protocol` + `nexum-ai/client` + Surface Adapter |
 
 ## 深入架构
 

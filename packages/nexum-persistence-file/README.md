@@ -1,14 +1,14 @@
 # Nexum File Persistence
 
-File Persistence 是本地 JSON 文件存储实现，发布入口为 `nexum/persistence/file`。
+File Persistence 是本地 JSON 文件存储实现，发布入口为 `nexum-ai/persistence/file`。
 
 ```bash
-npm install nexum
+npm install nexum-ai
 ```
 
 ```ts
-import { createFilePersistence } from "nexum/persistence/file"
-import { createLocalRuntime } from "nexum/application"
+import { createFilePersistence } from "nexum-ai/persistence/file"
+import { createLocalRuntime } from "nexum-ai/application"
 
 const persistence = createFilePersistence({ dataDirectory: ".nexum" })
 const runtime = createLocalRuntime({ persistence })
