@@ -20,7 +20,7 @@ as ordered SSE frames.
 | Route group | Endpoints documented in this module |
 | --- | --- |
 | Health and discovery | Health, capabilities, model, role prompt |
-| Session | List/create, update/delete, state, prompt, cancel, events, messages, continue |
+| Session | List/create, update/delete, mode, state, prompt, cancel, events, messages, continue |
 | Human interaction | Permission requests, policy rules, Questions |
 | Skills | List, detail, register, refresh, validate, activate, unregister |
 | MCP | Registration, connection control, catalogs, OAuth |
@@ -61,6 +61,7 @@ reference/configuration boundary.
 | `GET` | `/api/nexum/session` | List Sessions |
 | `POST` | `/api/nexum/session` | Create a Session |
 | `PUT` | `/api/nexum/session/{sessionID}` | Rename/update a Session |
+| `PUT` | `/api/nexum/session/{sessionID}/mode` | Switch between Plan and Build Agent modes |
 | `DELETE` | `/api/nexum/session/{sessionID}` | Delete Session history and runtime records |
 | `GET` | `/api/nexum/session/{sessionID}/state` | Read status, pending interactions, and event cursor |
 | `GET` | `/api/experimental/nexum/session/{sessionID}/messages` | Read paginated canonical history |
@@ -71,11 +72,86 @@ reference/configuration boundary.
 POST /api/nexum/session
 Content-Type: application/json
 
-{ "directory": "/workspace/demo", "name": "My Agent" }
+{ "directory": "/workspace/demo", "name": "My Agent", "mode": "plan" }
 ```
 
 `directory` is an absolute path on the Server host. The response contains the
-stable `session.id`; use it for every later operation.
+stable `session.id`; use it for every later operation. `mode` is optional and
+defaults to `build`.
+
+### Switch Agent mode
+
+Plan mode is the read-and-plan phase. Core permits reads and writes under the
+current workspace's `.nexum/plans/` directory, and rejects business-file writes,
+Shell, MCP, and Skill-management calls before Permission evaluation. Build mode
+keeps the normal tool and permission behavior. Mode is persisted with the
+Session and cannot change while the Session status is `running`.
+
+#### Method and URL
+
+```http
+PUT /api/nexum/session/{sessionID}/mode
+Content-Type: application/json
+Accept: application/json
+```
+
+| Parameter | Location | Type | Required | Values / constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `{sessionID}` | path | string | yes | URL-encoded Session ID | Target Session |
+| `mode` | JSON body | string | yes | `plan` or `build` | Target Agent mode |
+
+Request headers: `Content-Type: application/json` is required for a JSON body;
+`Accept` is optional. Request cookies are not applicable. No idempotency key is
+used; setting the already active mode is idempotent.
+
+```bash
+curl --request PUT 'http://127.0.0.1:4097/api/nexum/session/<SESSION_ID>/mode' \
+  --header 'Content-Type: application/json' \
+  --header 'Accept: application/json' \
+  --data '{"mode":"plan"}'
+```
+
+Successful response (`200 OK`):
+
+```json
+{
+  "data": {
+    "id": "session_01",
+    "name": "My Agent",
+    "directory": "/workspace/demo",
+    "status": "idle",
+    "mode": "plan",
+    "createdAt": "2026-11-27T08:00:00.000Z",
+    "updatedAt": "2026-11-27T08:01:00.000Z"
+  },
+  "meta": {
+    "protocolVersion": "nexum.runtime.v1",
+    "traceId": "trace_mode_001"
+  }
+}
+```
+
+The response headers include `Content-Type: application/json` and
+`x-trace-id`; response cookies are not applicable. The `mode` field is returned
+by create, list, update, and state responses as well.
+
+| HTTP status | `errorCode` | Meaning and caller action |
+| --- | --- | --- |
+| `400` | `NEXUM_INVALID_REQUEST` | Body is missing or `mode` is not `plan`/`build`; correct the request. |
+| `404` | `NEXUM_SESSION_NOT_FOUND` | Session does not exist; refresh the Session list. |
+| `409` | `NEXUM_SESSION_RUN_CONFLICT` | Session is running; wait for a terminal state or cancel it before switching. |
+| `500` | `NEXUM_SESSION_MODE_UPDATE_FAILED` | Server-side update failure; retain the current UI mode and report the `traceId`. |
+
+Example error (`409 Conflict`):
+
+```json
+{
+  "errorCode": "NEXUM_SESSION_RUN_CONFLICT",
+  "message": "Session 当前正在运行，不能切换 Agent 模式",
+  "traceId": "trace_mode_002",
+  "meta": { "protocolVersion": "nexum.runtime.v1", "traceId": "trace_mode_002" }
+}
+```
 
 ### List, switch, and restore
 
@@ -192,7 +268,7 @@ Errors keep a stable `errorCode`, human-readable `message`, and optional
 | --- | --- | --- |
 | Health and discovery | `/health/live`, `/health/ready`, `/api/nexum/capabilities` | — |
 | Model and role | `/api/nexum/model`, `/api/nexum/model/probe`, `/api/nexum/role-prompt` | — |
-| Session | `/api/nexum/session`, `/api/nexum/session/{sessionID}` | `messages`, `continue` |
+| Session | `/api/nexum/session`, `/api/nexum/session/{sessionID}`, `/api/nexum/session/{sessionID}/mode` | `messages`, `continue` |
 | Run and events | `prompt`, `cancel`, `events` | — |
 | Permission and Question | pending/list/reply/cancel routes | — |
 | Skills | list/detail/register/refresh/validate/activate/unregister | — |
@@ -218,6 +294,7 @@ must be encoded as path segments.
 | `GET`, `PUT`, `DELETE` | `/api/nexum/role-prompt` |
 | `GET`, `POST` | `/api/nexum/session` |
 | `PUT`, `DELETE` | `/api/nexum/session/{sessionID}` |
+| `PUT` | `/api/nexum/session/{sessionID}/mode` |
 | `GET` | `/api/nexum/session/{sessionID}/state` |
 | `POST` | `/api/nexum/session/{sessionID}/prompt` |
 | `POST` | `/api/nexum/session/{sessionID}/cancel` |
@@ -304,8 +381,8 @@ not the same field as `session.prompt({ text })`.
 ### `GET /api/nexum/session`
 
 Returns `NexumSession[]`. Use it to render a sidebar. The response includes the
-stable `id`, display `name`, working `directory`, lifecycle `status`, and other
-safe summary fields. It does not include the full message history.
+stable `id`, display `name`, working `directory`, lifecycle `status`, persisted
+Agent `mode`, and other safe summary fields. It does not include the full message history.
 
 ### `POST /api/nexum/session`
 
@@ -315,6 +392,7 @@ Request body:
 | --- | --- | --- | --- |
 | `directory` | `string` | yes | Absolute working directory on the Server host |
 | `name` | `string` | no | User-facing display label |
+| `mode` | `string` | no | `plan` or `build`; defaults to `build` |
 
 The response contains the newly created stable `session.id`. With File or
 SQLite Persistence, the Session record is written to the backend store before
@@ -332,6 +410,14 @@ Use this endpoint to change the display name:
 
 This does not change the working directory, history, role prompt, or model.
 Refresh the list or replace the local sidebar snapshot after success.
+
+### `PUT /api/nexum/session/{sessionID}/mode`
+
+Accepts `{ "mode": "plan" | "build" }` and returns the updated Session
+snapshot. Plan mode allows read operations and writes below `.nexum/plans/` only;
+Core rejects business-file writes, Shell, MCP, and Skill-management calls before
+Permission evaluation. Build mode retains the regular tool and permission
+behavior. The mode is persisted and a running Session cannot switch modes.
 
 ### `DELETE /api/nexum/session/{sessionID}`
 

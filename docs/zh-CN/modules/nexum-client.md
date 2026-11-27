@@ -47,16 +47,21 @@ const session = await client.experimental.nexum.session.create({
 
 | 方法                             | 必填参数            | 可选参数                        | 说明                                                     |
 | -------------------------------- | ------------------- | ------------------------------- | -------------------------------------------------------- |
-| `session.create(input)`          | `directory`         | `name`                          | 创建并返回 Session，`directory` 必须是可用的绝对工作目录 |
+| `session.create(input)`          | `directory`         | `name`、`mode`（`plan` 或 `build`） | 创建并返回 Session，`directory` 必须是可用的绝对工作目录 |
 | `session.list()`                 | 无                  | 无                              | 查询当前 Server 中的 Session                             |
 | `session.state(input)`           | `sessionID`         | 无                              | 获取状态、pending Permission/Question 和 `lastSequence`  |
 | `session.messages(input)`        | `sessionID`         | `before`、`limit`、`snapshotID` | 分页查询历史；实验性接口                                 |
+| `session.setMode(input)`         | `sessionID`         | `mode`                          | 在空闲时切换 Plan / Build 模式                            |
 | `session.prompt(input)`          | `sessionID`、`text` | 无                              | 提交用户任务；角色提示词不放在这里                       |
 | `session.continue(input)`        | `sessionID`         | 无                              | 继续可恢复的上下文；实验性接口                           |
 | `session.cancel(input)`          | `sessionID`         | 无                              | 取消当前运行                                             |
 | `session.events(input, options)` | `sessionID`         | `afterSequence`、`signal`       | 订阅 SSE 事件                                            |
 
 `session.id` 是 `create()` 和 `list()` 返回的字段；Client 方法的输入字段叫 `sessionID`，调用方需要显式传入它。`session.prompt({ text })` 的 `text` 是用户本轮输入，默认角色提示词通过 `client.experimental.nexum.rolePrompt.update({ prompt })` 单独配置。
+
+Plan 模式是只读规划阶段：Core 只允许读取项目或写入相对路径
+`.nexum/plans/`，并在 Permission 之前拒绝业务文件写入、Shell、MCP 和
+Skill 管理。Build 模式保留正常执行能力；运行中的 Session 不能切换模式。
 
 典型的 Session 列表和切换流程如下：
 
@@ -89,7 +94,7 @@ if (selectedSessionID) {
 | 根能力            | `capabilities()`                                                   | 获取 Server 当前能力、事件和交互支持情况                                   |
 | Model             | `experimental.nexum.model.get/update/probe()`                      | 读取、更新和探测模型配置                                                   |
 | Role Prompt       | `experimental.nexum.rolePrompt.get/update/reset()`                 | 读取、更新和重置角色提示                                                   |
-| Session           | `create/list/state/messages/update/delete()`                       | 管理 Session、状态和消息历史                                               |
+| Session           | `create/list/state/messages/update/setMode/delete()`                | 管理 Session、状态、Agent 模式和消息历史                                   |
 | 运行控制          | `session.prompt/continue/cancel()`                                 | 发送消息、恢复运行、取消当前运行                                           |
 | 事件              | `session.events()`                                                 | 订阅指定 Session 的 SSE 事件，可传 `AbortSignal`、`afterSequence` 和请求头 |
 | Permission        | `session.permission.list/reply()`                                  | 查询待处理权限并提交决定                                                   |

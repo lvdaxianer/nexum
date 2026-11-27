@@ -10,7 +10,7 @@
 
 ## 1. Session 是什么
 
-Session 是一个绑定工作目录的可恢复运行容器。它保存最小会话元数据和 canonical 消息历史；模型临时注入的角色提示词、Skill 系统消息、项目上下文和工具定义不自动写入 canonical 历史。
+Session 是一个绑定工作目录的可恢复运行容器。它保存最小会话元数据、Agent 模式和 canonical 消息历史；模型临时注入的角色提示词、Skill 系统消息、项目上下文和工具定义不自动写入 canonical 历史。
 
 Session 元数据的公共形状如下：
 
@@ -20,6 +20,7 @@ Session 元数据的公共形状如下：
 | `name`      | `string`                                              | 展示名称；创建时缺省为工作目录名 |
 | `directory` | `string`                                              | 规范化后的绝对工作目录           |
 | `status`    | `idle \| running \| completed \| failed \| cancelled` | 当前生命周期状态                 |
+| `mode`      | `plan \| build`                                      | Agent 模式；缺省为 `build`       |
 | `createdAt` | `string`                                              | ISO 时间                         |
 | `updatedAt` | `string`                                              | 最近一次元数据或状态变更时间     |
 
@@ -36,6 +37,7 @@ const client = Nexum.make({ baseUrl: "http://127.0.0.1:4097" })
 const session = await client.experimental.nexum.session.create({
   directory: "/workspace/demo",
   name: "demo",
+  mode: "plan",
 })
 
 await client.experimental.nexum.session.prompt({
@@ -60,11 +62,12 @@ for await (const event of client.experimental.nexum.session.events({
 
 | 方法                     | 参数                                                   | 返回值                      | 用途                                              |
 | ------------------------ | ------------------------------------------------------ | --------------------------- | ------------------------------------------------- |
-| `create(input)`          | `directory` 必填；`name` 可选                          | `NexumSession`              | 创建一个绑定工作目录的会话                        |
+| `create(input)`          | `directory` 必填；`name`、`mode` 可选                  | `NexumSession`              | 创建一个绑定工作目录的会话                        |
 | `list()`                 | 无                                                     | `NexumSession[]`            | 查询当前 Runtime 的会话列表                       |
 | `state(input)`           | `sessionID` 必填                                       | `NexumSessionState`         | 查询状态、待处理权限/反问和事件游标               |
 | `messages(input)`        | `sessionID` 必填；`before`、`limit`、`snapshotID` 可选 | `NexumSessionMessages`      | 分页读取消息历史；当前为实验性接口                |
 | `update(input)`          | `sessionID`、`name` 必填                               | `NexumSession`              | 修改会话展示名称                                  |
+| `setMode(input)`         | `sessionID`、`mode` 必填                               | `NexumSession`              | 在空闲时切换 Plan / Build 模式                    |
 | `delete(input)`          | `sessionID` 必填                                       | `{ id, deleted: true }`     | 删除会话及其历史、交互和事件                      |
 | `prompt(input)`          | `sessionID`、`text` 必填                               | `{ status: "accepted" }`    | 提交用户任务并异步启动运行                        |
 | `continue(input)`        | `sessionID` 必填                                       | `{ status: "accepted" }`    | 从可恢复的 User/Tool 上下文继续；当前为实验性接口 |
@@ -78,6 +81,7 @@ for await (const event of client.experimental.nexum.session.events({
 | `sessionID`     | 目标会话的唯一标识          | `create()` 返回的 `session.id`，或 `list()` 返回的会话记录 |
 | `directory`     | Agent 可以工作的绝对目录    | 宿主应用选择的项目目录                                     |
 | `name`          | 给用户看的会话名称          | 应用标题或项目名称，可后续修改                             |
+| `mode`          | Agent 的 Plan / Build 行为边界 | `plan` 只允许读取和写入 `.nexum/plans/`；`build` 保留完整执行能力 |
 | `text`          | 用户本次要 Agent 完成的任务 | 输入框、任务队列或业务请求                                 |
 | `before`        | 历史分页的结束位置          | 上一次 `messages()` 返回的分页游标                         |
 | `limit`         | 一次读取的历史条数          | 页面按需设置，服务端有最大值                               |
@@ -127,6 +131,11 @@ running ─────→ failed
 5. 运行结束后释放本地运行占用；新的 Prompt 或 Continue 需要重新受理。
 
 同一个 Session 同时只能有一个活动运行。重复 Prompt、Continue 或并发启动会得到 `NEXUM_SESSION_RUN_CONFLICT`，调用方应保留当前 UI 状态并等待终态或执行取消。
+
+Plan 模式下 Core 会在 Permission 之前拦截业务文件写入、Shell、MCP 和
+Skill 管理调用，因此不能通过自定义客户端、提示词或已有权限规则绕过。
+运行中的 Session 不允许切换模式；切换请求返回
+`NEXUM_SESSION_RUN_CONFLICT`。
 
 ## 5. Canonical 消息历史
 

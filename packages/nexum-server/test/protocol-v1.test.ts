@@ -77,6 +77,49 @@ test("returns a session snapshot with pending collections and last sequence", as
   expect(completedBody.data.canCancel).toBe(false)
 })
 
+test("exposes and updates the Session Agent mode", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-protocol-v1-mode-"))
+  directories.push(directory)
+  const sessionService = createNexumSessionService()
+  const session = await sessionService.create({ directory, mode: "plan" })
+  const server = await startNexumServer({ port: 0, sessionService })
+  servers.push(server)
+
+  const listed = await fetch(new URL("/api/nexum/session", server.url))
+  const listedBody = (await listed.json()) as { data: readonly [{ id: string; mode?: string }] }
+  expect(listedBody.data[0]).toMatchObject({ id: session.sessionID, mode: "plan" })
+
+  const changed = await fetch(new URL(`/api/nexum/session/${session.sessionID}/mode`, server.url), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode: "build" }),
+  })
+  const changedBody = (await changed.json()) as { data: { mode?: string } }
+  expect(changed.status).toBe(200)
+  expect(changedBody.data.mode).toBe("build")
+
+  const state = await fetch(new URL(`/api/nexum/session/${session.sessionID}/state`, server.url))
+  const stateBody = (await state.json()) as { data: { session: { mode?: string } } }
+  expect(stateBody.data.session.mode).toBe("build")
+
+  const invalid = await fetch(new URL(`/api/nexum/session/${session.sessionID}/mode`, server.url), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode: "unknown" }),
+  })
+  expect(invalid.status).toBe(400)
+  expect(((await invalid.json()) as { errorCode: string }).errorCode).toBe("NEXUM_INVALID_REQUEST")
+
+  await sessionService.setStatus(session.sessionID, "running")
+  const busy = await fetch(new URL(`/api/nexum/session/${session.sessionID}/mode`, server.url), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode: "plan" }),
+  })
+  expect(busy.status).toBe(409)
+  expect(((await busy.json()) as { errorCode: string }).errorCode).toBe("NEXUM_SESSION_RUN_CONFLICT")
+})
+
 test("emits SSE event and id fields and replays after Last-Event-ID", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-protocol-v1-events-"))
   directories.push(directory)
