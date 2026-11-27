@@ -2,9 +2,9 @@
 
 ## 1. Core 与 Application 模式默认值
 
-- [ ] 1.1 在 `packages/nexum-core/src/index.ts` 为 `NexumSessionServiceOptions` 增加可选 `defaultAgentMode`，按“创建参数 > Service 默认 > build”解析，并为显式覆盖、默认值和运行中切换保留回归测试；运行 `bun test`（`packages/nexum-core`）确认相关测试通过。
-- [ ] 1.2 在 `packages/nexum-application/src/index.ts` 为 `NexumRuntimeOptions` 暴露 `defaultAgentMode`，仅在自动创建 Session Service 时传入 Core；在 `packages/nexum-application/test` 增加 Runtime 默认模式测试，运行 `bun test`（`packages/nexum-application`）确认配置实际生效。
-- [ ] 1.3 检查 File/SQLite/Memory 持久化适配器的模式规范化路径，补齐缺失或非法模式回归测试；运行对应包的 `bun test` 确认旧数据恢复为 Build、显式 Plan 保持不变。
+- [x] 1.1 在 `packages/nexum-core/src/index.ts` 为 `NexumSessionServiceOptions` 增加可选 `defaultAgentMode`，按“创建参数 > Service 默认 > build”解析，并为显式覆盖、默认值和运行中切换保留回归测试；运行 `bun test`（`packages/nexum-core`）确认相关测试通过。
+- [x] 1.2 在 `packages/nexum-application/src/index.ts` 为 `NexumRuntimeOptions` 暴露 `defaultAgentMode`，仅在自动创建 Session Service 时传入 Core；在 `packages/nexum-application/test` 增加 Runtime 默认模式测试，运行 `bun test`（`packages/nexum-application`）确认配置实际生效。
+- [x] 1.3 检查 File/SQLite/Memory 持久化适配器的模式规范化路径，补齐缺失或非法模式回归测试；运行对应包的 `bun test` 确认旧数据恢复为 Build、显式 Plan 保持不变。
 
 ## 2. Protocol 与 Client 创建契约
 

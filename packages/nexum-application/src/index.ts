@@ -28,6 +28,7 @@ import {
   type ModelPort,
   type MessageStore,
   type NexumCapability,
+  type NexumAgentMode,
   type NexumModelProbePort,
   type NexumProviderCatalogPort,
   type NexumPermissionBroker,
@@ -81,6 +82,7 @@ export type { NexumEventHub, NexumEventHubOptions, NexumEventSubscriptionOptions
 export type NexumRuntimeStorageOptions = FilePersistenceOptions & SqlitePersistenceOptions
 
 export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
+  readonly defaultAgentMode?: NexumAgentMode
   readonly toolTimeoutMs?: number
   readonly shellTimeoutMs?: number
   readonly shellCleanupTimeoutMs?: number
@@ -144,6 +146,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
   const sessions = options.sessions ?? createNexumSessionService({
     store: options.sessionStore ?? persistence.sessionStore,
     executionStore,
+    ...(options.defaultAgentMode ? { defaultAgentMode: options.defaultAgentMode } : {}),
     directoryValidator: createLocalDirectoryValidator(),
     ...(persistence.atomicDelete ? { atomicDelete: persistence.atomicDelete } : {}),
   })
