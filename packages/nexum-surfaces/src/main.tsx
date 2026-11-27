@@ -63,6 +63,7 @@ function App() {
   const [credentialRef, setCredentialRef] = createSignal("")
   const [credential, setCredential] = createSignal("")
   const [sessionCreateName, setSessionCreateName] = createSignal("")
+  const [sessionCreateMode, setSessionCreateMode] = createSignal<NexumAgentMode>("build")
   const [directory, setDirectory] = createSignal("")
   const [sessionID, setSessionID] = createSignal("")
   const [sessions, setSessions] = createSignal<SessionSummary[]>([])
@@ -771,6 +772,30 @@ function App() {
     return currentSession()?.mode ?? "build"
   }
 
+  /**
+   * 将 Agent 模式转换为页面可扫描的标签。
+   *
+   * @param mode - 当前 Agent 模式
+   * @returns 页面展示标签
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-27
+   */
+  function agentModeLabel(mode: NexumAgentMode): string {
+    return mode === "plan" ? "PLAN" : "BUILD"
+  }
+
+  /**
+   * 组合 ChatSurface 标题和当前 Agent 模式。
+   *
+   * @returns 当前 Session 标题；没有选中 Session 时返回空字符串
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-27
+   */
+  function currentSessionTitle(): string {
+    const current = currentSession()
+    return current ? `${current.name} · ${agentModeLabel(current.mode)}` : ""
+  }
+
   async function setAgentMode(mode: NexumAgentMode) {
     const current = currentSession()
     if (!current || agentModeBusy() || current.status === "running" || currentAgentMode() === mode) return
@@ -815,6 +840,7 @@ function App() {
     try {
       const created = await client.experimental.nexum.session.create({
         directory: directory().trim(),
+        mode: sessionCreateMode(),
         ...(sessionCreateName().trim() ? { name: sessionCreateName().trim() } : {}),
       })
       applyCreatedSession(created.data)
@@ -866,6 +892,7 @@ function App() {
 
   function openCreateSession() {
     setSessionCreateName("")
+    setSessionCreateMode("build")
     setDirectory("")
     setDirectoryError("")
     setSessionNameError("")
@@ -1054,6 +1081,40 @@ function App() {
                 </span>
               </Show>
             </label>
+            <fieldset class="form-field session-mode-field">
+              <legend>Agent 模式</legend>
+              <div class="session-mode-options" role="radiogroup" aria-label="新建 Session 的 Agent 模式">
+                <label class="session-mode-option" classList={{ "is-selected": sessionCreateMode() === "plan" }}>
+                  <input
+                    type="radio"
+                    name="session-create-mode"
+                    value="plan"
+                    aria-label="Plan 模式"
+                    checked={sessionCreateMode() === "plan"}
+                    onChange={() => setSessionCreateMode("plan")}
+                  />
+                  <span>
+                    <strong>Plan</strong>
+                    <small>分析、读取并维护计划文件</small>
+                  </span>
+                </label>
+                <label class="session-mode-option" classList={{ "is-selected": sessionCreateMode() === "build" }}>
+                  <input
+                    type="radio"
+                    name="session-create-mode"
+                    value="build"
+                    aria-label="Build 模式"
+                    checked={sessionCreateMode() === "build"}
+                    onChange={() => setSessionCreateMode("build")}
+                  />
+                  <span>
+                    <strong>Build</strong>
+                    <small>按权限策略执行完整任务</small>
+                  </span>
+                </label>
+              </div>
+              <span class="field-help">模式会在创建时写入 Session；运行中不能切换。</span>
+            </fieldset>
             <label class={`form-field ${directoryError() ? "field-invalid" : ""}`}>
               <span>
                 工作目录 <span class="required-mark">必填</span>
@@ -1471,7 +1532,10 @@ function App() {
                   >
                     <span class="session-item-top">
                       <strong class="session-item-name">{session.name}</strong>
-                      <span class={`session-status-pill session-status-${session.status}`}>{session.status}</span>
+                      <span class="session-item-pills">
+                        <span class={`session-mode-pill session-mode-${session.mode}`}>{agentModeLabel(session.mode)}</span>
+                        <span class={`session-status-pill session-status-${session.status}`}>{session.status}</span>
+                      </span>
                     </span>
                     <small class="session-item-directory">{session.directory}</small>
                   </button>
@@ -1557,13 +1621,16 @@ function App() {
           <ChatSurface
             sessionID={sessionID()}
             client={{ baseUrl: apiBaseUrl }}
-            title={sessions().find((session) => session.id === sessionID())?.name ?? ""}
+            title={currentSessionTitle()}
             theme={darkMode() ? "dark" : undefined}
             onSessionStatusChange={(id, status) => setSessions((current) => mergeSessionStatus(current, id, status))}
             onSkillUpdated={scheduleSkillReload}
             onOpenPermissionSettings={openPolicyPopover}
             composerExtras={
               <div class="composer-control-group" role="group" aria-label="Agent 模式和权限设置">
+                <span class={`agent-mode-current agent-mode-current-${currentAgentMode()}`} aria-label={`当前 Agent 模式：${agentModeLabel(currentAgentMode())}`}>
+                  {agentModeLabel(currentAgentMode())}
+                </span>
                 <div class="agent-mode-toggle" role="group" aria-label="Agent 模式">
                   <button
                     type="button"

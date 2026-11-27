@@ -54,6 +54,29 @@ afterEach(async () => {
 })
 
 describe.serial("Nexum UI smoke", () => {
+  test.serial("creates a Session with the selected Agent mode and shows it in the page", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    const sessionService = createNexumSessionService({ store: createInMemorySessionStore() })
+    apiServer = await startNexumServer({ hostname: apiHost, port: apiPort, corsOrigins: [uiOrigin], sessionService })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+    directory = await mkdtemp(join(tmpdir(), "nexum-ui-mode-create-"))
+
+    await page.goto(uiOrigin)
+    await page.getByRole("button", { name: "新建 Session" }).click()
+    await page.getByLabel("工作目录").fill(directory)
+    await page.getByLabel("Plan 模式").check()
+    const createRequest = page.waitForRequest(
+      (request) => request.url().includes("/api/nexum/session") && request.method() === "POST",
+    )
+    await page.getByRole("button", { name: "保存并创建 Session" }).click()
+    const request = await createRequest
+
+    expect(request.postDataJSON()).toMatchObject({ mode: "plan" })
+    await expect(page.locator(".session-mode-pill")).toContainText("PLAN")
+    await expect(page.getByLabel("当前 Agent 模式：PLAN")).toBeVisible()
+  })
+
   test.serial("uses the served UI host for default API requests", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()

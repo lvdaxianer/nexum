@@ -522,6 +522,13 @@ input[aria-invalid="true"]:focus {
   gap: 8px;
 }
 
+.session-item-pills {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
 .session-item-name {
   overflow: hidden;
   color: #30465d;
@@ -540,6 +547,28 @@ input[aria-invalid="true"]:focus {
   font-size: 9px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.session-mode-pill {
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.session-mode-plan {
+  border-color: #9ddbd5;
+  background: #e5f8f5;
+  color: #0d7778;
+}
+
+.session-mode-build {
+  border-color: #c9d6e7;
+  background: #eef3f9;
+  color: #365f87;
 }
 
 .session-status-idle {
@@ -1336,6 +1365,28 @@ input[aria-invalid="true"]:focus {
   gap: 6px;
 }
 
+.agent-mode-current {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.agent-mode-current-plan {
+  background: #e5f8f5;
+  color: #0d7778;
+}
+
+.agent-mode-current-build {
+  background: #eef3f9;
+  color: #365f87;
+}
+
 .agent-mode-toggle {
   display: inline-flex;
   align-items: center;
@@ -1366,6 +1417,64 @@ input[aria-invalid="true"]:focus {
 .agent-mode-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.session-mode-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.session-mode-field legend {
+  margin-bottom: 8px;
+  color: #30465d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-mode-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.session-mode-option {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid #d9e0e8;
+  border-radius: 9px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.session-mode-option.is-selected {
+  border-color: #52b9b4;
+  background: #eef9f8;
+}
+
+.session-mode-option input {
+  margin-top: 2px;
+  accent-color: #138b8b;
+}
+
+.session-mode-option span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.session-mode-option strong {
+  color: #30465d;
+  font-size: 12px;
+}
+
+.session-mode-option small {
+  color: #8494a6;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .perm-chip {
@@ -2650,6 +2759,10 @@ footer {
     padding: 18px 14px;
   }
 
+  .session-mode-options {
+    grid-template-columns: 1fr;
+  }
+
   .act-desc {
     display: none;
   }
@@ -2835,6 +2948,20 @@ footer {
 :root[data-theme="dark"] .session-status-cancelled {
   background: var(--d-danger-soft);
   color: var(--d-danger);
+}
+
+:root[data-theme="dark"] .session-mode-plan,
+:root[data-theme="dark"] .agent-mode-current-plan {
+  border-color: var(--d-accent);
+  background: var(--d-accent-soft);
+  color: var(--d-accent);
+}
+
+:root[data-theme="dark"] .session-mode-build,
+:root[data-theme="dark"] .agent-mode-current-build {
+  border-color: var(--d-border);
+  background: var(--d-panel);
+  color: var(--d-muted);
 }
 
 :root[data-theme="dark"] .session-ops-button {
@@ -3050,6 +3177,25 @@ footer {
 :root[data-theme="dark"] .agent-mode-button.is-active {
   background: var(--d-accent);
   color: #fff;
+}
+
+:root[data-theme="dark"] .session-mode-field legend,
+:root[data-theme="dark"] .session-mode-option strong {
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] .session-mode-option {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+}
+
+:root[data-theme="dark"] .session-mode-option.is-selected {
+  border-color: var(--d-accent);
+  background: var(--d-accent-soft);
+}
+
+:root[data-theme="dark"] .session-mode-option small {
+  color: var(--d-muted);
 }
 
 :root[data-theme="dark"] .perm-chip:hover {

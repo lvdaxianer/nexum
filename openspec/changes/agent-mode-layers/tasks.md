@@ -14,9 +14,9 @@
 
 ## 3. Surface 创建与模式可见性
 
-- [ ] 3.1 在 `packages/nexum-surfaces/src/main.tsx` 的新建 Session 表单增加 Plan/Build 选择，创建请求传递所选 mode，成功后使用返回快照更新当前 Session；为默认 Build、Plan 创建和创建失败保留表单状态测试。
-- [ ] 3.2 在 `packages/nexum-surfaces/src/main.tsx` 和 `packages/nexum-surfaces/src/styles.css` 让 Session 列表、当前 Session 标题/Composer 区同时显示模式，并保持模式控件与权限策略控件语义分离；补充键盘、禁用、忙碌和错误状态断言。
-- [ ] 3.3 在 `packages/nexum-surfaces/test/session-state.test.ts` 验证模式快照只增量更新目标 Session，运行 `bun run typecheck:tsc` 和 `bun run build`（`packages/nexum-surfaces`）确认构建产物可用。
+- [x] 3.1 在 `packages/nexum-surfaces/src/main.tsx` 的新建 Session 表单增加 Plan/Build 选择，创建请求传递所选 mode，成功后使用返回快照更新当前 Session；为默认 Build、Plan 创建和创建失败保留表单状态测试。
+- [x] 3.2 在 `packages/nexum-surfaces/src/main.tsx` 和 `packages/nexum-surfaces/src/styles.css` 让 Session 列表、当前 Session 标题/Composer 区同时显示模式，并保持模式控件与权限策略控件语义分离；补充键盘、禁用、忙碌和错误状态断言。
+- [x] 3.3 在 `packages/nexum-surfaces/test/session-state.test.ts` 验证模式快照只增量更新目标 Session，运行 `bun run typecheck:tsc` 和 `bun run build`（`packages/nexum-surfaces`）确认构建产物可用。
 
 ## 4. 文档、审查与集成验证
 
