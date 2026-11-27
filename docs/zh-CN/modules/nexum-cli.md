@@ -40,7 +40,7 @@ nexum session list
 | `nexum prompt <文本> [--session <id>]`                                                                                    | 一次性流式执行，退出码 0/1/130                                                                                                                               |
 | `nexum status`                                                                                                            | 连接与配置总览                                                                                                                                               |
 | `nexum doctor`                                                                                                            | 逐项诊断，存在失败项时退出码 1                                                                                                                               |
-| `nexum theme [dark\|light\|auto]`                                                                                         | 查看/切换主题，写入 `~/.nexum/cli.json`，下次启动生效                                                                                                        |
+| `nexum theme [dark\|light\|auto]`                                                                                         | 查看/切换主题，写入 `~/.nexum-ai/cli.json`，下次启动生效                                                                                                        |
 | `nexum model get \| set \| probe`                                                                                         | 读取、交互式更新和探测模型配置                                                                                                                               |
 | `nexum role-prompt get \| set <文件> \| reset`                                                                            | 读取、更新和重置角色提示                                                                                                                                     |
 | `nexum skill list \| detail <id> \| validate [id] \| refresh [id] \| register <地址> \| unregister <id>`                  | Skill 发现、校验和管理                                                                                                                                       |
@@ -80,7 +80,7 @@ nexum session list
 
 ## 渲染约定
 
-统一左边距：TTY 下所有输出（横幅、输入框、Agent 文本、表格、卡片、活动行、思考流）内缩 2 列。边距在 IO 写路径由行首状态机注入（[`src/io.ts`](../../../packages/nexum-cli/src/io.ts) `createMarginWriter`）：`\n`/`\r`/光标下移后处于行首，行首的擦除序列（`\x1b[2K` 等）先输出、边距补在其后，光标上移不改变状态，因此 LiveLine 原地重绘、思考区收起、markdown 擦除重渲都在边距内原样工作；LiveLine 帧宽、markdown 擦除行数、输入框宽度计算同步扣除边距。输入框走 readline 输出流（不经 IO 注入），边距由 `inputBoxLines` 直接编入框字符串。非 TTY（管道/脚本）不加边距保持可解析；`NO_COLOR` 终端仍加边距（布局与颜色无关）；`~/.nexum/cli.json` 的 `margin` 字段可配（0–8，TTY 默认 2）。
+统一左边距：TTY 下所有输出（横幅、输入框、Agent 文本、表格、卡片、活动行、思考流）内缩 2 列。边距在 IO 写路径由行首状态机注入（[`src/io.ts`](../../../packages/nexum-cli/src/io.ts) `createMarginWriter`）：`\n`/`\r`/光标下移后处于行首，行首的擦除序列（`\x1b[2K` 等）先输出、边距补在其后，光标上移不改变状态，因此 LiveLine 原地重绘、思考区收起、markdown 擦除重渲都在边距内原样工作；LiveLine 帧宽、markdown 擦除行数、输入框宽度计算同步扣除边距。输入框走 readline 输出流（不经 IO 注入），边距由 `inputBoxLines` 直接编入框字符串。非 TTY（管道/脚本）不加边距保持可解析；`NO_COLOR` 终端仍加边距（布局与颜色无关）；`~/.nexum-ai/cli.json` 的 `margin` 字段可配（0–8，TTY 默认 2）。
 
 assistant 文本与历史回放经流式 markdown 渲染（[`src/markdown.ts`](../../../packages/nexum-cli/src/markdown.ts)）：
 
@@ -96,7 +96,7 @@ assistant 文本与历史回放经流式 markdown 渲染（[`src/markdown.ts`](.
 
 - `COLORTERM=truecolor/24bit` 启用 truecolor；`TERM` 含 `256color` 启用 256 色；其余 TTY 退回 16 色。
 - `NO_COLOR`、`TERM=dumb` 或非 TTY 输出关闭全部颜色与动画；`--no-anim` 或 `NEXUM_NO_ANIM` 只关闭动画。
-- 主题（dark/light/auto）按 `--theme` 标志 > `~/.nexum/cli.json` > `COLORFGBG` 推断 > 默认 dark 解析；`caps` 在启动时定型，切换主题下次启动生效。
+- 主题（dark/light/auto）按 `--theme` 标志 > `~/.nexum-ai/cli.json` > `COLORFGBG` 推断 > 默认 dark 解析；`caps` 在启动时定型，切换主题下次启动生效。
 
 样式与动画基准见本地工件 `artifacts/nexum-cli-demo.png` 与 `artifacts/nexum-cli-cool.gif`（`artifacts/` 不入库，仅作视觉参照）。
 

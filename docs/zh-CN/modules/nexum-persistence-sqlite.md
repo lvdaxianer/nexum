@@ -7,7 +7,7 @@
 ```ts
 import { createSqliteRuntime } from "nexum-ai/application"
 
-const runtime = await createSqliteRuntime({ databasePath: ".nexum/nexum.db" })
+const runtime = await createSqliteRuntime({ databasePath: ".nexum-ai/nexum.db" })
 ```
 
 ## 公开 API
@@ -16,7 +16,7 @@ const runtime = await createSqliteRuntime({ databasePath: ".nexum/nexum.db" })
 
 | 参数           | 类型     | 必填 | 说明                                                |
 | -------------- | -------- | ---- | --------------------------------------------------- |
-| `databasePath` | `string` | 否   | SQLite 数据库文件路径；省略时使用 `.nexum/nexum.db` |
+| `databasePath` | `string` | 否   | SQLite 数据库文件路径；省略时使用 `.nexum-ai/nexum.db` |
 
 返回完整的 `NexumPersistence` 组合，可传给 `createSqliteRuntime({ persistence })`。使用 `createSqliteRuntime` 时通常不需要直接创建 Persistence，它会根据 `databasePath` 完成组合和初始化。
 

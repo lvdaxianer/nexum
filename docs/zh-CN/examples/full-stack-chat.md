@@ -44,7 +44,7 @@ npm install nexum-ai
 import { createSqliteRuntime } from "nexum-ai/application"
 
 const runtime = await createSqliteRuntime({
-  databasePath: ".nexum/nexum.db",
+  databasePath: ".nexum-ai/nexum.db",
 })
 ```
 

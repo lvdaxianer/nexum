@@ -10,7 +10,7 @@ npm install nexum-ai
 import { createSqliteRuntime } from "nexum-ai/application"
 import { startNexumServer } from "nexum-ai/server"
 
-const runtime = await createSqliteRuntime({ databasePath: ".nexum/nexum.db" })
+const runtime = await createSqliteRuntime({ databasePath: ".nexum-ai/nexum.db" })
 const server = await startNexumServer({ runtime, port: 4097 })
 console.log(server.url)
 ```

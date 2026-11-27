@@ -27,7 +27,7 @@ import { createSqliteRuntime } from "nexum-ai/application"
 import { startNexumServer } from "nexum-ai/server"
 
 const runtime = await createSqliteRuntime({
-  databasePath: ".nexum/nexum.db",
+  databasePath: ".nexum-ai/nexum.db",
 })
 
 await runtime.modelConfig.update({

@@ -11,13 +11,13 @@ choice for a Server or any application that must recover after restart.
 import { createSqlitePersistence } from "nexum-ai/persistence/sqlite"
 
 const persistence = await createSqlitePersistence({
-  databasePath: ".nexum/nexum.db",
+  databasePath: ".nexum-ai/nexum.db",
 })
 ```
 
 | Option | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `databasePath` | `string` | no | SQLite file; defaults to `.nexum/nexum.db` |
+| `databasePath` | `string` | no | SQLite file; defaults to `.nexum-ai/nexum.db` |
 
 The database contains Session, message, event, interaction, and runtime state.
 Use `createSqliteRuntime` for the normal Application-level composition; use this

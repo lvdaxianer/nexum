@@ -62,7 +62,7 @@ await server.stop()
 
 ## 数据与安全边界
 
-参考 `src/main.ts` 使用 JSON 文件保存 Session 和模型配置。默认数据位于 `.nexum/`，可用 `NEXUM_DATA_DIR`、`NEXUM_SESSION_FILE`、`NEXUM_MODEL_CONFIG_FILE` 覆盖路径。凭据文件使用 `0600` 权限，Server 不回显凭据。
+参考 `src/main.ts` 使用 JSON 文件保存 Session 和模型配置。默认数据位于 `.nexum-ai/`，可用 `NEXUM_DATA_DIR`、`NEXUM_SESSION_FILE`、`NEXUM_MODEL_CONFIG_FILE` 覆盖路径。凭据文件使用 `0600` 权限，Server 不回显凭据。
 
 持久化、恢复和运行时编排分别由 [`@nexum/persistence`](../../../packages/nexum-persistence/README.md)、[`@nexum/application`](../../../packages/nexum-application/README.md) 和 [`@nexum/core`](../../../packages/nexum-core/README.md) 提供；Server 通过端口组装它们，不能把存储细节或策略判断复制到路由层。
 

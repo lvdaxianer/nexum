@@ -10,7 +10,7 @@ npm install nexum-ai
 import { createSqlitePersistence } from "nexum-ai/persistence/sqlite"
 import { createSqliteRuntime } from "nexum-ai/application"
 
-const persistence = await createSqlitePersistence({ databasePath: ".nexum/nexum.db" })
+const persistence = await createSqlitePersistence({ databasePath: ".nexum-ai/nexum.db" })
 const runtime = await createSqliteRuntime({ persistence })
 ```
 
