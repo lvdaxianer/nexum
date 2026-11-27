@@ -16,6 +16,7 @@
     "pack:nexum": "bun run script/pack-nexum.ts",
     "verify:nexum": "bun run script/verify-nexum.ts",
     "verify:docs": "bun run script/verify-nexum-docs.ts",
+    "release:nexum:prepare": "bun run script/prepare-nexum-release.ts",
     "lint": "oxlint packages/nexum-*",
     "typecheck": "bun turbo typecheck --concurrency=3",
     "typecheck:tsc": "bun turbo typecheck:tsc --concurrency=3",

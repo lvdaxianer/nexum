@@ -8,6 +8,7 @@ import {
   publicEntries,
   publicSubpaths,
   releasePackageName,
+  releasePackageTag,
   releasePackageVersion,
 } from "./nexum-package"
 
@@ -31,7 +32,7 @@ if (!existsSync(manifestPath)) {
     fail(`发布包版本必须是 ${releasePackageVersion}，当前为 ${String(manifest.version)}`)
   }
   if (manifest.engines?.bun !== ">=1.4.4") fail("发布包必须声明 Bun >=1.4.4")
-  if (manifest.publishConfig?.tag !== "beta") fail("内测包必须使用 beta dist-tag")
+  if (manifest.publishConfig?.tag !== releasePackageTag) fail(`发布包必须使用 ${releasePackageTag} dist-tag`)
   if (manifest.private === true) fail("发布包不能标记为 private")
   if (manifest.dependencies && Object.keys(manifest.dependencies).some((name) => name.startsWith("@nexum/"))) {
     fail("发布 dependencies 不能包含 @nexum/*")
