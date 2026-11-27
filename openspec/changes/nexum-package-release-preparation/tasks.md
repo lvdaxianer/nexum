@@ -14,8 +14,8 @@
 ## 3. 集成验证与交付
 
 - [x] 3.1 运行文档检查、focused/full test、统一准备命令、根 `bun run check` 和 `git diff --check`；记录 tarball 路径、版本、tag 及各项通过证据
-- [ ] 3.2 按项目审查规范完成 diff review、项目卫生检查和任务逐项审计；仅提交本变更文件，使用符合规范的 conventional commit
-- [ ] 3.3 将任务分支合并到 `dev-v0.0.1`，保留集成分支上用户已有文档修改不被覆盖；在合并后再次准备目标产物并确认工作树、分支 ancestry 和最终交接信息
+- [x] 3.2 按项目审查规范完成 diff review、项目卫生检查和任务逐项审计；仅提交本变更文件，使用符合规范的 conventional commit
+- [x] 3.3 将任务分支合并到 `dev-v0.0.1`，保留集成分支上用户已有文档修改不被覆盖；在合并后再次准备目标产物并确认工作树、分支 ancestry 和最终交接信息
 
 ## Workflow follow-up
 
