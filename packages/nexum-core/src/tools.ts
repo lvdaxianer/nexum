@@ -32,6 +32,8 @@ export function normalizeNexumToolRequest(
       ? "write"
       : toolName === "skill_registry"
         ? skillRegistryPermissionAction(input.operation)
+        : toolName.startsWith("local__")
+          ? "local.call"
         : toolName
   const resource =
     toolName === "shell"

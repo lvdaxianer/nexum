@@ -9,6 +9,7 @@ import {
   createNexumSkillInvocationPort,
   createMcpRegistry,
   McpError,
+  normalizeMcpServerConfig,
   type EventSink,
   type NexumCodingLoop,
   type NexumInteractionStore,
@@ -24,6 +25,8 @@ import {
   type McpOAuthControlPort,
   type McpRegistry,
   type McpServerConfigStore,
+  type McpServerConfig,
+  type NexumLocalFunctionProvider,
   type MemoryPort,
   type ModelPort,
   type MessageStore,
@@ -41,6 +44,7 @@ import {
 } from "@nexum/core"
 import { createNexumQuestionPort } from "./context.ts"
 import { createNexumSkillRegistry } from "./skill-registry.ts"
+import { createNexumLocalFunctionRegistry, type NexumLocalFunctionRegistry } from "./local-functions.ts"
 import { createNexumToolRegistry } from "./local-tools.ts"
 import { createNexumConfiguredCodingLoop } from "./configured-loop.ts"
 import {
@@ -72,6 +76,8 @@ export type { NexumQuestionPortOptions } from "./context.ts"
 export type { NexumSandboxOptions } from "@nexum/integrations"
 export { createNexumSkillRegistry } from "./skill-registry.ts"
 export type { NexumSkillRegistryOptions } from "./skill-registry.ts"
+export { createNexumLocalFunctionRegistry } from "./local-functions.ts"
+export type { NexumLocalFunctionRegistry } from "./local-functions.ts"
 export type { FilePersistenceOptions } from "@nexum/persistence-file"
 export type { NexumPersistence } from "@nexum/persistence"
 export { createNexumToolRegistry } from "./local-tools.ts"
@@ -110,7 +116,9 @@ export interface NexumRuntimeOptions extends NexumRuntimeStorageOptions {
   readonly mcpConfigStore?: McpServerConfigStore
   readonly mcpCredentialStore?: McpCredentialStore
   readonly mcpConnector?: McpConnector
+  readonly mcpServers?: readonly McpServerConfig[]
   readonly mcpReady?: Promise<void>
+  readonly localFunctions?: readonly NexumLocalFunctionProvider[]
   readonly skillRoots?: readonly string[]
   readonly codingLoop?: NexumCodingLoop
   readonly capabilities?: readonly NexumCapability[]
@@ -133,6 +141,7 @@ export interface NexumDefaultRuntime extends NexumRuntime {
   readonly providerCatalog: NexumProviderCatalogPort
   readonly codingLoop: NexumCodingLoop
   readonly executionStore: NexumExecutionStore
+  readonly localFunctions: NexumLocalFunctionRegistry
   readonly mcpReady?: Promise<void>
   readonly mcpConfigStore?: McpServerConfigStore
   readonly persistence: NexumPersistence
@@ -174,6 +183,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
         : { registrationStore: persistence.skillRegistrationStore }),
   })
   const skillInvocation = options.skillInvocation ?? createNexumSkillInvocationPort({ registry: skills, permission })
+  const localFunctions = createNexumLocalFunctionRegistry(options.localFunctions ?? [])
   const host = options.host ?? createLocalHostAdapter()
   const tools = createNexumToolRegistry({
     sessions,
@@ -182,6 +192,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     shellTimeoutMs: options.shellTimeoutMs ?? options.toolTimeoutMs,
     shellCleanupTimeoutMs: options.shellCleanupTimeoutMs,
     skillRegistry: skills,
+    localFunctions,
     ...(options.mcp ? { mcp: options.mcp } : {}),
   })
   const memory = options.memory ?? persistence.memory
@@ -236,6 +247,7 @@ export function createEmbeddedRuntime(options: NexumRuntimeOptions = {}): NexumD
     providerCatalog,
     codingLoop: runtimeLoop,
     executionStore,
+    localFunctions,
     persistence,
     ...(mcpReady ? { mcpReady } : {}),
     ...(options.mcpConfigStore ? { mcpConfigStore: options.mcpConfigStore } : {}),
@@ -315,7 +327,7 @@ function createLocalMcpRuntime(options: NexumRuntimeOptions): {
   let mcp: McpRegistry
   let mcpOAuth: McpOAuthControlPort | undefined = options.mcpOAuth
   const connector = options.mcpConnector ?? createMcpSdkConnector({
-    oauth: (config) => createMcpOAuthProvider({
+    oauth: (config) => config.transport === "stdio" ? undefined : createMcpOAuthProvider({
       serverID: config.id,
       serverUrl: config.url,
       credentialStore,
@@ -325,6 +337,7 @@ function createLocalMcpRuntime(options: NexumRuntimeOptions): {
       },
     }),
     onAuthorizationRequired: async (config) => {
+      if (config.transport === "stdio") return
       await mcpOAuth?.start({ serverID: config.id, serverUrl: config.url })
     },
   })
@@ -335,17 +348,71 @@ function createLocalMcpRuntime(options: NexumRuntimeOptions): {
     },
   })
   mcp = createMcpRegistry({ connector })
-  return { mcp, mcpOAuth, mcpReady: restoreMcpServers(mcp, configStore), configStore }
+  return {
+    mcp,
+    mcpOAuth,
+    mcpReady: bootstrapMcpServers(mcp, configStore, options.mcpServers ?? []),
+    configStore,
+  }
 }
 
-async function restoreMcpServers(mcp: McpRegistry, configStore: McpServerConfigStore): Promise<void> {
+async function bootstrapMcpServers(
+  mcp: McpRegistry,
+  configStore: McpServerConfigStore,
+  initialConfigs: readonly McpServerConfig[],
+): Promise<void> {
   try {
-    const configs = await configStore.list()
+    const existing = await configStore.list()
+    const storedByID = new Map(existing.map((config) => [config.id, config]))
+    const initial = initialConfigs.map(normalizeMcpServerConfig)
+    const initialByID = new Map<string, McpServerConfig>()
+    initial.forEach((config) => {
+      const previous = initialByID.get(config.id)
+      if (previous && comparableMcpConfig(previous) !== comparableMcpConfig(config)) {
+        throw new McpError("server_exists", `MCP Server 配置冲突: ${config.id}`)
+      }
+      initialByID.set(config.id, config)
+    })
+    initial.forEach((config) => {
+      const stored = storedByID.get(config.id)
+      if (stored) {
+        if (comparableMcpConfig(stored) !== comparableMcpConfig(config)) {
+          throw new McpError("server_exists", `MCP Server 配置冲突: ${config.id}`)
+        }
+      }
+    })
+    const missing = [...initialByID.values()].filter((config) => !storedByID.has(config.id))
+    await missing.reduce((pending, config) => pending.then(() => configStore.save(config)), Promise.resolve())
+    await restoreMcpServers(mcp, [...existing, ...missing])
+  } catch (error) {
+    if (error instanceof McpError && error.code === "runtime_closed") return
+    throw error
+  }
+}
+
+async function restoreMcpServers(mcp: McpRegistry, configs: readonly McpServerConfig[]): Promise<void> {
+  try {
     await Promise.all(configs.map((config) => mcp.register(config)))
   } catch (error) {
     if (error instanceof McpError && error.code === "runtime_closed") return
     throw error
   }
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`
+  if (!isRecord(value)) return JSON.stringify(value)
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`
+}
+
+function comparableMcpConfig(config: McpServerConfig): string {
+  const value = { ...config } as Record<string, unknown>
+  if (value.transport === "http") delete value.transport
+  return stableStringify(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 export const createDefaultRuntime = createLocalRuntime

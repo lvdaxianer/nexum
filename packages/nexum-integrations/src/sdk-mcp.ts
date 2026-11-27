@@ -1,8 +1,10 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { lookup } from "node:dns/promises"
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { isUnsafeMcpHostname, McpError, type McpConnection, type McpConnector, type McpServerConfig, type McpToolCall, type ToolResult } from "@nexum/core"
 
@@ -20,56 +22,108 @@ type McpLookup = (hostname: string, options: { readonly all: true; readonly verb
 /** 使用官方 MCP TypeScript SDK 创建远程 Streamable HTTP 连接。 */
 export function createMcpSdkConnector(options: McpSdkConnectorOptions = {}): McpConnector {
   return {
-    async connect(config, signal) {
-      const resolveHost: McpLookup = options.lookup ?? ((hostname, lookupOptions) => lookup(hostname, lookupOptions))
-      await assertSafeMcpTarget(config, resolveHost)
-      const toolsChanged = new Set<() => void>()
-      const closed = new Set<() => void>()
-      const client = new Client(
-        { name: options.clientName ?? "nexum", version: options.clientVersion ?? "0.0.1" },
-        {
-          capabilities: { roots: { listChanged: true } },
-          listChanged: {
-            tools: {
-              onChanged: (error) => {
-                if (!error) toolsChanged.forEach((listener) => listener())
-              },
-            },
-          },
-        },
-      )
-      const transport = new StreamableHTTPClientTransport(new URL(config.url), {
-        authProvider: options.oauth?.(config),
-        fetch: options.fetch,
-        requestInit: {
-          signal,
-          ...(config.headers ? { headers: config.headers } : {}),
-        },
-        reconnectionOptions: {
-          maxReconnectionDelay: 10_000,
-          initialReconnectionDelay: 500,
-          reconnectionDelayGrowFactor: 1.5,
-          maxRetries: 2,
-        },
-      })
-      transport.onclose = () => closed.forEach((listener) => listener())
-      signal.addEventListener("abort", () => void transport.close(), { once: true })
-      try {
-        await client.connect(transport)
-        return createConnection(client, transport, toolsChanged, closed)
-      } catch (error) {
-        await transport.close()
-        if (error instanceof UnauthorizedError) {
-          await options.onAuthorizationRequired?.(config)
-          throw new McpError("needs_auth", "MCP OAuth 需要用户授权")
-        }
-        throw error
-      }
-    },
+    connect: (config, signal) => config.transport === "stdio" ? connectStdio(config, signal) : connectHttp(config, signal, options),
   }
 }
 
-async function assertSafeMcpTarget(config: McpServerConfig, resolveHost: McpLookup): Promise<void> {
+/**
+ * 连接本地 stdio MCP Server。
+ *
+ * @param config - 本地 MCP Server 配置
+ * @param signal - 连接取消信号
+ * @returns 已完成初始化的 MCP 连接
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-27
+ */
+async function connectStdio(config: Extract<McpServerConfig, { transport: "stdio" }>, signal: AbortSignal): Promise<McpConnection> {
+  const transport = new StdioClientTransport({
+    command: config.command,
+    args: [...config.args],
+    ...(config.cwd ? { cwd: config.cwd } : {}),
+    ...(config.env ? { env: { ...config.env } } : {}),
+    stderr: "inherit",
+  })
+  return connectClient(transport, signal)
+}
+
+/**
+ * 连接远程 HTTP MCP Server。
+ *
+ * @param config - 远程 MCP Server 配置
+ * @param signal - 连接取消信号
+ * @param options - SDK Connector 配置
+ * @returns 已完成初始化的 MCP 连接
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-27
+ */
+async function connectHttp(
+  config: Extract<McpServerConfig, { transport?: "http" }>,
+  signal: AbortSignal,
+  options: McpSdkConnectorOptions,
+): Promise<McpConnection> {
+  const resolveHost: McpLookup = options.lookup ?? ((hostname, lookupOptions) => lookup(hostname, lookupOptions))
+  await assertSafeMcpTarget(config, resolveHost)
+  const transport = new StreamableHTTPClientTransport(new URL(config.url), {
+    authProvider: options.oauth?.(config),
+    fetch: options.fetch,
+    requestInit: { signal, ...(config.headers ? { headers: config.headers } : {}) },
+    reconnectionOptions: { maxReconnectionDelay: 10_000, initialReconnectionDelay: 500, reconnectionDelayGrowFactor: 1.5, maxRetries: 2 },
+  })
+  try {
+    return await connectClient(transport, signal, options)
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await options.onAuthorizationRequired?.(config)
+      throw new McpError("needs_auth", "MCP OAuth 需要用户授权")
+    }
+    throw error
+  }
+}
+
+/**
+ * 创建 Client、安装变化监听并完成 MCP 初始化。
+ *
+ * @param transport - MCP SDK 传输实现
+ * @param signal - 连接取消信号
+ * @returns 已完成初始化的 MCP 连接
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-27
+ */
+async function connectClient(transport: Transport, signal: AbortSignal, options?: McpSdkConnectorOptions): Promise<McpConnection> {
+  const toolsChanged = new Set<() => void>()
+  const closed = new Set<() => void>()
+  const client = createClient(toolsChanged, options)
+  transport.onclose = () => closed.forEach((listener) => listener())
+  signal.addEventListener("abort", () => void transport.close(), { once: true })
+  try {
+    await client.connect(transport)
+    return createConnection(client, transport, toolsChanged, closed)
+  } catch (error) {
+    await transport.close()
+    throw error
+  }
+}
+
+/**
+ * 创建支持工具目录变化通知的 MCP Client。
+ *
+ * @param toolsChanged - 工具目录变化监听集合
+ * @param options - 可选的 Client 名称与版本配置
+ * @returns 配置完成的 MCP Client
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-27
+ */
+function createClient(toolsChanged: Set<() => void>, options?: McpSdkConnectorOptions): Client {
+  return new Client(
+    { name: options?.clientName ?? "nexum", version: options?.clientVersion ?? "0.0.1" },
+    {
+      capabilities: { roots: { listChanged: true } },
+      listChanged: { tools: { onChanged: (error) => { if (!error) toolsChanged.forEach((listener) => listener()) } } },
+    },
+  )
+}
+
+async function assertSafeMcpTarget(config: Extract<McpServerConfig, { transport?: "http" }>, resolveHost: McpLookup): Promise<void> {
   let url: URL
   try {
     url = new URL(config.url)
@@ -89,7 +143,7 @@ async function assertSafeMcpTarget(config: McpServerConfig, resolveHost: McpLook
 
 function createConnection(
   client: Client,
-  transport: StreamableHTTPClientTransport,
+  transport: Transport,
   toolsChanged: Set<() => void>,
   closed: Set<() => void>,
 ): McpConnection {

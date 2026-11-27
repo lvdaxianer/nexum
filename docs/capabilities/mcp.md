@@ -1,15 +1,15 @@
-# Remote MCP Server lifecycle
+# MCP Server lifecycle
 
 [中文](../zh-CN/capabilities/mcp.md)
 
-MCP integration registers a remote server, connects it when needed, discovers
-tools/resources/prompts, and forwards calls through the Runtime. The UI should
-show the current status and authorization state rather than managing a raw
-JSON-RPC connection.
+MCP integration registers either a remote HTTP server or a local stdio server,
+connects it when needed, discovers tools/resources/prompts, and forwards calls
+through the Runtime. The UI should show the current status and authorization
+state rather than managing a raw JSON-RPC connection.
 
 ## Lifecycle
 
-1. Register the remote URL.
+1. Register an HTTP or stdio configuration.
 2. Connect and observe the server status.
 3. Discover tools, resources, or prompts.
 4. Invoke a capability through the Runtime and Permission policy.
@@ -20,7 +20,7 @@ JSON-RPC connection.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/mcp` | List registered server status |
-| `POST` | `/mcp` | Register a remote URL |
+| `POST` | `/mcp` | Register an HTTP or stdio server |
 | `POST` | `/mcp/{id}/connect` | Connect |
 | `POST` | `/mcp/{id}/disconnect` | Disconnect |
 | `DELETE` | `/mcp/{id}` | Remove registration |
@@ -31,6 +31,40 @@ JSON-RPC connection.
 OAuth authorization is exposed as an attempt lifecycle: create an attempt,
 read its status, complete it with the redirect URL, or cancel it. Exact request
 and response fields are in the [Runtime API](../../apis/nexum.md).
+
+An HTTP registration uses `url`:
+
+```json
+{
+  "id": "remote-search",
+  "name": "Remote Search",
+  "transport": "http",
+  "url": "https://example.com/mcp"
+}
+```
+
+A local registration uses `transport: "stdio"`, `command`, and `args`:
+
+```json
+{
+  "id": "github-tools",
+  "name": "GitHub Tools",
+  "transport": "stdio",
+  "command": "node",
+  "args": ["./mcp/github-server.mjs"],
+  "cwd": "/workspace/project",
+  "env": { "GITHUB_HOST": "github.com" }
+}
+```
+
+The Runtime owns the child process and passes its stdin/stdout to the MCP SDK;
+`cwd` and `env` are applied only to that child. Do not put tokens or other
+credential-shaped values in `env`; those keys are rejected before persistence.
+A stdio server does not use
+OAuth or a URL. Both forms can be supplied as `mcpServers` when creating a
+local Runtime. The configuration Store persists them by `id`; reusing the same
+`id` with the same normalized configuration is a no-op, while a different
+configuration fails instead of silently overwriting the persisted entry.
 
 ## Status and retry behavior
 

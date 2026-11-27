@@ -1,4 +1,4 @@
-# MCP 远程 Server 生命周期
+# MCP Server 生命周期
 
 [English](../../capabilities/mcp.md)
 
@@ -8,7 +8,7 @@
 
 ## 生命周期
 
-远程 MCP 先通过 URL 注册并写入 Runtime 配置存储，再由 Local Runtime 在启动恢复阶段装配 Registry、异步发起连接。Server 启动只等待配置恢复，不等待每个远程连接成功；因此 Client 可以立即读取到 `pending` 状态，并由 Runtime 继续完成连接。
+MCP 支持远程 HTTP 和本地 stdio 两种 transport。配置先写入 Runtime 配置存储，再由 Local Runtime 在启动恢复阶段装配 Registry、异步发起连接。Server 启动只等待配置恢复，不等待连接成功；因此 Client 可以立即读取到 `pending` 状态，并由 Runtime 继续完成连接。
 
 连接所有权在 Runtime/Server，Client 页面只读取状态快照并发起显式控制操作，不创建 transport、不保存 OAuth token，也不实现自己的重试状态机。状态流转为：
 
@@ -28,6 +28,26 @@
 }
 ```
 
+本地 stdio MCP 使用 `command`、`args`，可选 `cwd` 和 `env`，不使用 URL 或 OAuth：
+
+```json
+{
+  "id": "github-tools",
+  "name": "GitHub Tools",
+  "transport": "stdio",
+  "command": "node",
+  "args": ["./mcp/github-server.mjs"],
+  "cwd": "/workspace/project",
+  "env": { "GITHUB_HOST": "github.com" }
+}
+```
+
+Runtime 会为该配置启动独立子进程，并把 stdin/stdout 交给 MCP SDK。`env` 中
+不能放 token 等凭据值，凭据形状的环境变量会在持久化前被拒绝。HTTP 和
+stdio 配置都可以通过 `createLocalRuntime({ mcpServers })` 注入。配置按 `id`
+持久化：相同 ID、相同规范化配置重复启动是幂等操作；相同 ID 但配置不同会报
+冲突，不会静默覆盖已持久化内容。
+
 配置边界会规范化 URL，并拒绝把 `Authorization`、Cookie、token、secret 或 API key 放进公开配置。OAuth token、refresh token、client secret 只能进入 `McpCredentialStore`，不会出现在 Server 列表、目录、事件、工具结果或普通日志中。
 
 ## 实验性 HTTP API
@@ -37,7 +57,7 @@
 | 方法     | 路径                              | 作用                              |
 | -------- | --------------------------------- | --------------------------------- |
 | `GET`    | `/mcp`                            | 列出当前 MCP Server 状态          |
-| `POST`   | `/mcp`                            | 注册远程 URL                      |
+| `POST`   | `/mcp`                            | 注册 HTTP 或 stdio Server         |
 | `POST`   | `/mcp/{id}/connect`               | 发起连接                          |
 | `POST`   | `/mcp/{id}/disconnect`            | 断开连接                          |
 | `DELETE` | `/mcp/{id}`                       | 移除注册                          |

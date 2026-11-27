@@ -48,7 +48,8 @@ with [Nexum composition examples](examples/README.md):
 | Handle Agent Questions | [Question](ui/question.md) | structured questions, answers, cancellation, and errors |
 | Use context and history | [Context / History](capabilities/context-and-history.md) | project context, compaction, messages, and recovery |
 | Use Skills | [Skills](capabilities/skills.md) | discovery, validation, registration, activation, and updates |
-| Use MCP | [MCP](capabilities/mcp.md) | remote server lifecycle, tools, resources, prompts, and OAuth |
+| Use MCP | [MCP](capabilities/mcp.md) | HTTP/stdio server lifecycle, tools, resources, prompts, and OAuth |
+| Register local functions | [Local functions](capabilities/local-functions.md) | in-process JavaScript function calling and handler lifecycle |
 
 ## Modules and APIs
 

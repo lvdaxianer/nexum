@@ -246,6 +246,13 @@ function validateCredential(credential: McpOAuthCredential): void {
 }
 
 function cloneConfig(config: McpServerConfig): McpServerConfig {
+  if (config.transport === "stdio") {
+    return {
+      ...config,
+      args: [...config.args],
+      ...(config.env ? { env: { ...config.env } } : {}),
+    }
+  }
   return { ...config, ...(config.headers ? { headers: { ...config.headers } } : {}) }
 }
 
@@ -270,14 +277,26 @@ function isStoredCredentialFile(value: unknown): value is StoredCredentialFile {
 }
 
 function isMcpServerConfig(value: unknown): value is McpServerConfig {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    (value.disabled !== undefined && typeof value.disabled !== "boolean") ||
+    (value.timeoutMs !== undefined && typeof value.timeoutMs !== "number")
+  ) return false
+  if (value.transport === "stdio") {
+    return (
+      typeof value.command === "string" &&
+      Array.isArray(value.args) &&
+      value.args.every((argument) => typeof argument === "string") &&
+      (value.cwd === undefined || typeof value.cwd === "string") &&
+      (value.env === undefined || isRecordOfStrings(value.env))
+    )
+  }
   return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
+    (value.transport === undefined || value.transport === "http") &&
     typeof value.url === "string" &&
     (value.headers === undefined || isRecordOfStrings(value.headers)) &&
-    (value.disabled === undefined || typeof value.disabled === "boolean") &&
-    (value.timeoutMs === undefined || typeof value.timeoutMs === "number") &&
     (value.protocol === undefined || value.protocol === "legacy" || value.protocol === "auto" || value.protocol === "2026-07-28")
   )
 }

@@ -119,6 +119,58 @@ test("registers and controls a remote MCP server through the experimental API", 
   expect(await removeResponse.json()).toMatchObject({ data: { id: "remote-search", deleted: true } })
 })
 
+test("registers a local stdio MCP server through the experimental API", async () => {
+  const mcp = createMcpRegistry({ autoConnect: false, connector: { connect: async () => createConnection() } })
+  const server = await startNexumServer({ port: 0, mcp })
+  servers.push(server)
+
+  const response = await fetch(new URL("/api/experimental/nexum/mcp", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: "local-stdio",
+      name: "Local Stdio",
+      transport: "stdio",
+      command: process.execPath,
+      args: ["server.mjs", "--fixture"],
+      cwd: process.cwd(),
+      env: { MCP_FIXTURE: "1" },
+    }),
+  })
+  const body = (await response.json()) as { data: { id: string; transport?: string; url?: string } }
+
+  expect(response.status).toBe(200)
+  expect(body.data).toMatchObject({ id: "local-stdio", transport: "stdio" })
+  expect(body.data.url).toBeUndefined()
+})
+
+test("rejects malformed local stdio MCP registrations", async () => {
+  const mcp = createMcpRegistry({ autoConnect: false, connector: { connect: async () => createConnection() } })
+  const server = await startNexumServer({ port: 0, mcp })
+  servers.push(server)
+
+  const missingCommand = await fetch(new URL("/api/experimental/nexum/mcp", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "missing-command", name: "Missing Command", transport: "stdio", args: [] }),
+  })
+  const mixedTransport = await fetch(new URL("/api/experimental/nexum/mcp", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: "mixed-transport",
+      name: "Mixed Transport",
+      transport: "stdio",
+      command: process.execPath,
+      args: [],
+      url: "https://example.com/mcp",
+    }),
+  })
+
+  expect(missingCommand.status).toBe(400)
+  expect(mixedTransport.status).toBe(400)
+})
+
 test("does not expose MCP configuration headers through the public server view", async () => {
   const mcp = createMcpRegistry({ autoConnect: false, connector: { connect: async () => { throw new Error("unused") } } })
   const server = await startNexumServer({ port: 0, mcp })
