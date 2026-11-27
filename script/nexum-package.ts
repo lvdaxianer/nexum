@@ -2,7 +2,9 @@ import { join } from "node:path"
 
 export const artifactRoot = join(process.cwd(), "artifacts", "nexum")
 export const releasePackageName = "nexum-ai"
-export const releasePackageVersion = "0.1.0-beta.0"
+export const releasePackageVersion = process.env.NEXUM_RELEASE_VERSION ?? "0.1.0-beta.0"
+export const releasePackageTag = process.env.NEXUM_RELEASE_TAG ?? "beta"
+export const releasePackageRegistry = process.env.NEXUM_RELEASE_REGISTRY ?? "https://registry.npmjs.org/"
 
 export const publicEntries = {
   ".": { source: "script/nexum-entry.ts", output: "index" },

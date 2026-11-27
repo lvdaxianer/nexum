@@ -6,6 +6,7 @@ import {
   outputPath,
   publicEntries,
   releasePackageName,
+  releasePackageTag,
   releasePackageVersion,
   workspacePackageToSubpath,
 } from "./nexum-package"
@@ -103,7 +104,7 @@ const manifest = {
   homepage: "https://github.com/lvdaxianer/nexum",
   bugs: { url: "https://github.com/lvdaxianer/nexum/issues" },
   keywords: ["agent", "runtime", "ai", "bun"],
-  publishConfig: { tag: "beta" },
+  publishConfig: { tag: releasePackageTag },
   bin: { nexum: "dist/cli.js" },
   exports: {
     ".": { types: "./dist/index.d.ts", import: "./dist/index.js", default: "./dist/index.js" },
