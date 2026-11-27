@@ -40,9 +40,9 @@ Plan 模式临时注入系统上下文，明确当前模式、禁止的操作和
 
 ### 3. Protocol、Server 和 Client
 
-Protocol 的 `NexumSession`、`NexumSessionState` 和相关输入类型公开 `mode`。Server 的 Session 创建响应和所有 Session 查询响应返回模式；在现有 `PUT /api/nexum/session/:id` 中接受可选 `mode`，只更新传入字段。模式更新使用同一资源接口，保留名称更新兼容性。
+Protocol 的 `NexumSession`、`NexumSessionState` 和相关输入类型公开 `mode`。Server 的 Session 创建响应和所有 Session 查询响应返回模式；新增 `PUT /api/nexum/session/:id/mode` 子资源接口更新模式，保留现有名称更新接口兼容性。
 
-Server 对 `mode` 做枚举校验，运行中切换返回 409 `NEXUM_SESSION_RUN_CONFLICT`，不存在的 Session 返回 404，其他失败使用现有 caller-safe 错误结构。Client 暴露 `session.update({ sessionID, name?, mode? })`，不新增平行的非 REST 路由。
+Server 对 `mode` 做枚举校验，运行中切换返回 409 `NEXUM_SESSION_RUN_CONFLICT`，不存在的 Session 返回 404，其他失败使用现有 caller-safe 错误结构。Client 暴露 `session.setMode({ sessionID, mode })`，使用同一子资源契约。
 
 ### 4. Surface 交互
 
