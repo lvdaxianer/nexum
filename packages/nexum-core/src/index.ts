@@ -121,7 +121,7 @@ export interface ToolResult {
   readonly ok: boolean
   readonly output: string
   readonly toolCallID?: string
-  readonly errorCode?: "timeout" | "cancelled" | "tool_failed" | "plan_mode_restricted"
+  readonly errorCode?: "timeout" | "cancelled" | "tool_failed" | "invalid_input" | "plan_mode_restricted"
   readonly status?: "timeout" | "cancelled" | "failed"
 }
 

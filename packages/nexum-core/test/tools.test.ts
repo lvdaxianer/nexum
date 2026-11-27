@@ -36,6 +36,16 @@ test("registers read, write/edit, and shell tools with normalized permission res
   })
 })
 
+test("normalizes local function calls into the local.call permission action", async () => {
+  const sessions = createNexumSessionService()
+  const session = await sessions.create({ directory: process.cwd() })
+
+  expect(normalizeNexumToolRequest(session.sessionID, "local__local_tools__echo", { value: "hello" })).toMatchObject({
+    action: "local.call",
+    resource: "local__local_tools__echo",
+  })
+})
+
 test("exposes Nexum-managed Skill registry operations without shell discovery", async () => {
   const directory = await mkdtemp(join(tmpdir(), "nexum-skill-tool-"))
   temporaryDirectories.push(directory)

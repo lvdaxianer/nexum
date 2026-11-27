@@ -65,7 +65,7 @@ Connector 使用官方 MCP SDK 的 `StdioClientTransport` 启动子进程，并�
 }
 ```
 
-`execute` 只存在于当前进程内，不序列化。持久化只保存 provider、函数名称、描述和 Schema 等可恢复元数据。Runtime 重启后，只有重新注入执行函数且 Schema 匹配的定义才重新进入模型工具目录；缺少 handler 的记录保持不可用且不可调用。
+`execute` 只存在于当前进程内，不序列化。本次实现不为本地 JS 函数创建独立的持久化记录；`localFunctions` 注入参数是它的唯一注册来源。Runtime 重启后必须重新注入 provider，重新注入的函数定义会按稳定名称和 Schema 做幂等合并。MCP 配置则由现有配置 Store 持久化并恢复。
 
 ### 幂等规则
 
@@ -89,7 +89,7 @@ createLocalRuntime(options)
   -> 读取 MCP 持久化配置
   -> 幂等合并 options.mcpServers
   -> 恢复 stdio/HTTP MCP Registry
-  -> 注册 options.localFunctions 的进程内绑定
+  -> 注册 options.localFunctions 的进程内绑定（重启后重新注入）
   -> 生成统一工具目录
   -> Coding Loop 每次模型调用使用当前目录
 ```

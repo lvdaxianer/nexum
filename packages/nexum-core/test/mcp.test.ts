@@ -62,6 +62,15 @@ test("normalizes local stdio server definitions without accepting remote fields"
     args: [],
     url: "https://example.test/mcp",
   } as McpServerConfig)).toThrow("MCP Server transport 配置无效")
+
+  expect(() => normalizeMcpServerConfig({
+    id: "secret-env",
+    name: "Secret Environment",
+    transport: "stdio",
+    command: "bun",
+    args: ["server.ts"],
+    env: { API_TOKEN: "secret" },
+  })).toThrow("不得持久化凭据环境变量")
 })
 
 test("rejects MCP URLs that can target local resources or carry hidden state", async () => {

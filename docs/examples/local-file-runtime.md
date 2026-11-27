@@ -24,6 +24,13 @@ import { createLocalRuntime } from "nexum-ai/application"
 
 const runtime = createLocalRuntime({
   dataDirectory: ".nexum",
+  mcpServers: [{
+    id: "project-tools",
+    name: "Project Tools",
+    transport: "stdio",
+    command: "node",
+    args: ["./mcp/project-server.mjs"],
+  }],
 })
 
 await runtime.modelConfig.update({
@@ -50,6 +57,11 @@ await runtime.close()
 
 `dataDirectory` is where Nexum stores runtime data. `directory` is where the
 Agent is allowed to work; they are different values.
+
+MCP configurations are persisted and restored by `id`; reusing the same
+configuration is idempotent. In-process JavaScript handlers are not serialized,
+so inject `localFunctions` again after a restart. See [local JavaScript function
+calling](../capabilities/local-functions.md).
 
 ## Parameters
 

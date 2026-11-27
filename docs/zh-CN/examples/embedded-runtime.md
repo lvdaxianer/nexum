@@ -46,6 +46,31 @@ await runtime.codingLoop.run({
 await runtime.close()
 ```
 
+如果要把进程内 JavaScript 方法作为模型的 Function Calling，可以在创建
+Runtime 时注入：
+
+```ts
+const runtime = createEmbeddedRuntime({
+  localFunctions: [{
+    providerID: "project-tools",
+    providerName: "Project Tools",
+    functions: [{
+      name: "create_issue",
+      description: "创建 Issue",
+      parameters: {
+        type: "object",
+        properties: { title: { type: "string" } },
+        required: ["title"],
+      },
+      execute: async (input) => ({ issueID: await createIssue(input.title) }),
+    }],
+  }],
+})
+```
+
+如果要运行本地 MCP 进程，则使用带 `transport: "stdio"` 的 `mcpServers`；
+完整配置格式见 [MCP 生命周期](../capabilities/mcp.md)。
+
 ## 参数说明
 
 | 参数            | 说明                                                    |

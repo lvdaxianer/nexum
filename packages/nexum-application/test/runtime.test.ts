@@ -19,7 +19,7 @@ import {
   createNexumModelConfigStore,
 } from "@nexum/persistence-memory"
 import { createHttpMcpAdapter, createLocalHostAdapter, createOpenAICompatibleModelPort } from "../../nexum-integrations/src/index.ts"
-import { createNexumSessionService, type McpConnection, type McpServerConfigStore, type ModelPort } from "@nexum/core"
+import { createNexumSessionService, normalizeNexumToolRequest, type McpConnection, type McpServerConfigStore, type ModelPort } from "@nexum/core"
 
 const directories: string[] = []
 
@@ -81,6 +81,32 @@ test("composes a provider catalog without changing the coding loop", async () =>
 
   expect((await runtime.providerCatalog.list()).providers[0]?.models[0]?.modelID).toBe("coding-model")
   expect(JSON.stringify(await runtime.providerCatalog.list())).not.toContain("super-secret-value")
+  await runtime.close()
+})
+
+test("exposes injected local JS functions through the Runtime tool contract", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-local-function-runtime-"))
+  directories.push(directory)
+  const runtime = createEmbeddedRuntime({
+    localFunctions: [{
+      providerID: "runtime-tools",
+      providerName: "Runtime Tools",
+      functions: [{
+        name: "echo",
+        description: "Echo input",
+        parameters: { type: "object", required: ["value"], properties: { value: { type: "string" } } },
+        execute: async (input, context) => ({ value: input.value, sessionID: context.sessionID }),
+      }],
+    }],
+  })
+  const session = await runtime.sessions.create({ directory })
+
+  expect(runtime.localFunctions.names).toEqual(["local__runtime_tools__echo"])
+  await expect(runtime.localFunctions.execute(normalizeNexumToolRequest(
+    session.sessionID,
+    "local__runtime_tools__echo",
+    { value: "hello" },
+  ))).resolves.toEqual({ ok: true, output: JSON.stringify({ value: "hello", sessionID: session.sessionID }) })
   await runtime.close()
 })
 
@@ -173,6 +199,63 @@ test("restores MCP configurations and starts enabled connections in the backgrou
     { id: "enabled", status: "connected" },
   ])
   expect(calls).toBe(1)
+  await runtime.close()
+})
+
+test("persists initial stdio MCP configurations idempotently", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-initial-stdio-mcp-"))
+  directories.push(directory)
+  const configs = createInMemoryMcpServerConfigStore()
+  const seen: string[] = []
+  const options = {
+    dataDirectory: join(directory, ".nexum"),
+    mcpConfigStore: configs,
+    mcpServers: [{
+      id: "local-tools",
+      name: "Local Tools",
+      transport: "stdio" as const,
+      command: process.execPath,
+      args: ["fixture.mjs"],
+      cwd: directory,
+      env: { FIXTURE_MODE: "test" },
+    }],
+    mcpConnector: {
+      async connect(config: { id: string; transport?: string }) {
+        seen.push(`${config.id}:${config.transport}`)
+        return createConnection()
+      },
+    },
+  }
+  const first = createLocalRuntime(options)
+  await first.mcpReady
+  await first.close()
+
+  const second = createLocalRuntime(options)
+  await second.mcpReady
+
+  await expect(configs.get("local-tools")).resolves.toMatchObject({
+    transport: "stdio",
+    command: process.execPath,
+    args: ["fixture.mjs"],
+    env: { FIXTURE_MODE: "test" },
+  })
+  expect(seen).toEqual(["local-tools:stdio", "local-tools:stdio"])
+  await second.close()
+})
+
+test("rejects conflicting initial MCP configuration instead of overwriting persisted data", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nexum-conflicting-mcp-"))
+  directories.push(directory)
+  const configs = createInMemoryMcpServerConfigStore()
+  await configs.save({ transport: "stdio", id: "local-tools", name: "Local Tools", command: "node", args: ["old.mjs"] })
+  const runtime = createLocalRuntime({
+    dataDirectory: join(directory, ".nexum"),
+    mcpConfigStore: configs,
+    mcpServers: [{ transport: "stdio", id: "local-tools", name: "Local Tools", command: "node", args: ["new.mjs"] }],
+  })
+
+  await expect(runtime.mcpReady).rejects.toThrow("MCP Server 配置冲突")
+  await expect(configs.get("local-tools")).resolves.toMatchObject({ args: ["old.mjs"] })
   await runtime.close()
 })
 

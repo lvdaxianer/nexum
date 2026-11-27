@@ -50,6 +50,31 @@ await runtime.codingLoop.run({
 await runtime.close()
 ```
 
+To expose an in-process JavaScript function as model function calling, inject
+it when creating the Runtime:
+
+```ts
+const runtime = createEmbeddedRuntime({
+  localFunctions: [{
+    providerID: "project-tools",
+    providerName: "Project Tools",
+    functions: [{
+      name: "create_issue",
+      description: "Create an issue",
+      parameters: {
+        type: "object",
+        properties: { title: { type: "string" } },
+        required: ["title"],
+      },
+      execute: async (input) => ({ issueID: await createIssue(input.title) }),
+    }],
+  }],
+})
+```
+
+For a local MCP process, use `mcpServers` with `transport: "stdio"`; see
+[MCP lifecycle](../capabilities/mcp.md) for the full configuration shape.
+
 ## Parameters in plain language
 
 | Parameter | Meaning |

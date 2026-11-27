@@ -1167,7 +1167,6 @@ function parseMcpServerConfig(payload: Record<string, unknown>): McpServerConfig
   if (
     typeof payload.id !== "string" ||
     typeof payload.name !== "string" ||
-    typeof payload.url !== "string" ||
     (payload.disabled !== undefined && typeof payload.disabled !== "boolean") ||
     (payload.timeoutMs !== undefined &&
       (typeof payload.timeoutMs !== "number" || !Number.isFinite(payload.timeoutMs))) ||
@@ -1178,15 +1177,38 @@ function parseMcpServerConfig(payload: Record<string, unknown>): McpServerConfig
   ) {
     return undefined
   }
-  if (payload.headers !== undefined && !isRecord(payload.headers)) return undefined
-  if (payload.headers && Object.values(payload.headers).some((value) => typeof value !== "string")) return undefined
+  if (payload.transport === "stdio") {
+    if (
+      typeof payload.command !== "string" ||
+      !Array.isArray(payload.args) ||
+      payload.args.some((argument) => typeof argument !== "string") ||
+      (payload.cwd !== undefined && typeof payload.cwd !== "string") ||
+      (payload.env !== undefined && !isRecordOfStrings(payload.env)) ||
+      payload.url !== undefined ||
+      payload.headers !== undefined ||
+      payload.protocol !== undefined
+    ) return undefined
+    return {
+      id: payload.id,
+      name: payload.name,
+      transport: "stdio",
+      command: payload.command,
+      args: payload.args,
+      ...(payload.cwd !== undefined ? { cwd: payload.cwd } : {}),
+      ...(payload.env !== undefined ? { env: payload.env } : {}),
+      ...(payload.disabled !== undefined ? { disabled: payload.disabled } : {}),
+      ...(payload.timeoutMs !== undefined ? { timeoutMs: payload.timeoutMs } : {}),
+    }
+  }
+  if (payload.transport !== undefined && payload.transport !== "http") return undefined
+  if (typeof payload.url !== "string") return undefined
+  if (payload.headers !== undefined && !isRecordOfStrings(payload.headers)) return undefined
   return {
     id: payload.id,
     name: payload.name,
+    ...(payload.transport === "http" ? { transport: "http" as const } : {}),
     url: payload.url,
-    ...(payload.headers
-      ? { headers: Object.fromEntries(Object.entries(payload.headers).map(([key, value]) => [key, value as string])) }
-      : {}),
+    ...(payload.headers !== undefined ? { headers: payload.headers } : {}),
     ...(payload.disabled !== undefined ? { disabled: payload.disabled } : {}),
     ...(payload.timeoutMs !== undefined ? { timeoutMs: payload.timeoutMs } : {}),
     ...(payload.protocol !== undefined ? { protocol: payload.protocol } : {}),
@@ -2517,6 +2539,10 @@ async function resetRolePrompt(rolePromptStore: NexumRolePromptStore | undefined
 /** 判断 JSON payload 是否为非数组对象。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isRecordOfStrings(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every((item) => typeof item === "string")
 }
 
 /**

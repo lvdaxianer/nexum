@@ -25,6 +25,13 @@ import { createLocalRuntime } from "nexum-ai/application"
 
 const runtime = createLocalRuntime({
   dataDirectory: ".nexum",
+  mcpServers: [{
+    id: "project-tools",
+    name: "Project Tools",
+    transport: "stdio",
+    command: "node",
+    args: ["./mcp/project-server.mjs"],
+  }],
 })
 
 await runtime.modelConfig.update({
@@ -50,6 +57,10 @@ console.log(sessions)
 
 await runtime.close()
 ```
+
+MCP 配置会按 `id` 持久化并在重启时恢复；同一配置重复启动是幂等的。本地
+JavaScript handler 不会被序列化，重启后要重新注入 `localFunctions`。详见
+[本地 JavaScript Function Calling](../capabilities/local-functions.md)。
 
 ## 参数说明
 

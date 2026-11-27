@@ -16,6 +16,7 @@ import type {
   ToolResult,
 } from "@nexum/core"
 import { createLocalHostAdapter, createSandboxHost, type NexumSandboxOptions } from "@nexum/integrations"
+import type { NexumLocalFunctionRegistry } from "./local-functions.ts"
 
 /** POC 首期内置工具名称。 */
 export type NexumBuiltinToolName = "read" | "write" | "edit" | "shell" | "skill_registry"
@@ -29,6 +30,7 @@ export interface NexumToolRegistryOptions {
   readonly shellCleanupTimeoutMs?: number
   readonly skillRegistry?: NexumSkillRegistry
   readonly mcp?: McpPort
+  readonly localFunctions?: NexumLocalFunctionRegistry
 }
 
 /** 内置工具注册表和统一执行端口。 */
@@ -137,8 +139,12 @@ export function createNexumToolRegistry(options: NexumToolRegistryOptions): Nexu
   ]
   const definitions: ModelToolDefinition[] = [...builtinDefinitions]
   const mcpBindings = new Map<string, { serverID: string; toolName: string }>()
+  let mcpDefinitions: readonly ModelToolDefinition[] = []
+  const localFunctionDefinitions = options.localFunctions?.definitions ?? []
   let refreshPromise: Promise<void> | undefined
   let refreshTimer: ReturnType<typeof setTimeout> | undefined
+  options.localFunctions?.subscribe(refreshCatalog)
+  refreshCatalog()
   const ready = options.mcp ? refreshMcpTools() : Promise.resolve()
   options.mcp?.subscribeToolsChanged?.(() => {
     if (refreshTimer) clearTimeout(refreshTimer)
@@ -169,6 +175,9 @@ export function createNexumToolRegistry(options: NexumToolRegistryOptions): Nexu
             ? executeSkillRegistryTool(options.skillRegistry, request)
             : { ok: false, output: "Skill 注册表未配置" }
         }
+        if (options.localFunctions?.names.includes(request.toolName)) {
+          return options.localFunctions.execute(request)
+        }
         const binding = mcpBindings.get(request.toolName)
         if (binding && options.mcp) {
           return options.mcp.callTool({
@@ -192,14 +201,21 @@ export function createNexumToolRegistry(options: NexumToolRegistryOptions): Nexu
     refreshPromise = loadMcpTools(options.mcp)
       .then((loaded) => {
         definitions.splice(builtinDefinitions.length, definitions.length - builtinDefinitions.length, ...loaded.definitions)
-        names.splice(builtinDefinitions.length, names.length - builtinDefinitions.length, ...loaded.names)
+        mcpDefinitions = loaded.definitions
         mcpBindings.clear()
         loaded.bindings.forEach((binding, name) => mcpBindings.set(name, binding))
+        refreshCatalog()
       })
       .finally(() => {
         refreshPromise = undefined
       })
     return refreshPromise
+  }
+
+  function refreshCatalog(): void {
+    const additions = [...localFunctionDefinitions, ...mcpDefinitions]
+    definitions.splice(builtinDefinitions.length, definitions.length - builtinDefinitions.length, ...additions)
+    names.splice(builtinDefinitions.length, names.length - builtinDefinitions.length, ...additions.map((definition) => definition.name))
   }
 }
 

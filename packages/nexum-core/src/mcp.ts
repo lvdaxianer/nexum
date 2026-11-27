@@ -476,6 +476,9 @@ function normalizeStdioServerConfig(config: McpStdioServerConfig): McpStdioServe
     throw new McpError("invalid_config", "MCP Server transport 配置无效")
   }
   const env = config.env ? { ...config.env } : undefined
+  if (Object.keys(env ?? {}).some((name) => /authorization|cookie|token|secret|password|api[-_]?key/i.test(name))) {
+    throw new McpError("invalid_config", "MCP stdio 配置不得持久化凭据环境变量")
+  }
   return {
     ...config,
     id: config.id.trim(),

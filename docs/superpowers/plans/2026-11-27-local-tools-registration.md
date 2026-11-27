@@ -178,11 +178,11 @@
 
   Expected: FAIL，因为 Runtime 没有初始 MCP/本地函数参数，MCP Store 也只接受 URL 配置。
 
-- [ ] **Step 3: 实现启动合并和存储**
+- [x] **Step 3: 实现启动合并和存储**
 
-  在 Runtime Options 增加 `mcpServers` 与 `localFunctions`；在 Local Runtime 创建 MCP Registry 后，先规范化并幂等合并初始配置，再调用现有恢复流程。将 `McpServerConfigStore.save/list` 扩展到 stdio 配置，并保持 JSON 文件版本兼容。为本地函数保存可恢复元数据，执行 handler 只从当前 Runtime 注入；初始配置与持久化配置冲突时默认失败，不静默覆盖。
+  在 Runtime Options 增加 `mcpServers` 与 `localFunctions`；在 Local Runtime 创建 MCP Registry 后，先规范化并幂等合并初始配置，再调用现有恢复流程。将 `McpServerConfigStore.save/list` 扩展到 stdio 配置，并保持 JSON 文件版本兼容。执行 handler 只从当前 Runtime 注入，本次不单独持久化本地函数元数据；初始配置与持久化配置冲突时默认失败，不静默覆盖。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
   Run: `cd packages/nexum-application && bun test test/runtime.test.ts && cd ../nexum-persistence && bun test test/mcp-store.test.ts && bun run typecheck`
 
@@ -208,17 +208,17 @@
 
   扩展 MCP API 测试，提交 `transport: "stdio"` 的注册请求，断言配置被保存且连接控制使用相同 Server ID；提交缺少 command、同时包含 url 和 command 的请求，断言返回 `NEXUM_MCP_INVALID_CONFIG`。确认现有 HTTP 注册请求和 OAuth 行为不变。
 
-- [ ] **Step 2: 实现 API 解析和文档**
+- [x] **Step 2: 实现 API 解析和文档**
 
-  扩展 `parseMcpServerConfig()` 解析 HTTP/stdio 判别联合，复用内部幂等注册逻辑；不增加通过 HTTP 传递 JS 函数体的接口。更新中英文 MCP 文档、Runtime 示例和本地函数文档，明确：stdio MCP 是独立子进程，本地 JS 函数只在当前 Runtime 有效，持久化只保存元数据。
+  扩展 `parseMcpServerConfig()` 解析 HTTP/stdio 判别联合；不增加通过 HTTP 传递 JS 函数体的接口。更新中英文 MCP 文档、Runtime 示例和本地函数文档，明确：stdio MCP 是独立子进程，本地 JS 函数只在当前 Runtime 有效，MCP 配置可持久化。
 
-- [ ] **Step 3: 运行包级测试**
+- [x] **Step 3: 运行包级测试**
 
   Run: `cd packages/nexum-server && bun test test/mcp-api.test.ts && cd ../nexum-integrations && bun test && cd ../nexum-application && bun test && cd ../nexum-core && bun test && cd ../nexum-persistence && bun test`
 
   Expected: PASS，所有相关包测试通过。
 
-- [ ] **Step 4: 运行全量检查**
+- [x] **Step 4: 运行全量检查**
 
   Run: `bun run check`
 
