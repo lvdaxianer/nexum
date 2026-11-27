@@ -15,3 +15,19 @@ export function mergeSessionStatus(sessions: NexumSession[], sessionID: string, 
   if (!current || current.status === status) return sessions
   return sessions.map((session) => session.id === sessionID ? { ...session, status } : session)
 }
+
+/** 按稳定 ID 合并 Server 返回的最新 Session 快照，保持其他列表项引用稳定。 */
+export function mergeSessionSnapshot(sessions: NexumSession[], snapshot: NexumSession): NexumSession[] {
+  const current = sessions.find((session) => session.id === snapshot.id)
+  if (!current) return sessions
+  const next = { ...current, ...snapshot }
+  if (
+    current.name === next.name &&
+    current.directory === next.directory &&
+    current.status === next.status &&
+    current.mode === next.mode &&
+    current.createdAt === next.createdAt &&
+    current.updatedAt === next.updatedAt
+  ) return sessions
+  return sessions.map((session) => session.id === snapshot.id ? next : session)
+}

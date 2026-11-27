@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { NexumSession } from "@nexum/client"
-import { mergeSessionStatus } from "../src/session-state"
+import { mergeSessionSnapshot, mergeSessionStatus } from "../src/session-state"
 
 test("merges a terminal status into the matching Session without replacing unchanged items", () => {
   const sessions = [session("session_001", "idle"), session("session_002", "running")]
@@ -15,6 +15,14 @@ test("keeps the existing list reference when a terminal status is already curren
   const sessions = [session("session_001", "completed")]
 
   expect(mergeSessionStatus(sessions, "session_001", "completed")).toBe(sessions)
+})
+
+test("merges a mode snapshot into the matching Session", () => {
+  const sessions = [session("session_001", "idle"), session("session_002", "running")]
+  const updated = mergeSessionSnapshot(sessions, { ...sessions[0]!, mode: "plan", updatedAt: "2026-11-24T00:00:01.000Z" })
+
+  expect(updated[0]).toMatchObject({ id: "session_001", mode: "plan" })
+  expect(updated[1]).toBe(sessions[1])
 })
 
 function session(id: string, status: NexumSession["status"]): NexumSession {

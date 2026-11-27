@@ -5,10 +5,11 @@ import { ChatSurface } from "@nexum/chat-surface"
 import { Drawer } from "./drawer"
 import { ConfirmDialog } from "./confirm-dialog"
 import { Popover } from "@kobalte/core/popover"
-import { mergeSessionStatus } from "./session-state"
+import { mergeSessionSnapshot, mergeSessionStatus } from "./session-state"
 import { mergeMcpServers, mcpStatusLabel } from "./mcp-state"
 import type {
   NexumMcpServer,
+  NexumAgentMode,
   NexumModelProbe,
   NexumRolePrompt,
   NexumSession,
@@ -67,6 +68,7 @@ function App() {
   const [sessions, setSessions] = createSignal<SessionSummary[]>([])
   const [modelSaveBusy, setModelSaveBusy] = createSignal(false)
   const [sessionBusy, setSessionBusy] = createSignal(false)
+  const [agentModeBusy, setAgentModeBusy] = createSignal(false)
   const [probeBusy, setProbeBusy] = createSignal(false)
   const [probeResult, setProbeResult] = createSignal<ModelProbeResult | undefined>()
   const [modelErrors, setModelErrors] = createSignal<ModelFieldErrors>({})
@@ -367,7 +369,8 @@ function App() {
       setSessions([...available])
       const current = available.find((item) => item.id === sessionID())
       if (current) {
-        await client.experimental.nexum.session.state({ sessionID: current.id })
+        const snapshot = await client.experimental.nexum.session.state({ sessionID: current.id })
+        setSessions((items) => mergeSessionSnapshot(items, snapshot.data.session))
       }
       await loadSkills()
       setNotice("运行状态已刷新")
@@ -752,11 +755,35 @@ function App() {
     if (sequence !== sessionSelectSequence) return
     setDeleteState("idle")
     setDeleteMessage("")
+    setSessions((current) => mergeSessionSnapshot(current, snapshot.data.session))
     setSessionID(session.id)
     setDirectory(snapshot.data.session.directory)
     sessionStorage.setItem("nexum.sessionID", session.id)
     if (announce) setNotice(`已选择 Session：${snapshot.data.session.name}`)
     if (policyPopoverOpen()) void loadPermissionPolicy()
+  }
+
+  function currentSession(): SessionSummary | undefined {
+    return sessions().find((session) => session.id === sessionID())
+  }
+
+  function currentAgentMode(): NexumAgentMode {
+    return currentSession()?.mode ?? "build"
+  }
+
+  async function setAgentMode(mode: NexumAgentMode) {
+    const current = currentSession()
+    if (!current || agentModeBusy() || current.status === "running" || currentAgentMode() === mode) return
+    setAgentModeBusy(true)
+    try {
+      const updated = await client.experimental.nexum.session.setMode({ sessionID: current.id, mode })
+      setSessions((items) => mergeSessionSnapshot(items, updated.data))
+      setNotice(`Agent 模式已切换为 ${mode === "plan" ? "Plan" : "Build"}`)
+    } catch (error) {
+      setNotice(messageFrom(error, "Agent 模式切换失败，请稍后重试"))
+    } finally {
+      setAgentModeBusy(false)
+    }
   }
 
   /**
@@ -1536,10 +1563,36 @@ function App() {
             onSkillUpdated={scheduleSkillReload}
             onOpenPermissionSettings={openPolicyPopover}
             composerExtras={
-              <button ref={setPolicyAnchorEl} type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>
-                <span aria-hidden="true">{permissionModeOption()?.icon ?? "🛡"}</span>
-                <span class="perm-chip-label extras-label">{permissionModeOption()?.label ?? "权限策略"}</span>
-              </button>
+              <div class="composer-control-group" role="group" aria-label="Agent 模式和权限设置">
+                <div class="agent-mode-toggle" role="group" aria-label="Agent 模式">
+                  <button
+                    type="button"
+                    class="agent-mode-button"
+                    classList={{ "is-active": currentAgentMode() === "plan" }}
+                    aria-pressed={currentAgentMode() === "plan"}
+                    title="Plan：只读取项目或写入 .nexum/plans/ 计划文件"
+                    disabled={!currentSession() || agentModeBusy() || currentSession()?.status === "running"}
+                    onClick={() => void setAgentMode("plan")}
+                  >
+                    {agentModeBusy() && currentAgentMode() !== "plan" ? "切换中…" : "Plan"}
+                  </button>
+                  <button
+                    type="button"
+                    class="agent-mode-button"
+                    classList={{ "is-active": currentAgentMode() === "build" }}
+                    aria-pressed={currentAgentMode() === "build"}
+                    title="Build：允许按权限策略执行完整任务"
+                    disabled={!currentSession() || agentModeBusy() || currentSession()?.status === "running"}
+                    onClick={() => void setAgentMode("build")}
+                  >
+                    {agentModeBusy() && currentAgentMode() !== "build" ? "切换中…" : "Build"}
+                  </button>
+                </div>
+                <button ref={setPolicyAnchorEl} type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>
+                  <span aria-hidden="true">{permissionModeOption()?.icon ?? "🛡"}</span>
+                  <span class="perm-chip-label extras-label">{permissionModeOption()?.label ?? "权限策略"}</span>
+                </button>
+              </div>
             }
           />
         </section>
