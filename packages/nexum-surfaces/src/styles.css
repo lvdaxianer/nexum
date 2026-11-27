@@ -2631,3 +2631,463 @@ footer {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ===== 暗色主题（跟随系统，由 main.tsx 设置 html[data-theme]） ===== */
+
+:root[data-theme="dark"] {
+  --d-bg: #0f151e;
+  --d-panel: #151c26;
+  --d-panel-2: #1b2432;
+  --d-border: #2b3648;
+  --d-border-soft: #232d3c;
+  --d-text: #e3eaf3;
+  --d-text-strong: #f0f5fa;
+  --d-muted: #8e9bb0;
+  --d-accent: #35b8b2;
+  --d-accent-soft: rgba(53, 184, 178, 0.15);
+  --d-success: #4cc38a;
+  --d-success-soft: rgba(76, 195, 138, 0.14);
+  --d-warning: #dfa14e;
+  --d-warning-soft: rgba(223, 161, 78, 0.14);
+  --d-danger: #e36969;
+  --d-danger-soft: rgba(227, 105, 105, 0.14);
+  --d-shadow: rgba(0, 0, 0, 0.45);
+
+  background: var(--d-bg);
+}
+
+:root[data-theme="dark"] body {
+  background: var(--d-bg);
+  color: var(--d-text);
+}
+
+/* --- 侧边栏 --- */
+
+:root[data-theme="dark"] .app-sidebar {
+  border-right-color: var(--d-border);
+  background: var(--d-panel);
+  scrollbar-color: var(--d-border) transparent;
+}
+
+:root[data-theme="dark"] .sidebar-brand {
+  border-bottom-color: var(--d-border-soft);
+}
+
+:root[data-theme="dark"] .sidebar-brand strong {
+  color: var(--d-text-strong);
+}
+
+:root[data-theme="dark"] .brand-mark {
+  background: #22354f;
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="dark"] .eyebrow,
+:root[data-theme="dark"] .section-kicker {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .nav-item {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .nav-item > span:first-child {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .nav-item:hover,
+:root[data-theme="dark"] .nav-item.is-active,
+:root[data-theme="dark"] .nav-item[data-expanded] {
+  background: var(--d-accent-soft);
+  color: var(--d-accent);
+}
+
+:root[data-theme="dark"] .nav-item.is-active span,
+:root[data-theme="dark"] .nav-item[data-expanded] > span:first-child {
+  color: var(--d-accent);
+}
+
+:root[data-theme="dark"] .nav-badge {
+  background: var(--d-panel-2);
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .nav-badge.is-ready {
+  background: var(--d-success-soft);
+  color: var(--d-success);
+}
+
+:root[data-theme="dark"] .sidebar-card,
+:root[data-theme="dark"] .panel-surface {
+  border-color: var(--d-border);
+  background: var(--d-panel);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+:root[data-theme="dark"] .card-heading h2 {
+  color: var(--d-text-strong);
+}
+
+:root[data-theme="dark"] .status-badge {
+  background: var(--d-panel-2);
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .status-badge.success {
+  background: var(--d-success-soft);
+  color: var(--d-success);
+}
+
+:root[data-theme="dark"] .model-chip {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+  color: var(--d-muted);
+}
+
+/* --- Session / MCP 列表 --- */
+
+:root[data-theme="dark"] .session-list,
+:root[data-theme="dark"] .mcp-list {
+  border-top-color: var(--d-border-soft);
+}
+
+:root[data-theme="dark"] .session-item {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+}
+
+:root[data-theme="dark"] .session-item:hover,
+:root[data-theme="dark"] .session-item.is-active {
+  border-color: var(--d-accent);
+  background: var(--d-accent-soft);
+}
+
+:root[data-theme="dark"] .session-item-name,
+:root[data-theme="dark"] .session-item:hover .session-item-name,
+:root[data-theme="dark"] .session-item.is-active .session-item-name {
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] .session-item-directory {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .session-status-idle {
+  background: var(--d-panel);
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .session-status-running {
+  background: var(--d-warning-soft);
+  color: var(--d-warning);
+}
+
+:root[data-theme="dark"] .session-status-completed {
+  background: var(--d-success-soft);
+  color: var(--d-success);
+}
+
+:root[data-theme="dark"] .session-status-failed,
+:root[data-theme="dark"] .session-status-cancelled {
+  background: var(--d-danger-soft);
+  color: var(--d-danger);
+}
+
+:root[data-theme="dark"] .session-ops-button {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .session-ops-button:hover {
+  border-color: var(--d-accent);
+  background: var(--d-accent-soft);
+  color: var(--d-accent);
+}
+
+:root[data-theme="dark"] .mcp-row {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+}
+
+:root[data-theme="dark"] .mcp-row-head strong {
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] .mcp-status,
+:root[data-theme="dark"] .mcp-row-detail,
+:root[data-theme="dark"] .mcp-row-url {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .mcp-row-connected .mcp-status,
+:root[data-theme="dark"] .mcp-row-available .mcp-status {
+  color: var(--d-success);
+}
+
+:root[data-theme="dark"] .mcp-row-retrying .mcp-status,
+:root[data-theme="dark"] .mcp-row-pending .mcp-status {
+  color: var(--d-warning);
+}
+
+:root[data-theme="dark"] .mcp-row-failed .mcp-status,
+:root[data-theme="dark"] .mcp-row-needs_auth .mcp-status {
+  color: var(--d-danger);
+}
+
+:root[data-theme="dark"] .mcp-action-button {
+  border-color: var(--d-border);
+  background: var(--d-panel);
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] .mcp-action-button:hover:not(:disabled) {
+  border-color: var(--d-accent);
+  color: var(--d-accent);
+}
+
+/* --- Skill 列表 --- */
+
+:root[data-theme="dark"] .skill-row {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+}
+
+:root[data-theme="dark"] .skill-row-title strong {
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] .skill-row-copy p,
+:root[data-theme="dark"] .skill-row-copy small,
+:root[data-theme="dark"] .skill-status,
+:root[data-theme="dark"] .skill-validation {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .skill-row-invalid .skill-status,
+:root[data-theme="dark"] .skill-row-conflict .skill-status {
+  color: var(--d-danger);
+}
+
+:root[data-theme="dark"] .skill-validate,
+:root[data-theme="dark"] .skill-detail {
+  border-color: var(--d-border);
+  background: var(--d-panel);
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] .skill-validate:hover,
+:root[data-theme="dark"] .skill-detail:hover {
+  border-color: var(--d-accent);
+  color: var(--d-accent);
+}
+
+:root[data-theme="dark"] .skill-unregister {
+  border-color: var(--d-danger-soft);
+  background: transparent;
+  color: var(--d-danger);
+}
+
+:root[data-theme="dark"] .skill-detail-panel {
+  border-color: var(--d-border-soft);
+  background: var(--d-panel);
+  color: var(--d-muted);
+}
+
+/* --- 通知条 / 辅助文案 --- */
+
+:root[data-theme="dark"] .notice {
+  border-color: var(--d-border);
+  background: var(--d-panel);
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .helper-text,
+:root[data-theme="dark"] .empty-copy,
+:root[data-theme="dark"] .loading-copy {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .probe-result {
+  border-color: var(--d-border);
+  background: var(--d-success-soft);
+  color: var(--d-success);
+}
+
+/* --- 表单 --- */
+/* 用 :where() 压低优先级，避免覆盖 ChatSurface 组件对 composer 内 textarea 焦点样式的屏蔽。 */
+
+:root[data-theme="dark"] :where(input, textarea) {
+  border-color: var(--d-border);
+  background: var(--d-bg);
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] :where(input::placeholder, textarea::placeholder) {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] :where(input:focus, textarea:focus) {
+  border-color: var(--d-accent);
+  background: var(--d-bg);
+  box-shadow: 0 0 0 3px rgba(53, 184, 178, 0.18);
+}
+
+:root[data-theme="dark"] :where(input[aria-invalid="true"]) {
+  border-color: var(--d-danger);
+  background: var(--d-bg);
+}
+
+:root[data-theme="dark"] .field-help,
+:root[data-theme="dark"] .label-note {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .field-error {
+  color: var(--d-danger);
+}
+
+:root[data-theme="dark"] .form-feedback-pending {
+  color: var(--d-warning);
+}
+
+:root[data-theme="dark"] .form-feedback-success {
+  color: var(--d-success);
+}
+
+:root[data-theme="dark"] .form-feedback-error {
+  color: var(--d-danger);
+}
+
+/* --- 按钮 --- */
+
+:root[data-theme="dark"] .button-primary {
+  background: #2f567f;
+}
+
+:root[data-theme="dark"] .button-primary:hover {
+  background: #3a689a;
+}
+
+:root[data-theme="dark"] .button-secondary {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] .button-danger {
+  background: #a34a44;
+}
+
+:root[data-theme="dark"] .button-danger:hover {
+  background: #b85750;
+}
+
+:root[data-theme="dark"] .text-button {
+  color: var(--d-accent);
+}
+
+:root[data-theme="dark"] .perm-chip {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] .perm-chip:hover {
+  border-color: var(--d-accent);
+  color: var(--d-accent);
+}
+
+/* --- Drawer / 确认框 / 权限弹层 --- */
+
+:root[data-theme="dark"] .drawer-content {
+  background: var(--d-panel);
+  box-shadow: -18px 0 44px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="dark"] .drawer-header {
+  border-bottom-color: var(--d-border-soft);
+}
+
+:root[data-theme="dark"] .drawer-title,
+:root[data-theme="dark"] .confirm-title {
+  color: var(--d-text-strong);
+}
+
+:root[data-theme="dark"] .drawer-description,
+:root[data-theme="dark"] .confirm-description {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .drawer-close {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .drawer-close:hover {
+  border-color: var(--d-accent);
+  background: var(--d-accent-soft);
+  color: var(--d-accent);
+}
+
+:root[data-theme="dark"] .drawer-body {
+  scrollbar-color: var(--d-border) transparent;
+}
+
+:root[data-theme="dark"] .confirm-content {
+  background: var(--d-panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+:root[data-theme="dark"] .policy-popover {
+  border-color: var(--d-border);
+  background: var(--d-panel);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="dark"] .policy-pop-head strong {
+  color: var(--d-text-strong);
+}
+
+:root[data-theme="dark"] .policy-mode-option {
+  border-color: var(--d-border);
+  background: var(--d-panel-2);
+}
+
+:root[data-theme="dark"] .policy-mode-option:hover:not(:disabled) {
+  border-color: var(--d-accent);
+  background: var(--d-accent-soft);
+}
+
+:root[data-theme="dark"] .policy-mode-option.is-active {
+  border-color: var(--d-accent);
+  background: var(--d-accent-soft);
+}
+
+:root[data-theme="dark"] .policy-mode-copy strong {
+  color: var(--d-text);
+}
+
+:root[data-theme="dark"] .policy-mode-option.is-active .policy-mode-copy strong {
+  color: var(--d-accent);
+}
+
+:root[data-theme="dark"] .policy-mode-copy small,
+:root[data-theme="dark"] .policy-pop-extra {
+  color: var(--d-muted);
+}
+
+:root[data-theme="dark"] .policy-mode-check {
+  color: var(--d-accent);
+}
+
+/* --- 主区域 / 底栏 --- */
+
+:root[data-theme="dark"] footer {
+  color: var(--d-muted);
+}

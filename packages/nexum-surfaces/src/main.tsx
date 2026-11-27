@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { render } from "solid-js/web"
 import { Nexum } from "@nexum/client"
 import { ChatSurface } from "@nexum/chat-surface"
@@ -114,6 +114,7 @@ function App() {
   const [policyBusy, setPolicyBusy] = createSignal(false)
   const [policyError, setPolicyError] = createSignal("")
   const [notice, setNotice] = createSignal("准备开始一次 Nexum 运行")
+  const [darkMode, setDarkMode] = createSignal(window.matchMedia("(prefers-color-scheme: dark)").matches)
   const [modelConfigured, setModelConfigured] = createSignal(false)
   const [renameBusy, setRenameBusy] = createSignal(false)
   const [deleteBusy, setDeleteBusy] = createSignal(false)
@@ -125,6 +126,18 @@ function App() {
   let skillReloadQueued = false
   let mcpPollingActive = false
   let mcpRefreshTimer: ReturnType<typeof setTimeout> | undefined
+
+  // 主题跟随系统：写入 html[data-theme] 供宿主暗色覆盖层使用，并同步给 ChatSurface。
+  createEffect(() => {
+    document.documentElement.dataset.theme = darkMode() ? "dark" : "light"
+  })
+
+  onMount(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)")
+    const handleThemeChange = (event: MediaQueryListEvent) => setDarkMode(event.matches)
+    media.addEventListener("change", handleThemeChange)
+    onCleanup(() => media.removeEventListener("change", handleThemeChange))
+  })
 
   onMount(async () => {
     const active = await client.experimental.nexum.model.get().catch(() => undefined)
@@ -1518,13 +1531,14 @@ function App() {
             sessionID={sessionID()}
             client={{ baseUrl: apiBaseUrl }}
             title={sessions().find((session) => session.id === sessionID())?.name ?? ""}
+            theme={darkMode() ? "dark" : undefined}
             onSessionStatusChange={(id, status) => setSessions((current) => mergeSessionStatus(current, id, status))}
             onSkillUpdated={scheduleSkillReload}
             onOpenPermissionSettings={openPolicyPopover}
             composerExtras={
               <button ref={setPolicyAnchorEl} type="button" class="perm-chip" title="权限设置" onClick={openPolicyPopover}>
                 <span aria-hidden="true">{permissionModeOption()?.icon ?? "🛡"}</span>
-                <span class="perm-chip-label">{permissionModeOption()?.label ?? "权限策略"}</span>
+                <span class="perm-chip-label extras-label">{permissionModeOption()?.label ?? "权限策略"}</span>
               </button>
             }
           />
