@@ -18,10 +18,9 @@
 | `nexum-cli`          | 应用层       | 终端 Surface:REPL、思考动画、交互问答与管理面命令                                  | 可替换为其他终端 UI           |
 | `nexum-server`       | 协议绑定层   | 将已组合 Runtime 暴露为 HTTP/SSE，不在 Server 内隐式创建业务实现                                       | 可替换为其他传输绑定         |
 | `nexum-chat-surface` | 应用层       | 可嵌入聊天组件和聊天交互                                                                               | 可替换为其他聊天 Surface     |
-| `nexum-surfaces`     | 应用层       | Web 参考 Surface，负责把协议事件投影为聊天、卡片、抽屉和状态视图                                       | 可替换为其他 UI              |
-| `nexum-test`         | 验证层       | 跨层 POC、文件持久化、重启恢复和可启动 Test Workbench                                                  | 不作为生产依赖               |
+| `nexum-test`         | 验证层       | 完整 Test Workbench，通过 `import` 引入 `nexum-chat-surface`                                      | 不作为生产依赖               |
 
-每个包的实现边界和接入说明见 [`docs/modules/README.md`](../docs/modules/README.md)；直接入口如下：[`core`](../docs/modules/nexum-core.md)、[`persistence`](../docs/modules/nexum-persistence.md)、[`integrations`](../docs/modules/nexum-integrations.md)、[`application`](../docs/modules/nexum-application.md)、[`protocol`](../docs/modules/nexum-protocol.md)、[`client`](../docs/modules/nexum-client.md)、[`server`](../docs/modules/nexum-server.md)、[`surface-adapter`](../docs/modules/nexum-surface-adapter.md)、[`chat-surface`](../docs/modules/nexum-chat-surface.md)、[`surfaces`](../docs/modules/nexum-surfaces.md)、[`cli`](../docs/modules/nexum-cli.md)、[`test`](../docs/modules/nexum-test.md)。
+每个包的实现边界和接入说明见 [`docs/modules/README.md`](../docs/modules/README.md)；直接入口如下：[`core`](../docs/modules/nexum-core.md)、[`persistence`](../docs/modules/nexum-persistence.md)、[`integrations`](../docs/modules/nexum-integrations.md)、[`application`](../docs/modules/nexum-application.md)、[`protocol`](../docs/modules/nexum-protocol.md)、[`client`](../docs/modules/nexum-client.md)、[`server`](../docs/modules/nexum-server.md)、[`surface-adapter`](../docs/modules/nexum-surface-adapter.md)、[`chat-surface`](../docs/modules/nexum-chat-surface.md)、[`cli`](../docs/modules/nexum-cli.md)、[`test`](../docs/modules/nexum-test.md)。
 
 ## 依赖方向
 
@@ -34,9 +33,8 @@ nexum-client ──────────> nexum-protocol
 nexum-server ──────────> nexum-core + nexum-application + nexum-protocol
 nexum-surface-adapter ─> nexum-client
 nexum-chat-surface ────> nexum-surface-adapter
-nexum-surfaces ────────> nexum-client + nexum-chat-surface
 nexum-cli ─────────────> nexum-surface-adapter + nexum-client
-nexum-test ────────────> core + persistence + integrations + application + protocol + client + surfaces
+nexum-test ────────────> core + persistence + integrations + application + protocol + client + chat-surface
 ```
 
 Core 不导入实现包；Persistence 和 Integrations 通过端口实现 Core 所需环境能力；Application 负责编排。Permission Policy 属于 Core 领域语义，Skill/Tool/Question 属于 Application 服务，不作为适配器；Surface 不导入 Core，Test 才负责把各层组合到一起。

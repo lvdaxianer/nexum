@@ -1733,7 +1733,7 @@ export function NexumSurfaces(props: NexumSurfacesProps = {}) {
             sessionID={sessionID()}
             client={{ baseUrl: apiBaseUrl }}
             title={currentSessionTitle()}
-            theme={darkMode() ? "dark" : undefined}
+            theme={darkMode() ? "dark" : "light"}
             model={savedModel() || undefined}
             composerDisabledHint={savedModel() ? undefined : "尚未配置全局模型，请先在左侧「模型配置」保存模型服务"}
             onSessionStatusChange={(id, status) => setSessions((current) => mergeSessionStatus(current, id, status))}

@@ -6,18 +6,35 @@
   "type": "module",
   "scripts": {
     "dev": "bun run src/dev.ts",
+    "dev:ui": "vite",
+    "build": "vite build",
+    "test:smoke": "bun run build && bun test test/permission.smoke.spec.ts",
+    "test:smoke:isolated": "export VITE_NEXUM_API_URL=http://127.0.0.1:4098 NEXUM_SMOKE_API_HOST=127.0.0.1 NEXUM_SMOKE_API_PORT=4098 NEXUM_SMOKE_UI_PORT=5174 && bun run build && bun test test/permission.smoke.spec.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "typecheck:tsc": "tsc --noEmit"
   },
   "dependencies": {
     "@nexum/application": "workspace:*",
+    "@nexum/chat-surface": "workspace:*",
     "@nexum/client": "workspace:*",
     "@nexum/core": "workspace:*",
-    "@nexum/server": "workspace:*"
+    "@nexum/integrations": "workspace:*",
+    "@nexum/persistence": "workspace:*",
+    "@nexum/persistence-memory": "workspace:*",
+    "@nexum/server": "workspace:*",
+    "@kobalte/core": "catalog:",
+    "dompurify": "catalog:",
+    "marked": "catalog:",
+    "solid-js": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:"
+    "@tsconfig/node22": "catalog:",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plugin-solid": "2.11.10"
   }
 }

@@ -26,8 +26,7 @@ Nexum 将 Agent Runtime 拆成可组合模块。每个模块有清晰的职责�
 | `nexum-cli` | 应用呈现层 | 终端 REPL、事件投影、交互问答、管理面命令 | Core 执行、协议实现、UI 组件 | [`packages/nexum-cli/README.md`](../../../packages/nexum-cli/README.md) |
 | `nexum-server`       | 协议绑定层   | HTTP/SSE 路由、错误边界、事件订阅和已组合 Runtime 的适配                            | 隐式创建业务实现、UI 组件、Core 规则              | [`packages/nexum-server/README.md`](../../../packages/nexum-server/README.md)             |
 | `nexum-chat-surface` | 应用呈现层   | 可嵌入聊天组件、消息/事件/Question/Permission 展示                      | 创建 Session、模型配置、宿主级策略和 Runtime 决策 | [`packages/nexum-chat-surface/README.md`](../../../packages/nexum-chat-surface/README.md) |
-| `nexum-surfaces`     | 参考 Surface | Web 工作台、聊天时间线、抽屉、控制面和本地确认                                      | Core 执行、权限决策、Session 业务规则             | [`packages/nexum-surfaces/README.md`](../../../packages/nexum-surfaces/README.md)         |
-| `nexum-test`         | 验证层       | 跨层真实链路、文件持久化、重启恢复和 Test Workbench                                 | 生产运行时依赖和业务功能                          | [`packages/nexum-test/README.md`](../../../packages/nexum-test/README.md)                 |
+| `nexum-test`         | 验证层       | 左侧管理工作台，并通过 ChatSurface 组合右侧聊天区                                     | 生产运行时依赖和公共 UI 发布                      | [`packages/nexum-test/README.md`](../../../packages/nexum-test/README.md)                 |
 
 ## 依赖方向
 
@@ -40,9 +39,8 @@ nexum-client ──────────> nexum-protocol
 nexum-server ──────────> nexum-core + nexum-application + nexum-protocol
 nexum-surface-adapter ─> nexum-client
 nexum-chat-surface ────> nexum-surface-adapter
-nexum-surfaces ────────> nexum-client + nexum-chat-surface
 nexum-cli ─────────────> nexum-surface-adapter + nexum-client
-nexum-test ────────────> core + persistence + integrations + application + protocol + client + surfaces
+nexum-test ────────────> core + persistence + integrations + application + protocol + client + chat-surface
 ```
 
 依赖方向的关键约束：

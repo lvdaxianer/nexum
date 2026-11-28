@@ -141,7 +141,7 @@ describe.serial("Nexum UI smoke", () => {
     })
 
     await page.goto(uiOrigin)
-    await expect(page.getByRole("alert")).toContainText("历史服务暂时不可用")
+    await expect(page.locator(".nexum-chat-error")).toContainText("历史服务暂时不可用")
     await page.getByRole("button", { name: "重试" }).click()
     await expect(page.getByText("历史-51", { exact: true })).toBeVisible()
     await expect(page.getByText("历史-0", { exact: true })).toHaveCount(0)

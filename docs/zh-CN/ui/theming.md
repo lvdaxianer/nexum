@@ -4,11 +4,11 @@
 
 状态：现状基线
 
-权威来源：`packages/nexum-chat-surface/src/styles.css`、`packages/nexum-surfaces/src/styles.css`、`packages/nexum-surfaces/src/main.tsx`
+权威来源：`packages/nexum-chat-surface/src/styles.css`、`packages/nexum-chat-surface/src/main.tsx`、`packages/nexum-test/src/main.tsx`
 
 最后核对：2026-11-27
 
-Nexum 的 Web 界面分两层适配：ChatSurface 组件自己负责内部布局和明暗主题，宿主页面（参考 Surface）负责整体框架的响应式和主题覆盖。两层职责清晰，嵌入方只需要决定传什么 `theme`、用什么容器宽度。
+Nexum 的 Web 界面分两层适配：ChatSurface 组件自己负责内部布局和明暗主题，宿主页面（内部 Test Workbench 或业务项目）负责整体框架的响应式和主题覆盖。两层职责清晰，嵌入方只需要决定传什么 `theme`、用什么容器宽度。
 
 ## 1. 响应式适配
 
@@ -56,18 +56,18 @@ ChatSurface 使用 CSS 容器查询（`container-type: inline-size`），断点�
 
 ### 组件层：主题变量组
 
-ChatSurface 的全部颜色来自 `--nexum-chat-*` CSS 变量，根节点带 `data-theme="dark"` 时切换为内置暗色变量组：
+ChatSurface 的全部颜色来自 `--nexum-chat-*` CSS 变量，根节点带 `data-theme="light"` 或 `data-theme="dark"` 时切换为内置主题变量组：
 
 ```tsx
-<ChatSurface theme="dark" />           // 固定暗色
-<ChatSurface theme={undefined} />      // 默认亮色
+<ChatSurface theme="dark" />           // 强制暗色
+<ChatSurface theme="light" />          // 强制亮色
 ```
 
 Web Component 用法对应 `theme` 属性。组件不读取系统主题，主题来源始终由宿主决定。
 
-### 宿主层：暗色覆盖层
+### 宿主层：页面框架主题
 
-宿主页面不改写既有的浅色样式，而是在 `styles.css` 末尾维护一层 `:root[data-theme="dark"]` 覆盖层，与组件使用同一套暗色色板：
+内部 Test Workbench 的页面框架使用 `html[data-theme]` 管理左侧导航、抽屉和确认框的主题；外部项目可以自行决定页面主题，但不应依赖宿主的暗色选择器来控制 ChatSurface。组件主题通过 `theme` prop 独立传递。
 
 | 变量           | 值        | 用途                         |
 | -------------- | --------- | ---------------------------- |
@@ -82,7 +82,7 @@ Web Component 用法对应 `theme` 属性。组件不读取系统主题，主题
 | `--d-warning`  | `#dfa14e` | 警告、运行中状态             |
 | `--d-danger`   | `#e36969` | 失败、危险操作               |
 
-覆盖层只针对实际渲染的选择器；新增组件时需要同步补一条暗色规则。
+覆盖层只针对宿主页面实际渲染的选择器；新增宿主页面组件时需要同步补一条暗色规则。ChatSurface 自身不依赖这些 `--d-*` 变量。
 
 ### 跟随系统主题
 
@@ -99,7 +99,7 @@ createEffect(() => {
 
 // onMount 中监听 change 事件更新 darkMode
 
-<ChatSurface theme={darkMode() ? "dark" : undefined} />
+<ChatSurface theme={darkMode() ? "dark" : "light"} />
 ```
 
 `html[data-theme]` 驱动宿主覆盖层（Drawer、确认框等 Portal 内容也在 `html` 之下，自动生效），`theme` prop 驱动组件变量组。
@@ -111,7 +111,7 @@ createEffect(() => {
 
 ## 3. 自定义主题
 
-- **固定主题**：宿主直接给 ChatSurface 传 `theme="dark"`，并给 `html` 设置 `data-theme="dark"`；
+- **固定主题**：宿主直接给 ChatSurface 传 `theme="dark"` 或 `theme="light"`；如果宿主还有自己的页面框架，再给 `html` 设置对应的 `data-theme`；
 - **手动切换**：在跟随系统的基础上加一个三态（跟随系统 / 亮色 / 暗色）信号，写入同一处 `html[data-theme]`；
 - **调整配色**：组件层覆盖 `--nexum-chat-*` 变量，宿主层调整 `--d-*` 变量，两边色板保持一致即可；
 - **新增组件**：浅色样式照常写，暗色在覆盖层补一条 `:root[data-theme="dark"]` 规则。
@@ -123,9 +123,9 @@ createEffect(() => {
 - 手机 375×812、平板 768×1024、桌面 1440×900；
 - 覆盖空态、附件 chip、聚焦态、权限弹层和抽屉。
 
-行为回归跑 `packages/nexum-surfaces` 的冒烟测试：
+行为回归跑内部 Test Workbench 的冒烟测试：
 
 ```bash
-cd packages/nexum-surfaces
+cd packages/nexum-test
 bun run test:smoke:isolated
 ```

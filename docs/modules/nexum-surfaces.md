@@ -1,35 +1,25 @@
-# `nexum-ai/surfaces`
+# Internal Workbench Migration
 
 [中文](../zh-CN/modules/nexum-surfaces.md)
 
-`nexum-ai/surfaces` is an embeddable Solid Web workbench. It combines Chat,
-Session, tool, Permission, Question, compaction, Skill, and event timeline views
-using the public Client and Chat Surface boundaries.
+The former `nexum-surfaces` package was the complete Web workbench. It is no
+longer a public package or a `nexum-ai/surfaces` subpath. The workbench source
+now lives in `packages/nexum-test`, which owns the left navigation and
+management panels and imports the public Chat Surface for the right chat area.
+
+External projects should use only:
 
 ```tsx
-import { render } from "solid-js/web"
-import { NexumSurfaces } from "nexum-ai/surfaces"
-import "nexum-ai/surfaces/styles.css"
-
-render(() => <NexumSurfaces apiBaseUrl="http://127.0.0.1:4097" />, document.getElementById("root")!)
+import { ChatSurface } from "nexum-ai/chat-surface"
+import "nexum-ai/chat-surface/styles.css"
 ```
 
-`apiBaseUrl` is optional. If omitted, the component uses `VITE_NEXUM_API_URL`
-when provided, or the current page host with port `4097`.
-
-## Local preview and verification
+Run the internal workbench with:
 
 ```sh
-bun packages/nexum-server/src/main.ts
-bun run --cwd packages/nexum-surfaces dev -- --host 127.0.0.1 --port 5173
-bun run --cwd packages/nexum-surfaces typecheck:tsc
-bun run --cwd packages/nexum-surfaces build
+bun run dev:surface
+# or
+bun run --cwd packages/nexum-test dev
 ```
 
-Open `http://127.0.0.1:5173`. Its behavior is governed by the public
-[interaction protocol](../ui/interaction-protocol.md), [UI states](../ui/states.md),
-and [Runtime API](../../apis/nexum.md).
-
-The Surface consumes protocol state; it does not redefine Core, Permission
-policy, or Session rules. The package is distributed through the unified
-`nexum-ai` package and does not require any `@nexum/*` package installation.
+The public UI contract is documented in [Chat Surface](nexum-chat-surface.md).

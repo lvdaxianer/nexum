@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import { ChatSurface } from "./chat-surface"
-import type { ChatProtocolAdapter, ChatSurfaceProps } from "./index"
+import type { ChatProtocolAdapter, ChatSurfaceProps, ChatSurfaceTheme } from "./index"
 
 /** 注册 ChatSurface 的 light-DOM Web Component。 */
 export function defineChatSurfaceElement(registry: CustomElementRegistry = globalThis.customElements) {
@@ -13,7 +13,7 @@ export function defineChatSurfaceElement(registry: CustomElementRegistry = globa
     private dispose: (() => void) | undefined
     private setSessionID: ((value: string) => void) | undefined
     private setTitle: ((value: string) => void) | undefined
-    private setTheme: ((value: string | undefined) => void) | undefined
+    private setTheme: ((value: ChatSurfaceTheme | undefined) => void) | undefined
 
     get adapter() {
       return this.adapterValue
@@ -41,7 +41,7 @@ export function defineChatSurfaceElement(registry: CustomElementRegistry = globa
       if (oldValue === newValue) return
       if (name === "session-id") this.setSessionID?.(newValue ?? "")
       if (name === "title") this.setTitle?.(newValue ?? "")
-      if (name === "theme") this.setTheme?.(newValue ?? undefined)
+      if (name === "theme") this.setTheme?.(normalizeTheme(newValue))
       if (name === "api-base-url" && this.isConnected) this.mount()
     }
 
@@ -57,7 +57,7 @@ export function defineChatSurfaceElement(registry: CustomElementRegistry = globa
       this.replaceChildren()
       const [sessionID, setSessionID] = createSignal(this.getAttribute("session-id") ?? "")
       const [title, setTitle] = createSignal(this.getAttribute("title") ?? undefined)
-      const [theme, setTheme] = createSignal(this.getAttribute("theme") ?? undefined)
+      const [theme, setTheme] = createSignal<ChatSurfaceTheme | undefined>(normalizeTheme(this.getAttribute("theme")))
       const [adapter] = createSignal<ChatProtocolAdapter | undefined>(this.adapterValue)
       this.setSessionID = setSessionID
       this.setTitle = setTitle
@@ -82,6 +82,10 @@ export function defineChatSurfaceElement(registry: CustomElementRegistry = globa
   }
 
   registry.define("nexum-chat", NexumChatElement)
+}
+
+function normalizeTheme(value: string | null): ChatSurfaceTheme | undefined {
+  return value === "light" || value === "dark" ? value : undefined
 }
 
 if (typeof globalThis.customElements !== "undefined") defineChatSurfaceElement()

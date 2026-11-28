@@ -10,11 +10,13 @@
 
 ## 职责
 
-`@nexum/test` 是 Nexum 的内部跨层验证包和可启动 Test Workbench。它不是生产 Runtime，也不是写死业务 Demo；它用真实 Core、Application、Protocol、Client、Server 和 Surface 跑通一条完整链路。
+`@nexum/test` 是 Nexum 的内部跨层验证包和完整 Test Workbench。它不是生产 Runtime，也不是公共 UI 包；左侧导航、Session、模型、Skill、权限和 MCP 管理都在这里，右侧聊天区通过 `import { ChatSurface } from "@nexum/chat-surface"` 引入。
+
+外部项目只应安装 `nexum-ai` 并导入 `nexum-ai/chat-surface`，完整工作台不再发布为 `nexum-ai/surfaces`。
 
 ## Workbench 接入
 
-开发入口 [`src/dev.ts`](../../../packages/nexum-test/src/dev.ts) 创建 `createLocalRuntime`，启动 `@nexum/server`，再拉起 `@nexum/surfaces` Vite 开发服务。默认数据目录为 `packages/nexum-test/.nexum-test/`，也可用 `NEXUM_TEST_DATA_DIR` 覆盖。
+开发入口 [`src/dev.ts`](../../../packages/nexum-test/src/dev.ts) 启动 `@nexum/server`，再拉起同一包内的 Vite Workbench；Workbench 通过 `@nexum/chat-surface` 组合右侧聊天区。默认数据目录为 `packages/nexum-test/.nexum-test/`，也可用 `NEXUM_TEST_DATA_DIR` 覆盖。
 
 ```sh
 bun run --cwd packages/nexum-test dev
@@ -54,4 +56,4 @@ bun run typecheck:tsc
 
 - 修改跨层 Protocol/Client/Server 行为：更新 [`apis/nexum.md`](../../../apis/zh-CN/nexum.md) 和 POC 断言。
 - 修改 Runtime 数据文件或恢复规则：同步 [`@nexum/persistence`](./nexum-persistence.md)、Session/Events 文档和持久化 POC。
-- 修改 Surface 启动入口或端口：同步 [`@nexum/surfaces`](./nexum-surfaces.md) 与 Workbench 启动说明。
+- 修改 Workbench 启动入口或端口：同步本页与 [`packages/nexum-test`](../../../packages/nexum-test/README.md) 的启动说明。

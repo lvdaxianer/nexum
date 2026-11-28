@@ -47,6 +47,8 @@ export type ChatItem = {
   readonly eventType?: string
 }
 
+export type ChatSurfaceTheme = "light" | "dark"
+
 export type ChatSurfaceProps = {
   readonly sessionID: ChatSessionID
   readonly adapter?: ChatProtocolAdapter
@@ -54,8 +56,8 @@ export type ChatSurfaceProps = {
   readonly class?: string
   /** 标头标题（如当前 Session 名称）；不设置则不渲染标头。 */
   readonly title?: string
-  /** 组件根节点的 data-theme 值（如 "dark"），不设置则使用默认亮色。 */
-  readonly theme?: string
+  /** 强制组件使用指定主题，不设置则使用默认亮色。 */
+  readonly theme?: ChatSurfaceTheme
   /** 宿主注入输入栏的扩展内容（如权限模式入口），渲染在发送键左侧。 */
   readonly composerExtras?: JSX.Element
   /** 当前生效的模型名；设置后作为 chip 显示在输入栏，便于确认本轮调用走哪个模型。 */

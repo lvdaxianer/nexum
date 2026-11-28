@@ -24,7 +24,6 @@
 | `nexum-server`             | `nexum-ai/server`                                        | [`nexum-server.md`](./nexum-server.md)                       |
 | `nexum-surface-adapter`    | `nexum-ai/surface-adapter`                               | [`nexum-surface-adapter.md`](./nexum-surface-adapter.md)       |
 | `nexum-chat-surface`       | `nexum-ai/chat-surface`、`nexum-ai/chat-surface/styles.css` | [`nexum-chat-surface.md`](./nexum-chat-surface.md)             |
-| `nexum-surfaces`            | `nexum-ai/surfaces`、`nexum-ai/surfaces/styles.css`          | [`nexum-surfaces.md`](./nexum-surfaces.md)                    |
 | `nexum-cli`                | `nexum` binary、`nexum-ai/cli`                           | [`nexum-cli.md`](./nexum-cli.md)                               |
 
 ## 仓库内部测试模块
@@ -34,3 +33,5 @@
 | `nexum-test`     | Test Workbench，不发布 | [`nexum-test.md`](./nexum-test.md) |
 
 每个模块文档都应同步职责、使用入口、依赖边界和修改同步清单；HTTP API 以 `apis/nexum.md` 为准，协议类型以 `nexum-ai/protocol` 为准，发布入口与文档的对应关系由仓库发布检查维护。
+
+完整演示工作台记录在[内部 Test Workbench 文档](./nexum-test.md)中，它通过 `import` 引入公共 ChatSurface，不是可发布的 `nexum-ai` subpath。

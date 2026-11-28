@@ -33,9 +33,11 @@ import { ChatSurface } from "nexum-ai/chat-surface"
 import "nexum-ai/chat-surface/styles.css"
 
 export function ChatPanel(props: { sessionID: string; apiBaseUrl: string }) {
-  return <ChatSurface sessionID={props.sessionID} client={{ baseUrl: props.apiBaseUrl }} title="Nexum Chat" />
+  return <ChatSurface sessionID={props.sessionID} client={{ baseUrl: props.apiBaseUrl }} theme="light" title="Nexum Chat" />
 }
 ```
+
+`theme` 可选值为 `"light"` 或 `"dark"`。显式传入后，组件只使用自身固定主题，不受宿主 `html[data-theme]` 或系统深色模式影响；不传时使用默认亮色主题。
 
 Web Component 接入：
 
@@ -53,6 +55,7 @@ Web Component 接入：
 | `client`    | `NexumClientOptions`  | 否   | Server 地址和传输配置                     |
 | `adapter`   | `ChatProtocolAdapter` | 否   | 自定义协议适配器；传入后可替换默认 Client |
 | `title`     | `string`              | 否   | 聊天面板标题                              |
+| `theme`     | `"light" | "dark"`   | 否   | 强制组件使用浅色或深色主题，不修改宿主全局主题 |
 
 Web Component 使用对应的 `session-id`、`api-base-url` 和 `title` 属性。组件会自动加载 Session 状态、历史和事件；宿主不需要自己复制 Session 事件处理逻辑。
 

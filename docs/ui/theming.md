@@ -14,22 +14,22 @@ usable at narrow widths; do not rely on a fixed desktop panel width.
 
 ## Theme variables
 
-The default dark palette exposes variables such as `--d-bg`, `--d-panel`,
-`--d-border`, `--d-text`, `--d-muted`, `--d-accent`, `--d-success`,
-`--d-warning`, and `--d-danger`. Override them at the host boundary rather than
-editing the package stylesheet.
+ChatSurface supports an explicit component-local theme. Pass `theme="light"`
+or `theme="dark"` when the host must not follow its own or the system color
+scheme:
 
-```css
-:root {
-  --d-bg: #0f151e;
-  --d-panel: #151c26;
-  --d-text: #e3eaf3;
-  --d-accent: #35b8b2;
-}
+```tsx
+<ChatSurface theme="light" sessionID={sessionID} />
+<ChatSurface theme="dark" sessionID={sessionID} />
 ```
 
-Respect `prefers-color-scheme` when the host follows the system theme and keep
-contrast, focus, empty, loading, and error states visible. See [Chat Surface](../modules/nexum-chat-surface.md)
+The selected theme is scoped to the component root and does not modify the
+host document. If `theme` is omitted, the component uses its default light
+palette. Hosts may still override `--nexum-chat-*` variables when they need a
+custom palette, but the explicit light/dark contract is the recommended way to
+avoid accidental darkening from global selectors.
+
+See [Chat Surface](../modules/nexum-chat-surface.md)
 and [UI states](states.md).
 
 ## Container and host responsibilities

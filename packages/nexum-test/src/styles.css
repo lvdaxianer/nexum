@@ -83,6 +83,7 @@ strong {
   display: flex;
   position: sticky;
   top: 0;
+  z-index: 80;
   flex-direction: column;
   gap: 14px;
   height: 100vh;

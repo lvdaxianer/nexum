@@ -22,7 +22,6 @@ separate packages users should install.
 | Server | `nexum-ai/server` | [Server](nexum-server.md) |
 | Surface Adapter | `nexum-ai/surface-adapter` | [Surface Adapter](nexum-surface-adapter.md) |
 | Chat Surface | `nexum-ai/chat-surface` | [Chat Surface](nexum-chat-surface.md) |
-| Surfaces | `nexum-ai/surfaces` | [Surfaces](nexum-surfaces.md) |
 | CLI | `nexum` binary and `nexum-ai/cli` | [CLI](nexum-cli.md) |
 
 ## Internal test modules
@@ -30,6 +29,8 @@ separate packages users should install.
 These pages document repository-only test validation modules:
 
 - [Test Workbench](nexum-test.md)
+
+The complete workbench is documented as an internal [Test Workbench](nexum-test.md); it imports the public Chat Surface and is not a publishable subpath.
 
 Start with a [composition example](../examples/README.md) if you are unsure
 which module to choose. Each page includes the import path, API parameters,
