@@ -822,11 +822,34 @@
 }
 
 .nexum-chat-composer-bar {
-  /* 换行时按钮靠右对齐（覆盖共享规则的 space-between），发送键始终落在右下。 */
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 4px 10px 10px;
+  gap: 8px;
+}
+
+.nexum-chat-composer-info-row,
+.nexum-chat-composer-action-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.nexum-chat-composer-info-row {
+  flex: 1 1 240px;
+}
+
+.nexum-chat-composer-action-row {
+  flex: 0 1 auto;
+  justify-content: flex-end;
   flex-wrap: wrap;
   row-gap: 6px;
+}
+
+.nexum-chat-composer-action-row > button,
+.nexum-chat-composer-action-row > .nexum-chat-composer-extras,
+.nexum-chat-composer-action-row > .nexum-chat-confirm {
+  flex: 0 0 auto;
 }
 
 .nexum-chat-hint {
@@ -1167,6 +1190,21 @@
     font-size: 16px;
   }
 
+  .nexum-chat-composer-bar {
+    display: grid;
+    justify-content: stretch;
+    gap: 8px;
+  }
+
+  .nexum-chat-composer-info-row,
+  .nexum-chat-composer-action-row {
+    width: 100%;
+  }
+
+  .nexum-chat-composer-action-row {
+    justify-content: flex-start;
+  }
+
   .nexum-chat-hint .hint-enter,
   .nexum-chat-hint .hint-shift {
     display: none;
@@ -1185,10 +1223,6 @@
   }
 
   .nexum-chat-hint {
-    display: none;
-  }
-
-  .nexum-chat-composer-extras .extras-label {
     display: none;
   }
 }

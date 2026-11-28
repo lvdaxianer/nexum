@@ -56,6 +56,10 @@ export type ChatSurfaceProps = {
   readonly class?: string
   /** 标头标题（如当前 Session 名称）；不设置则不渲染标头。 */
   readonly title?: string
+  /**
+   * 是否显示组件自带的标题栏，默认显示。
+   */
+  readonly showHeader?: boolean
   /** 强制组件使用指定主题，不设置则使用默认亮色。 */
   readonly theme?: ChatSurfaceTheme
   /** 宿主注入输入栏的扩展内容（如权限模式入口），渲染在发送键左侧。 */
@@ -678,7 +682,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
       data-theme={props.theme}
       ref={(element) => (surfaceRoot = element)}
     >
-      <Show when={props.title}>
+      <Show when={props.showHeader !== false && props.title}>
         <header class="nexum-chat-header">
           <h2>{props.title}</h2>
         </header>
@@ -745,37 +749,41 @@ export function ChatSurface(props: ChatSurfaceProps) {
             <Show when={activeSkillIDs().length > 0}><div class="nexum-chat-active-skills"><span>已附加</span><For each={activeSkillIDs()}>{(id) => <span class="nexum-chat-chip skill-chip">@{id}</span>}</For></div></Show>
             <textarea aria-label="Coding Prompt" rows={3} value={prompt()} onInput={(event) => setPrompt(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); void sendPrompt() } }} placeholder={props.composerDisabledHint ?? (inputLocked() ? "Agent 正在回复，本轮完成后可继续输入…" : "描述下一步 Coding 任务…")} disabled={!props.sessionID || busy() || inputLocked() || Boolean(props.composerDisabledHint)} />
             <div class="nexum-chat-composer-bar prompt-bar">
-              <Show when={props.model}>
-                <span class="nexum-chat-model" title={`当前模型：${props.model}`}>
-                  <span aria-hidden="true">◈</span>
-                  {props.model}
-                </span>
-              </Show>
-              <span class="nexum-chat-hint" classList={{ "is-blocked": Boolean(props.composerDisabledHint) }}>
-                {props.composerDisabledHint ?? (inputLocked() ? "Agent 正在回复" : (<><span class="hint-enter">Enter 发送<span class="hint-sep"> · </span></span><span class="hint-shift">Shift+Enter 换行 · </span>@ 引用 Skill</>))}
-              </span>
-              <input ref={(element) => (fileInput = element)} class="nexum-chat-file-input" type="file" accept={CHAT_FILE_ACCEPT} aria-label="选择 Markdown 或纯文本文件" tabindex="-1" onChange={(event) => void handleFileSelection(event)} disabled={!props.sessionID || busy() || fileBusy() || inputLocked() || Boolean(props.composerDisabledHint)} />
-              <button type="button" class="nexum-chat-button nexum-chat-file-button" onClick={() => fileInput?.click()} disabled={!props.sessionID || busy() || fileBusy() || inputLocked() || Boolean(props.composerDisabledHint)} aria-label="上传 Markdown 或纯文本文件">
-                <span class="nexum-chat-file-icon" aria-hidden="true">📎</span>{fileBusy() ? "读取中…" : "上传文件"}
-              </button>
-              <Show when={props.composerExtras}>
-                <span class="nexum-chat-composer-extras">{props.composerExtras}</span>
-              </Show>
-              <Show when={props.sessionID && canCancel()}>
-                <Show
-                  when={!cancelConfirmOpen()}
-                  fallback={
-                    <span class="nexum-chat-confirm">
-                      <span>确认取消运行？</span>
-                      <button type="button" class="is-danger" onClick={() => void cancelRun()} disabled={cancelBusy()}>确认</button>
-                      <button type="button" onClick={() => setCancelConfirmOpen(false)}>返回</button>
-                    </span>
-                  }
-                >
-                  <button type="button" class="nexum-chat-button is-danger" onClick={() => setCancelConfirmOpen(true)}>取消运行</button>
+              <div class="nexum-chat-composer-info-row">
+                <Show when={props.model}>
+                  <span class="nexum-chat-model" title={`当前模型：${props.model}`}>
+                    <span aria-hidden="true">◈</span>
+                    {props.model}
+                  </span>
                 </Show>
-              </Show>
-              <button type="button" class="nexum-chat-primary" aria-label="发送 Prompt" disabled={!props.sessionID || !prompt().trim() || busy() || fileBusy() || inputLocked() || Boolean(props.composerDisabledHint)} onClick={() => void sendPrompt()}>{busy() ? "发送中…" : "发送"}</button>
+                <span class="nexum-chat-hint" classList={{ "is-blocked": Boolean(props.composerDisabledHint) }}>
+                  {props.composerDisabledHint ?? (inputLocked() ? "Agent 正在回复" : (<><span class="hint-enter">Enter 发送<span class="hint-sep"> · </span></span><span class="hint-shift">Shift+Enter 换行 · </span>@ 引用 Skill</>))}
+                </span>
+              </div>
+              <div class="nexum-chat-composer-action-row">
+                <input ref={(element) => (fileInput = element)} class="nexum-chat-file-input" type="file" accept={CHAT_FILE_ACCEPT} aria-label="选择 Markdown 或纯文本文件" tabindex="-1" onChange={(event) => void handleFileSelection(event)} disabled={!props.sessionID || busy() || fileBusy() || inputLocked() || Boolean(props.composerDisabledHint)} />
+                <button type="button" class="nexum-chat-button nexum-chat-file-button" onClick={() => fileInput?.click()} disabled={!props.sessionID || busy() || fileBusy() || inputLocked() || Boolean(props.composerDisabledHint)} aria-label="上传 Markdown 或纯文本文件">
+                  <span class="nexum-chat-file-icon" aria-hidden="true">📎</span>{fileBusy() ? "读取中…" : "上传文件"}
+                </button>
+                <Show when={props.composerExtras}>
+                  <span class="nexum-chat-composer-extras">{props.composerExtras}</span>
+                </Show>
+                <Show when={props.sessionID && canCancel()}>
+                  <Show
+                    when={!cancelConfirmOpen()}
+                    fallback={
+                      <span class="nexum-chat-confirm">
+                        <span>确认取消运行？</span>
+                        <button type="button" class="is-danger" onClick={() => void cancelRun()} disabled={cancelBusy()}>确认</button>
+                        <button type="button" onClick={() => setCancelConfirmOpen(false)}>返回</button>
+                      </span>
+                    }
+                  >
+                    <button type="button" class="nexum-chat-button is-danger" onClick={() => setCancelConfirmOpen(true)}>取消运行</button>
+                  </Show>
+                </Show>
+                <button type="button" class="nexum-chat-primary" aria-label="发送 Prompt" disabled={!props.sessionID || !prompt().trim() || busy() || fileBusy() || inputLocked() || Boolean(props.composerDisabledHint)} onClick={() => void sendPrompt()}>{busy() ? "发送中…" : "发送"}</button>
+              </div>
             </div>
           </div>
         </div>
