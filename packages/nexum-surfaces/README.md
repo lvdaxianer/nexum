@@ -1,7 +1,19 @@
-# Nexum Reference Surfaces（内部）
+# Nexum Surfaces
 
-`@nexum/surfaces` 是仓库内的 Web 参考 Surface 和 Test Workbench UI，不是发布包的公共入口，也不建议作为生产依赖。用户应安装 `nexum-ai`，再选择自己的 Web、Desktop、TUI 或 `nexum-ai/chat-surface`。
+`nexum-ai/surfaces` 是可嵌入的完整 Web 工作台组件。用户安装统一包后，可以直接通过 `import` 将它挂载到自己的前端页面。
 
-本模块把 Protocol/Client 事件投影成聊天、权限、Question、工具和状态视图，用来验证可替换 Surface 的边界。它不承载 Core 的工具执行、权限决策或 Session 业务规则。
+```bash
+npm install nexum-ai
+```
 
-仓库内运行：`bun run dev:surface`，或使用 `bun run --cwd packages/nexum-surfaces build` 构建参考页面。
+```tsx
+import { render } from "solid-js/web"
+import { NexumSurfaces } from "nexum-ai/surfaces"
+import "nexum-ai/surfaces/styles.css"
+
+render(() => <NexumSurfaces apiBaseUrl="http://127.0.0.1:4097" />, document.getElementById("root")!)
+```
+
+组件把 Protocol/Client 事件投影成聊天、权限、Question、工具和状态视图，不承载 Core 的工具执行、权限决策或 Session 业务规则。`apiBaseUrl` 可选；省略时使用构建环境配置或当前页面主机的默认 Nexum API 地址。
+
+仓库内开发仍可运行 `bun run dev:surface`，验证命令为 `bun run --cwd packages/nexum-surfaces typecheck:tsc`、`bun run --cwd packages/nexum-surfaces build` 和 `bun test --cwd packages/nexum-surfaces`。

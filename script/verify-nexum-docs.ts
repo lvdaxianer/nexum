@@ -16,7 +16,7 @@ const modules = [
   { package: "nexum-surface-adapter", subpath: `${releasePackageName}/surface-adapter`, public: true },
   { package: "nexum-chat-surface", subpath: `${releasePackageName}/chat-surface`, public: true },
   { package: "nexum-cli", subpath: `${releasePackageName}/cli`, public: true },
-  { package: "nexum-surfaces", subpath: "内部", public: false },
+  { package: "nexum-surfaces", subpath: `${releasePackageName}/surfaces`, public: true },
   { package: "nexum-test", subpath: "内部", public: false },
 ] as const
 

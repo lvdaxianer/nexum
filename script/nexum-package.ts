@@ -20,6 +20,7 @@ export const publicEntries = {
   "./server": { source: "packages/nexum-server/src/index.ts", output: "server" },
   "./surface-adapter": { source: "packages/nexum-surface-adapter/src/index.ts", output: "surface-adapter" },
   "./chat-surface": { source: "packages/nexum-chat-surface/src/index.ts", output: "chat-surface" },
+  "./surfaces": { source: "packages/nexum-surfaces/src/index.ts", output: "surfaces" },
   "./cli": { source: "packages/nexum-cli/src/main.ts", output: "cli" },
 } as const
 
@@ -38,6 +39,7 @@ export const workspacePackageToSubpath = {
   "@nexum/server": `${releasePackageName}/server`,
   "@nexum/surface-adapter": `${releasePackageName}/surface-adapter`,
   "@nexum/chat-surface": `${releasePackageName}/chat-surface`,
+  "@nexum/surfaces": `${releasePackageName}/surfaces`,
   "@nexum/cli": `${releasePackageName}/cli`,
 } as const
 

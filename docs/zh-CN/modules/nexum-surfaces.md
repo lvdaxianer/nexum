@@ -2,23 +2,33 @@
 
 [English](../../modules/nexum-surfaces.md)
 
-状态：现状基线
+状态：公共可嵌入组件
 
 权威来源：[`packages/nexum-surfaces/README.md`](../../../packages/nexum-surfaces/README.md)、[`packages/nexum-surfaces/src/main.tsx`](../../../packages/nexum-surfaces/src/main.tsx)
 
-最后核对：2026-11-24
+最后核对：2026-11-28
 
 ## 职责
 
-`@nexum/surfaces` 是 Nexum 的内部参考 Surface 和交互验收入口，不是可复用的协议包。它把 Model、Session、Coding Loop、函数调用、Permission、Question、Context Compaction、Skill 和事件时间线组合成可运行的演示界面。
+`nexum-ai/surfaces` 是 Nexum 的完整 Web 工作台组件，可以通过 `import` 直接嵌入宿主前端。它把 Model、Session、Coding Loop、函数调用、Permission、Question、Context Compaction、Skill 和事件时间线组合成可运行的工作台。
+
+```tsx
+import { render } from "solid-js/web"
+import { NexumSurfaces } from "nexum-ai/surfaces"
+import "nexum-ai/surfaces/styles.css"
+
+render(() => <NexumSurfaces apiBaseUrl="http://127.0.0.1:4097" />, document.getElementById("root")!)
+```
+
+`apiBaseUrl` 可选；未提供时使用 `VITE_NEXUM_API_URL`，或当前页面主机的 `4097` 端口。
 
 Surface 只负责展示、用户操作和 SSE 投影，不拥有 Core 工具、权限策略或 Session 规则。它保留原始协议字段和事件名，便于调试协议行为。
 
 ## 入口与布局
 
-Vite 入口为 [`src/main.tsx`](../../../packages/nexum-surfaces/src/main.tsx)，辅助抽屉组件在 [`src/drawer.tsx`](../../../packages/nexum-surfaces/src/drawer.tsx)，样式在 [`src/styles.css`](../../../packages/nexum-surfaces/src/styles.css)。当前布局为左侧导航、中央 Chat、右侧状态区，并通过 Kobalte 提供抽屉交互。
+公共组件入口为 [`src/index.ts`](../../../packages/nexum-surfaces/src/index.ts)，本地 Vite 启动入口为 [`src/entry.tsx`](../../../packages/nexum-surfaces/src/entry.tsx)，工作台实现为 [`src/main.tsx`](../../../packages/nexum-surfaces/src/main.tsx)，样式在 [`src/styles.css`](../../../packages/nexum-surfaces/src/styles.css)。当前布局为左侧导航、中央 Chat、右侧状态区，并通过 Kobalte 提供抽屉交互。
 
-页面消费 [`@nexum/chat-surface`](./nexum-chat-surface.md) 和 [`@nexum/client`](./nexum-client.md)，通过事件时间线显示原始事件和已投影的 Chat 状态。事件以 `eventID` 去重，工具/请求卡片按对应 ID 聚合。
+组件消费 [`nexum-ai/chat-surface`](./nexum-chat-surface.md) 和 [`nexum-ai/client`](./nexum-client.md)，通过事件时间线显示原始事件和已投影的 Chat 状态。事件以 `eventID` 去重，工具/请求卡片按对应 ID 聚合。
 
 ## 本地预览
 
@@ -42,7 +52,7 @@ bun run --cwd packages/nexum-surfaces dev -- --host 127.0.0.1 --port 5173
 
 ## 依赖边界
 
-Surface 是应用组合层，可依赖 Application、ChatSurface、Client、Integrations、Persistence 以及 UI 运行时库。它不能反向定义 Protocol、Core 或 Server 的业务契约；发现展示与实现不一致时，应先修正协议/能力文档和对应实现。
+Surface 是应用组合层，可依赖 Application、ChatSurface、Client、Integrations、Persistence 以及 UI 运行时库。它不能反向定义 Protocol、Core 或 Server 的业务契约；宿主只需安装统一 `nexum-ai` 包，不需要安装 `@nexum/*` workspace 包。
 
 ## 测试与验证
 

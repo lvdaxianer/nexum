@@ -1,5 +1,4 @@
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
-import { render } from "solid-js/web"
 import { Nexum } from "@nexum/client"
 import { ChatSurface } from "@nexum/chat-surface"
 import { Drawer } from "./drawer"
@@ -15,8 +14,6 @@ import type {
   NexumSession,
   NexumSkill,
 } from "@nexum/client"
-import "./styles.css"
-import "@nexum/chat-surface/styles.css"
 
 type SessionSummary = NexumSession
 type ModelProbeResult = NexumModelProbe
@@ -53,11 +50,14 @@ type ActionState = "idle" | "pending" | "success" | "error"
 /** 策略不再有 Action 维度：新建规则以 `*` 表示按资源匹配所有工具调用。 */
 const anyToolAction = "*"
 
-const apiBaseUrl =
-  import.meta.env.VITE_NEXUM_API_URL ?? `${window.location.protocol}//${window.location.hostname}:4097`
-const client = Nexum.make({ baseUrl: apiBaseUrl })
+export type NexumSurfacesProps = {
+  /** 宿主注入的 Nexum Server API 基地址；未提供时使用构建配置或当前页面默认地址。 */
+  readonly apiBaseUrl?: string
+}
 
-function App() {
+export function NexumSurfaces(props: NexumSurfacesProps = {}) {
+  const apiBaseUrl = props.apiBaseUrl ?? defaultApiBaseUrl()
+  const client = Nexum.make({ baseUrl: apiBaseUrl })
   const [baseUrl, setBaseUrl] = createSignal("")
   const [model, setModel] = createSignal("")
   const [credentialRef, setCredentialRef] = createSignal("")
@@ -728,6 +728,7 @@ function App() {
     const query = sessionID() ? `?sessionID=${encodeURIComponent(sessionID())}` : ""
     try {
       const data = await requestPermissionPolicy<{ rules: PermissionPolicyRule[] }>(
+        apiBaseUrl,
         `/api/nexum/permission/policy${query}`,
       )
       setPolicyRules(data.rules)
@@ -768,6 +769,7 @@ function App() {
     try {
       const global = policyRules().filter((rule) => rule.scope === "global")
       await Promise.all(global.map((rule) => requestPermissionPolicy<{ id: string; deleted: boolean }>(
+        apiBaseUrl,
         `/api/nexum/permission/policy/${encodeURIComponent(rule.id)}`,
         { method: "DELETE" },
       )))
@@ -786,7 +788,7 @@ function App() {
 
   /** 新建一条全局权限规则。 */
   async function createPermissionPolicyRule(resource: string, effect: PermissionPolicyEffect) {
-    await requestPermissionPolicy<PermissionPolicyRule>("/api/nexum/permission/policy", {
+    await requestPermissionPolicy<PermissionPolicyRule>(apiBaseUrl, "/api/nexum/permission/policy", {
       method: "POST",
       body: JSON.stringify({ action: anyToolAction, resource, effect, scope: "global" }),
     })
@@ -1779,13 +1781,14 @@ function App() {
  * 策略路由属于 Nexum Server 的接口，不进入生成的 SDK，因此页面直接用 fetch，
  * 并把服务端返回的稳定错误消息原样交给调用方展示。
  *
+ * @param apiBaseUrl - Nexum Server API 基地址
  * @param path - 以 /api 开头的策略路径
  * @param init - 可选的 fetch 配置
  * @returns 响应中的 data 字段
  * @author lvdaxianer@yeah.net
  * @date 2026-11-22
  */
-async function requestPermissionPolicy<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function requestPermissionPolicy<T>(apiBaseUrl: string, path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: { "content-type": "application/json", ...(init.headers ?? {}) },
@@ -1800,8 +1803,9 @@ function messageFrom(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
 }
 
-export default App
-
-const root = document.getElementById("root")
-if (!root) throw new Error("Nexum UI root element is missing")
-render(() => <App />, root)
+function defaultApiBaseUrl() {
+  const configured = import.meta.env?.VITE_NEXUM_API_URL
+  if (configured) return configured
+  if (typeof window === "undefined") return "http://127.0.0.1:4097"
+  return `${window.location.protocol}//${window.location.hostname}:4097`
+}

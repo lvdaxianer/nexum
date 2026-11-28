@@ -163,6 +163,7 @@ The same map is available in the [Chinese README mirror](README.zh-CN.md).
 | [`nexum-ai/server`](docs/modules/nexum-server.md) | Protocol binding | Expose a composed Runtime through HTTP/SSE | Local service or backend |
 | [`nexum-ai/surface-adapter`](docs/modules/nexum-surface-adapter.md) | Surface adapter | `ChatProtocolAdapter` and chat operation normalization | Reuse chat transport |
 | [`nexum-ai/chat-surface`](docs/modules/nexum-chat-surface.md) | UI component | Embeddable chat component and Web Component | In-app chat |
+| [`nexum-ai/surfaces`](docs/modules/nexum-surfaces.md) | UI component | Embeddable complete Web workbench Surface | Full Agent workbench |
 | `nexum-ai/cli` | Terminal Surface | REPL and runtime management commands | Terminal Agent |
 
 ### Dependency direction
@@ -176,6 +177,7 @@ nexum-ai/client ───────> nexum-ai/protocol
 nexum-ai/server ───────> nexum-ai/core + nexum-ai/application + nexum-ai/protocol
 nexum-ai/surface-adapter ──> nexum-ai/client
 nexum-ai/chat-surface ─────> nexum-ai/surface-adapter
+nexum-ai/surfaces ──────────> nexum-ai/client + nexum-ai/chat-surface
 nexum-ai/cli ──────────────> nexum-ai/surface-adapter + nexum-ai/client
 ```
 
