@@ -24,6 +24,7 @@ Registry 对外只返回安全摘要：
 | `status`                               | `ready`、`invalid` 或 `conflict`                   |
 | `diagnostics`                          | 可展示的校验诊断，不含绝对路径、凭据或原始命令输出 |
 | `sourceType`                           | 当前为 `local-directory`                           |
+| `sourceKind`                           | 配置 root 直接子目录为 `builtin`，外部地址为 `registered` |
 
 扫描会拒绝缺少 `SKILL.md`、非法 frontmatter、符号链接、越界路径、不可读文件、超出单文件大小限制的目录。多个来源出现相同 Skill ID 时状态为 `conflict`，不会静默择一；`invalid` 和 `conflict` Skill 不能激活。
 
@@ -41,12 +42,14 @@ Application 负责把 Integration 的 `NexumSkillSource` 和 Persistence 的注�
 
 服务首次加载且没有已有注册记录时，会扫描配置的 roots，将其中所有一级子目录作为候选并持久化发现结果；后续启动会恢复已持久化的源地址并重新校验。默认独立服务入口的 root 是当前工作目录下的 `skills/`。
 
-运行期间新加入 root 的 Skill 目录不会被自动监听或自动发现。外部产品应在新增 Skill 后调用地址注册接口；重复注册同一规范化地址是幂等的。注销只删除注册记录和 Registry 条目，不删除 Skill 源目录。
+运行期间新加入 root 的 Skill 目录不会被自动监听或自动发现。外部产品应在新增 Skill 后调用地址注册接口；重复注册同一规范化地址是幂等的。配置 root 直接子目录归类为 `builtin`，只能通过删除源目录操作移除；外部地址归类为 `registered`，取消注册只删除注册记录和 Registry 条目，不删除 Skill 源目录。删除源目录只允许操作配置 root 的真实直接子目录，不允许删除 root 本身、root 外目录或符号链接。
 
 ```text
 内置 Skill：服务启动时扫描配置 root
 外部新增 Skill：POST /api/nexum/skills/register
-Skill 源文件：始终保留在源目录，不会复制到 Registry
+外部取消注册：DELETE /api/nexum/skills/{id}
+内置删除源目录：DELETE /api/nexum/skills/{id}/source
+Skill 源文件：外部取消注册不会删除；内置删除操作会删除源目录
 ```
 
 ## 3. 显式激活
@@ -64,9 +67,9 @@ Skill 原文进入本轮模型上下文，不进入普通 canonical history。Sk
 
 ## 4. 页面和 API 行为
 
-页面加载 Skill 列表后支持 `@` 建议、选择和已附加 chip；发送 Prompt 后根据 `skill.activated` 或 `skill.failed` 更新运行时间线。校验失败保留诊断，并允许 refresh 或 unregister，不得显示为 ready。
+页面加载 Skill 列表后支持 `@` 建议、选择和已附加 chip；发送 Prompt 后根据 `skill.activated` 或 `skill.failed` 更新运行时间线。校验失败保留诊断，并允许 refresh；内置显示“删除 Skill”，外部显示“取消注册”，两者都要确认且失败后保留可操作行。
 
-对应 HTTP 操作包括列表、详情、注册、刷新、校验、激活和注销。外部项目新增 Skill 时提交 `{ "address": "/path/to/skill" }` 到 `POST /api/nexum/skills/register`；端点字段与错误码见 [Nexum HTTP API](../../../apis/zh-CN/nexum.md)。
+对应 HTTP 操作包括列表、详情、注册、刷新、校验、激活、取消注册和删除内置源目录。外部项目新增 Skill 时提交 `{ "address": "/path/to/skill" }` 到 `POST /api/nexum/skills/register`；内置取消注册返回 `NEXUM_SKILL_BUILTIN`，外部删除源目录返回 `NEXUM_SKILL_SOURCE_NOT_REMOVABLE`；端点字段与错误码见 [Nexum HTTP API](../../../apis/zh-CN/nexum.md)。
 
 ## 5. 相关入口
 

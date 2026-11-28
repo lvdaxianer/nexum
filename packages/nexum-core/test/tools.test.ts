@@ -80,6 +80,9 @@ test("exposes Nexum-managed Skill registry operations without shell discovery", 
     async unregister(id: string) {
       calls.push({ operation: "unregister", input: { id } })
     },
+    async remove(id: string) {
+      calls.push({ operation: "remove", input: { id } })
+    },
   }
   const registry = createNexumToolRegistry({ sessions, skillRegistry })
 
@@ -96,6 +99,10 @@ test("exposes Nexum-managed Skill registry operations without shell discovery", 
     action: "skill.manage",
     resource: skill.id,
   })
+  expect(normalizeNexumToolRequest(session.sessionID, "skill_registry", { operation: "remove", id: skill.id })).toMatchObject({
+    action: "skill.manage",
+    resource: skill.id,
+  })
 
   const registered = await registry.port.execute(normalizeNexumToolRequest(session.sessionID, "skill_registry", {
     operation: "register",
@@ -109,11 +116,16 @@ test("exposes Nexum-managed Skill registry operations without shell discovery", 
     operation: "unregister",
     id: skill.id,
   }))
+  const deleted = await registry.port.execute(normalizeNexumToolRequest(session.sessionID, "skill_registry", {
+    operation: "remove",
+    id: skill.id,
+  }))
 
   expect(registered).toEqual({ ok: true, output: JSON.stringify(skill) })
   expect(detailed).toEqual({ ok: true, output: JSON.stringify(skill) })
   expect(removed).toEqual({ ok: true, output: JSON.stringify({ id: skill.id, deleted: true }) })
-  expect(calls.map((call) => call.operation)).toEqual(["register", "list", "unregister"])
+  expect(deleted).toEqual({ ok: true, output: JSON.stringify({ id: skill.id, deleted: true, sourceDeleted: true }) })
+  expect(calls.map((call) => call.operation)).toEqual(["register", "list", "unregister", "remove"])
 })
 
 test("requires the Skill management permission action for mutating operations", async () => {
@@ -130,6 +142,7 @@ test("requires the Skill management permission action for mutating operations", 
       async list() { return [] },
       async get() { return undefined },
       async unregister() {},
+      async remove() {},
     },
   })
 

@@ -32,7 +32,7 @@ error, and `130` user cancellation.
 | `nexum theme [dark\|light\|auto]` | Read or update local theme |
 | `nexum model get\|set\|probe` | Read, update, or probe model configuration |
 | `nexum role-prompt get\|set <file>\|reset` | Manage the default role prompt |
-| `nexum skill ...`, `nexum mcp ...`, `nexum permission ...` | Manage runtime capabilities |
+| `nexum skill ...`, `nexum mcp ...`, `nexum permission ...` | Manage runtime capabilities; `skill unregister` preserves external sources, while `skill remove` deletes a built-in root child |
 
 ## REPL shortcuts
 

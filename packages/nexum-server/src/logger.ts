@@ -8,6 +8,7 @@ export interface NexumLogFields {
 
 /** Nexum HTTP 服务的最小日志端口。 */
 export interface NexumLogger {
+  readonly info: (event: string, fields?: NexumLogFields) => void
   readonly warn: (event: string, fields?: NexumLogFields) => void
   readonly error: (event: string, fields?: NexumLogFields, error?: unknown) => void
 }
@@ -23,6 +24,9 @@ const defaultSink: NexumLogSink = { write: (line) => process.stderr.write(`${lin
 /** 创建带统一脱敏、限长和结构化输出的服务日志器。 */
 export function createNexumLogger(sink: NexumLogSink = defaultSink): NexumLogger {
   return {
+    info(event, fields = {}) {
+      writeLog(sink, "INFO", event, fields)
+    },
     warn(event, fields = {}) {
       writeLog(sink, "WARN", event, fields)
     },
@@ -37,7 +41,7 @@ export function withNexumLogContext<T>(traceId: string, operation: () => Promise
   return logContext.run({ traceId }, operation)
 }
 
-function writeLog(sink: NexumLogSink, level: "WARN" | "ERROR", event: string, fields: NexumLogFields, error?: unknown): void {
+function writeLog(sink: NexumLogSink, level: "INFO" | "WARN" | "ERROR", event: string, fields: NexumLogFields, error?: unknown): void {
   const context = logContext.getStore()
   const safeError = error === undefined ? undefined : normalizeError(error)
   const record = redactNexumSensitiveValue({

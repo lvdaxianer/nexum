@@ -40,11 +40,11 @@ bun run --cwd packages/headless-ui dev
 
 ## Skill Registry
 
-Skill Registry 是 UI 无关的 Core 能力。它从显式注册的本地地址读取目录，校验 manifest、路径边界、摘要和 `SKILL.md` 完整性；Server 暴露 list/detail/register/refresh/validate/activate/unregister 管理接口，生成客户端保持同一协议契约。
+Skill Registry 是 UI 无关的 Core 能力。它从配置的 root 自动发现内置 Skill，也读取显式注册的外部本地地址，校验 manifest、路径边界、摘要和 `SKILL.md` 完整性；Server 暴露 list/detail/register/refresh/validate/activate/unregister/remove 管理接口，生成客户端保持同一协议契约。
 
-默认本地 Runtime 将注册源持久化到 `<dataDirectory>/skills.json`。取消注册只移除 Nexum 的注册记录和派生状态，不会删除、移动或修改 Skill 源目录；源目录被移动或损坏时，注册记录保留为 invalid，用户可以刷新或重新注册新的地址。
+默认本地 Runtime 将注册源持久化到 `<dataDirectory>/skills.json`。root 下的 Skill 标记为 `builtin`，只能使用删除源目录操作；外部 Skill 标记为 `registered`，取消注册只移除 Nexum 的注册记录和派生状态，不会删除、移动或修改源目录。内置 Skill 取消注册会返回冲突错误；删除操作只允许删除配置 root 的直接子目录，且源目录被真正删除后才从 Registry 移除。
 
-页面层只负责展示注册状态、验证结果、激活状态和 `@` 自动补全。Prompt 进入 Coding Loop 后，Skill Invocation Port 解析 mention、去重并等待 `skill.use` 权限；获得批准后把 Skill 内容作为带稳定 `sourceID` 的 system message 注入模型上下文，并通过 SSE 发布 `skill.activated` 或 `skill.failed`。因此任何其他 UI 只要实现同一 Headless Client 契约，即可复用 Registry、权限和 Coding Loop。
+页面层按来源展示“删除 Skill”或“取消注册”，两者都要求确认；只有服务端成功响应后才从列表移除。Prompt 进入 Coding Loop 后，Skill Invocation Port 解析 mention、去重并等待 `skill.use` 权限；获得批准后把 Skill 内容作为带稳定 `sourceID` 的 system message 注入模型上下文，并通过 SSE 发布 `skill.activated` 或 `skill.failed`。因此任何其他 UI 只要实现同一 Headless Client 契约，即可复用 Registry、权限和 Coding Loop。
 
 ## 真实模型 Smoke
 

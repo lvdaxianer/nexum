@@ -1253,6 +1253,57 @@ describe.serial("Nexum UI smoke", () => {
     await expect(Bun.file(join(skillDirectory, "SKILL.md")).exists()).resolves.toBe(true)
   })
 
+  test.serial("deletes a built-in Skill source only after explicit confirmation", { timeout: 15_000 }, async () => {
+    browser = await chromium.launch({ nexum: true })
+    const page = await browser.newPage()
+    skillRoot = await mkdtemp(join(tmpdir(), "nexum-ui-built-in-skill-root-"))
+    const skillDirectory = join(skillRoot, "built-in-skill")
+    await mkdir(skillDirectory)
+    await writeFile(
+      join(skillDirectory, "SKILL.md"),
+      "---\nname: built-in-skill\ndescription: Built-in test skill\nversion: 1.0.0\n---\n\n# Built-in Skill\n",
+    )
+    apiServer = await startNexumServer({
+      port: apiPort,
+      corsOrigins: [uiOrigin],
+      skillRegistry: createNexumSkillRegistry({ roots: [skillRoot] }),
+    })
+    uiServer = Bun.serve({ hostname: "127.0.0.1", port: uiPort, fetch: serveBuiltUi })
+    let failRemoveOnce = true
+    await page.route("**/api/nexum/skills/built-in-skill/source", async (route) => {
+      if (failRemoveOnce && route.request().method() === "DELETE") {
+        failRemoveOnce = false
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ errorCode: "NEXUM_TEST_SKILL_REMOVE_UNAVAILABLE", message: "Skill 删除服务暂时不可用" }),
+        })
+        return
+      }
+      await route.continue()
+    })
+
+    await page.goto(uiOrigin)
+    await openDrawer(page, /Skills/)
+    const skillRow = page.locator(".skill-row").filter({ hasText: "built-in-skill" })
+    await expect(skillRow.getByText("内置", { exact: true })).toBeVisible()
+    await expect(skillRow.getByRole("button", { name: "删除 Skill" })).toBeVisible()
+    await expect(skillRow.getByRole("button", { name: "取消注册" })).toHaveCount(0)
+
+    await skillRow.getByRole("button", { name: "删除 Skill" }).click()
+    await expect(page.getByRole("alertdialog")).toContainText("操作不可恢复")
+    await page.getByRole("button", { name: "返回" }).click()
+    await expect(skillRow).toBeVisible()
+    await skillRow.getByRole("button", { name: "删除 Skill" }).click()
+    await page.getByRole("button", { name: "确认删除 Skill" }).click()
+    await expect(page.getByText("Skill 删除服务暂时不可用", { exact: true })).toBeVisible()
+    await expect(skillRow).toBeVisible()
+    await expect(page.getByRole("alertdialog")).toBeVisible()
+    await page.getByRole("button", { name: "确认删除 Skill" }).click()
+    await expect(page.getByText("built-in-skill", { exact: true })).toHaveCount(0)
+    await expect(Bun.file(join(skillDirectory, "SKILL.md")).exists()).resolves.toBe(false)
+  })
+
   test.serial("keeps Skill and role prompt drafts visible while loading or saving fails", { timeout: 15_000 }, async () => {
     browser = await chromium.launch({ nexum: true })
     const page = await browser.newPage()

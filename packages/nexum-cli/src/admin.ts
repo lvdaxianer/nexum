@@ -102,6 +102,20 @@ export async function cmdSkillUnregister(client: NexumClient, io: CliIO, id: str
   io.line(`${paint(io.caps, "green", "✓")} 已注销 @${id}(源目录未改动)`)
 }
 
+/**
+ * 删除内置 Skill 的源目录。
+ *
+ * @param client - Nexum Client
+ * @param io - CLI 输出接口
+ * @param id - Skill ID
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-28
+ */
+export async function cmdSkillRemove(client: NexumClient, io: CliIO, id: string): Promise<void> {
+  await client.experimental.nexum.skill.remove({ id })
+  io.line(`${paint(io.caps, "green", "✓")} 已删除 @${id} 的源目录`)
+}
+
 export async function cmdMcpList(client: NexumClient, io: CliIO): Promise<void> {
   const servers = (await client.experimental.nexum.mcp.list()).data
   io.line(paint(io.caps, "dim", "ID          状态         端点 / 错误"))

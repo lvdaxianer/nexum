@@ -62,5 +62,7 @@ export function normalizeNexumToolRequest(
 }
 
 function skillRegistryPermissionAction(operation: unknown): "skill.manage" | "skill.read" {
-  return operation === "register" || operation === "refresh" || operation === "unregister" ? "skill.manage" : "skill.read"
+  return operation === "register" || operation === "refresh" || operation === "unregister" || operation === "remove"
+    ? "skill.manage"
+    : "skill.read"
 }

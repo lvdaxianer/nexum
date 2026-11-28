@@ -6,6 +6,7 @@ import { dirname } from "node:path"
 import type {
   NexumSkillRegistration,
   NexumSkillRegistrationStore,
+  NexumSkillSourceKind,
   NexumSkillSourceType,
   NexumSkillStatus,
 } from "@nexum/core"
@@ -119,6 +120,7 @@ function isRegistration(value: unknown): value is NexumSkillRegistration {
     typeof value.registeredAt === "string" &&
     typeof value.updatedAt === "string" &&
     (value.skillID === undefined || typeof value.skillID === "string") &&
+    (value.sourceKind === undefined || isSkillSourceKind(value.sourceKind)) &&
     (value.digest === undefined || typeof value.digest === "string") &&
     (value.status === undefined || isSkillStatus(value.status)) &&
     (value.diagnostics === undefined || Array.isArray(value.diagnostics) && value.diagnostics.every((item) => typeof item === "string"))
@@ -127,6 +129,18 @@ function isRegistration(value: unknown): value is NexumSkillRegistration {
 
 function isSkillStatus(value: unknown): value is NexumSkillStatus {
   return value === "ready" || value === "invalid" || value === "conflict"
+}
+
+/**
+ * 校验持久化记录中的来源归属。
+ *
+ * @param value - 未知持久化值
+ * @returns 是否为合法来源归属
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-28
+ */
+function isSkillSourceKind(value: unknown): value is NexumSkillSourceKind {
+  return value === "builtin" || value === "registered"
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

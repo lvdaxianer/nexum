@@ -1,9 +1,9 @@
 /** 本地 Skill 目录的发现、校验和文件读取实现。 */
 
 import { createHash } from "node:crypto"
-import { lstat, readFile, readdir } from "node:fs/promises"
+import { lstat, readFile, readdir, rm } from "node:fs/promises"
 import type { Dirent } from "node:fs"
-import { basename, join, posix, resolve } from "node:path"
+import { basename, dirname, join, posix, resolve } from "node:path"
 import { redactNexumSensitiveText } from "@nexum/core"
 import type {
   NexumSkillCandidate,
@@ -31,6 +31,30 @@ export function createLocalSkillSource(options: LocalSkillSourceOptions): NexumS
     discover: async () => (await Promise.all(roots.map((root) => scanRoot(root, maxFileBytes)))).flat(),
     scan: async (registration) => scanSkillDirectory(registration.address, basename(registration.address) || "registered-skill", maxFileBytes, registration),
     normalizeAddress,
+    isConfiguredAddress: (address) => findDirectRoot(normalizeAddress(address)) !== undefined,
+    remove: removeSkillDirectory,
+  }
+
+  /**
+   * 删除配置 root 的真实直接子目录。
+   *
+   * @param address - Skill 源目录地址
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-28
+   */
+  async function removeSkillDirectory(address: string): Promise<void> {
+    const normalizedAddress = normalizeAddress(address)
+    const root = findDirectRoot(normalizedAddress)
+    if (!root) throw new Error("Skill 源目录不在配置 root 的直接子目录中")
+    const rootMetadata = await lstat(root).catch(() => undefined)
+    if (!rootMetadata?.isDirectory() || rootMetadata.isSymbolicLink()) throw new Error("Skill 配置 root 必须是实际目录")
+    const metadata = await lstat(normalizedAddress).catch(() => undefined)
+    if (!metadata?.isDirectory() || metadata.isSymbolicLink()) throw new Error("Skill 源目录必须是实际目录")
+    await rm(normalizedAddress, { recursive: true, force: false })
+  }
+
+  function findDirectRoot(address: string): string | undefined {
+    return roots.find((root) => dirname(address) === root)
   }
 }
 
@@ -76,6 +100,7 @@ async function scanSkillDirectory(
     status,
     diagnostics,
     sourceType: localSourceType,
+    sourceKind: registration?.sourceKind ?? "builtin",
     ...(registration?.registeredAt ? { registeredAt: registration.registeredAt } : {}),
     ...(registration ? { updatedAt: registration.updatedAt } : {}),
   }

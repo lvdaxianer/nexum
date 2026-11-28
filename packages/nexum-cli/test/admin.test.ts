@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Nexum } from "@nexum/client"
-import { cmdDoctor, cmdMcpList, cmdModelGet, cmdModelProbe, cmdModelSet, cmdRolePromptGet, cmdSkillList, cmdStatus, cmdTheme } from "../src/admin.ts"
+import { cmdDoctor, cmdMcpList, cmdModelGet, cmdModelProbe, cmdModelSet, cmdRolePromptGet, cmdSkillList, cmdSkillRemove, cmdStatus, cmdTheme } from "../src/admin.ts"
 import { memoryIO } from "../src/io.ts"
 
 const meta = { protocolVersion: "nexum.runtime.v1", traceId: "trace_test" } as const
@@ -86,6 +86,24 @@ test("cmdSkillList colors status and cmdMcpList maps protocol statuses", async (
   expect(out).toContain("connected")
   expect(out).toContain("needs_auth")
   expect(out).toContain("ECONNREFUSED")
+})
+
+test("cmdSkillRemove deletes a built-in Skill source through the dedicated endpoint", async () => {
+  const io = memoryIO()
+  const requests: Request[] = []
+  const client = Nexum.make({
+    baseUrl: "http://nexum.test",
+    fetch: async (input, init) => {
+      requests.push(new Request(typeof input === "string" ? input : input.toString(), init))
+      return Response.json({ data: { id: "builtin-skill", deleted: true, sourceDeleted: true }, meta })
+    },
+  })
+
+  await cmdSkillRemove(client, io, "builtin-skill")
+
+  expect(requests[0]?.url).toBe("http://nexum.test/api/nexum/skills/builtin-skill/source")
+  expect(requests[0]?.method).toBe("DELETE")
+  expect(io.plain()).toContain("已删除")
 })
 
 test("cmdTheme writes config and notes next-launch effect", async () => {

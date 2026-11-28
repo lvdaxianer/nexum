@@ -74,7 +74,7 @@ former is a Runtime instruction; the latter is the user's current task.
 | Permission | `session.permission.list/reply()` | Read pending requests and submit decisions |
 | Permission policy | `experimental.nexum.permissionPolicy.list/create/update/remove()` | Manage policy rules |
 | Question | `session.question.list/reply/cancel()` | Read, answer, or cancel Questions |
-| Skill | `session.skill.list/detail/register/refresh/validate/unregister()` | Discover and manage Skills |
+| Skill | `experimental.nexum.skill.list/detail/register/refresh/validate/unregister/remove()` | Discover, unregister, or remove Skills |
 
 JSON requests use `Accept: application/json` and `Content-Type:
 application/json`; SSE uses `Accept: text/event-stream`. Client errors expose a

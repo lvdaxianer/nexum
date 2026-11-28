@@ -17,6 +17,7 @@ import {
   NexumModelProbeError,
   NexumRolePromptError,
   NexumSkillInvocationError,
+  NexumSkillRegistryError,
   McpError,
   canCancelSessionStatus,
   nexumAnyToolAction,
@@ -95,7 +96,7 @@ const NEXUM_CAPABILITIES = [
     id: "skill",
     version: "1",
     status: "enabled",
-    operations: ["list", "detail", "register", "refresh", "validate", "unregister", "activate"],
+    operations: ["list", "detail", "register", "refresh", "validate", "unregister", "remove", "activate"],
   },
   { id: "role_prompt", version: "1", status: "enabled", operations: ["get", "update", "reset"] },
   { id: "memory", version: "1", status: "disabled", operations: ["search", "upsert", "remove"] },
@@ -278,6 +279,7 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
       const traceId = traceIdFrom(request.headers.get(TRACE_ID_HEADER))
       const path = new URL(request.url).pathname
       return withNexumLogContext(traceId, async () => {
+        const startedAt = Date.now()
         try {
           const response =
             isPublicPath(path) || isAuthorizedRequest(request, authToken)
@@ -305,9 +307,11 @@ export async function startNexumServer(options: NexumServerOptions = {}): Promis
                   logger,
                 )
               : errorResponse(401, "NEXUM_AUTH_REQUIRED", "请求需要有效的 Bearer token", traceId)
+          logRequest(logger, request, traceId, startedAt, response.status)
           return withCorsHeaders(response, request, corsOrigins)
         } catch (error) {
           logRequestFailure(logger, request, traceId, error)
+          logRequest(logger, request, traceId, startedAt, 500)
           return withCorsHeaders(
             errorResponse(500, "NEXUM_INTERNAL_ERROR", "Nexum Service 暂时不可用", traceId),
             request,
@@ -610,6 +614,14 @@ async function handleRequest(
     return activateSkill(request, decodeURIComponent(skillActivateMatch[1]!), sessionService, skillInvocation, traceId)
   }
 
+  const skillSourceMatch = url.pathname.match(/^\/api\/nexum\/skills\/([^/]+)\/source$/)
+  if (skillSourceMatch) {
+    if (request.method !== "DELETE") {
+      return errorResponse(405, "NEXUM_METHOD_NOT_ALLOWED", "只支持 DELETE 请求", traceId)
+    }
+    return removeSkillSource(decodeURIComponent(skillSourceMatch[1]!), skillRegistry, publishSkillUpdate, traceId)
+  }
+
   const skillDetailMatch = url.pathname.match(/^\/api\/nexum\/skills\/([^/]+)$/)
   if (skillDetailMatch) {
     const skillID = decodeURIComponent(skillDetailMatch[1]!)
@@ -805,7 +817,7 @@ async function registerSkill(
   }
   try {
     const data = await skillRegistry.register(payload.address)
-    await publishSkillUpdate({ change: "registered", skillID: data.id, status: data.status })
+    await publishSkillUpdate({ change: "registered", skillID: data.id, status: data.status, sourceKind: data.sourceKind })
     return jsonResponse({ data }, traceId)
   } catch {
     return errorResponse(400, "NEXUM_SKILL_REGISTER_FAILED", "Skill 地址无法注册", traceId)
@@ -836,7 +848,7 @@ async function refreshSkills(
   const data = await skillRegistry.list()
   const updated = payload.id === undefined ? data : data.filter((skill) => skill.id === payload.id)
   await Promise.all(
-    updated.map((skill) => publishSkillUpdate({ change: "refreshed", skillID: skill.id, status: skill.status })),
+    updated.map((skill) => publishSkillUpdate({ change: "refreshed", skillID: skill.id, status: skill.status, sourceKind: skill.sourceKind })),
   )
   return jsonResponse({ data }, traceId)
 }
@@ -859,9 +871,47 @@ async function unregisterSkill(
   if (!skillRegistry) return skillRegistryUnavailable(traceId)
   try {
     await skillRegistry.unregister(skillID)
-    await publishSkillUpdate({ change: "unregistered", skillID })
+    await publishSkillUpdate({ change: "unregistered", skillID, sourceKind: "registered" })
     return jsonResponse({ data: { id: skillID, deleted: true } }, traceId)
-  } catch {
+  } catch (error) {
+    if (error instanceof NexumSkillRegistryError && error.code === "builtin") {
+      return errorResponse(409, "NEXUM_SKILL_BUILTIN", error.message, traceId)
+    }
+    if (error instanceof NexumSkillRegistryError && error.code === "persistence_failed") {
+      return errorResponse(500, "NEXUM_SKILL_REGISTRY_STORAGE_FAILED", error.message, traceId)
+    }
+    return errorResponse(404, "NEXUM_SKILL_NOT_FOUND", "Skill 未注册", traceId)
+  }
+}
+
+/**
+ * 删除配置 root 下的内置 Skill 源目录。
+ *
+ * @param skillID - 路径中的 Skill ID
+ * @param skillRegistry - Skill Registry
+ * @param publishSkillUpdate - Skill 更新事件发布器
+ * @param traceId - 当前请求链路标识
+ * @returns 删除结果或稳定错误响应
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-28
+ */
+async function removeSkillSource(
+  skillID: string,
+  skillRegistry: NexumSkillRegistry | undefined,
+  publishSkillUpdate: PublishSkillUpdate,
+  traceId: string,
+): Promise<Response> {
+  if (!skillRegistry) return skillRegistryUnavailable(traceId)
+  try {
+    await skillRegistry.remove(skillID)
+    await publishSkillUpdate({ change: "removed", skillID, sourceKind: "builtin" })
+    return jsonResponse({ data: { id: skillID, deleted: true, sourceDeleted: true } }, traceId)
+  } catch (error) {
+    if (error instanceof NexumSkillRegistryError) {
+      if (error.code === "source_remove_failed") return errorResponse(500, "NEXUM_SKILL_SOURCE_DELETE_FAILED", error.message, traceId)
+      if (error.code === "persistence_failed") return errorResponse(500, "NEXUM_SKILL_REGISTRY_STORAGE_FAILED", error.message, traceId)
+      return errorResponse(409, "NEXUM_SKILL_SOURCE_NOT_REMOVABLE", error.message, traceId)
+    }
     return errorResponse(404, "NEXUM_SKILL_NOT_FOUND", "Skill 未注册", traceId)
   }
 }
@@ -891,7 +941,7 @@ async function validateSkills(
   const summaries = await skillRegistry.list()
   const data = payload.id === undefined ? summaries : summaries.filter((item) => item.id === payload.id)
   await Promise.all(
-    data.map((skill) => publishSkillUpdate({ change: "validated", skillID: skill.id, status: skill.status })),
+    data.map((skill) => publishSkillUpdate({ change: "validated", skillID: skill.id, status: skill.status, sourceKind: skill.sourceKind })),
   )
   return jsonResponse(
     { data: { valid: data.length > 0 && data.every((item) => item.status === "ready"), data } },
@@ -2707,4 +2757,29 @@ function logRequestFailure(logger: NexumLogger | undefined, request: Request, tr
     },
     error,
   )
+}
+
+/**
+ * 记录统一 HTTP 请求的受控摘要和结果状态。
+ *
+ * @param logger - 可选日志器
+ * @param request - 当前 HTTP 请求
+ * @param traceId - 当前链路标识
+ * @param startedAt - 请求开始时间戳
+ * @param status - 响应状态码
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-28
+ */
+function logRequest(logger: NexumLogger | undefined, request: Request, traceId: string, startedAt: number, status: number): void {
+  const requestLogger = logger ?? createNexumLogger()
+  const endedAt = Date.now()
+  requestLogger.info("nexum.request", {
+    traceId,
+    method: request.method,
+    path: new URL(request.url).pathname,
+    startedAt: new Date(startedAt).toISOString(),
+    endedAt: new Date(endedAt).toISOString(),
+    durationMs: endedAt - startedAt,
+    status,
+  })
 }
