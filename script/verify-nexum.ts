@@ -55,6 +55,14 @@ if (!existsSync(manifestPath)) {
     if (!existsSync(outputPath(entry))) fail(`缺少 ${relative(process.cwd(), outputPath(entry))}`)
     if (!existsSync(declarationPath(entry))) fail(`缺少 ${relative(process.cwd(), declarationPath(entry))}`)
   }
+  if (exports["./chat-surface/styles.css"] !== "./dist/chat-surface.css") {
+    fail("./chat-surface/styles.css 没有指向 dist/chat-surface.css")
+  }
+  if (exports["./surfaces/styles.css"] !== "./dist/surfaces.css") {
+    fail("./surfaces/styles.css 没有指向 dist/surfaces.css")
+  }
+  if (!existsSync(join(artifactRoot, "dist", "chat-surface.css"))) fail("缺少 dist/chat-surface.css")
+  if (!existsSync(join(artifactRoot, "dist", "surfaces.css"))) fail("缺少 dist/surfaces.css")
 }
 
 for (const forbidden of ["src", "test", ".turbo", "node_modules", "packages"]) {
@@ -118,7 +126,7 @@ async function verifyConsumer(tarball: string) {
 
   await Bun.write(
     join(consumer, "types.ts"),
-    `/// <reference types="bun" />\nimport { createEmbeddedRuntime } from "${releasePackageName}/application"\nimport { Nexum } from "${releasePackageName}/client"\nimport { createMemoryPersistence } from "${releasePackageName}/persistence/memory"\nvoid createEmbeddedRuntime\nvoid Nexum\nvoid createMemoryPersistence\n`,
+    `/// <reference types="bun" />\nimport { createEmbeddedRuntime } from "${releasePackageName}/application"\nimport { Nexum } from "${releasePackageName}/client"\nimport { createMemoryPersistence } from "${releasePackageName}/persistence/memory"\nimport { NexumSurfaces } from "${releasePackageName}/surfaces"\nimport type { NexumSurfacesProps } from "${releasePackageName}/surfaces"\nvoid createEmbeddedRuntime\nvoid Nexum\nvoid createMemoryPersistence\nvoid NexumSurfaces\nconst surfacesProps: NexumSurfacesProps = { apiBaseUrl: "http://127.0.0.1:4097" }\nvoid surfacesProps\n`,
   )
   const typecheck = Bun.spawnSync(
     ["bunx", "--bun", "tsc", "--noEmit", "--module", "NodeNext", "--moduleResolution", "NodeNext", "--target", "ES2022", "types.ts"],
@@ -130,9 +138,30 @@ async function verifyConsumer(tarball: string) {
     )
   }
 
+  await Bun.write(
+    join(consumer, "surface-import.ts"),
+    `import { NexumSurfaces } from "${releasePackageName}/surfaces"\nimport type { NexumSurfacesProps } from "${releasePackageName}/surfaces"\nimport "${releasePackageName}/surfaces/styles.css"\nvoid NexumSurfaces\nconst props: NexumSurfacesProps = { apiBaseUrl: "http://127.0.0.1:4097" }\nvoid props\n`,
+  )
+  const surfaceBundle = Bun.spawnSync(
+    [
+      "bun",
+      "build",
+      "surface-import.ts",
+      "--target=browser",
+      "--format=esm",
+      "--outdir=surface-dist",
+      "--external=solid-js",
+    ],
+    { cwd: consumer, stdout: "pipe", stderr: "pipe" },
+  )
+  if (surfaceBundle.exitCode !== 0) {
+    fail(`仓库外 consumer Surfaces 浏览器构建失败:\n${new TextDecoder().decode(surfaceBundle.stderr)}`)
+  }
+
   const cli = Bun.spawnSync([join(consumer, "node_modules/.bin/nexum"), "--help"], { cwd: consumer, stdout: "pipe", stderr: "pipe" })
   if (cli.exitCode !== 0) fail(`仓库外 consumer CLI 检查失败:\n${new TextDecoder().decode(cli.stderr)}`)
   if (!existsSync(join(consumer, `node_modules/${releasePackageName}/dist/chat-surface.css`))) fail("仓库外 consumer 缺少 Chat Surface CSS")
+  if (!existsSync(join(consumer, `node_modules/${releasePackageName}/dist/surfaces.css`))) fail("仓库外 consumer 缺少 Surfaces CSS")
 
   const tar = Bun.spawnSync(["tar", "-tzf", tarball], { stdout: "pipe", stderr: "pipe" })
   if (tar.exitCode !== 0) {

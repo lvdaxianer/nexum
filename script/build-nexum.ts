@@ -37,7 +37,10 @@ for (const [subpath, entry] of Object.entries(publicEntries)) {
   console.log(`built ${subpath} -> ${relative(process.cwd(), outputPath(entry))}`)
 }
 
-await Bun.write(join(artifactRoot, "dist", "chat-surface.css"), Bun.file("packages/nexum-chat-surface/src/styles.css"))
+const surfaceStyles = await Bun.file("packages/nexum-surfaces/src/styles.css").text()
+const chatSurfaceStyles = await Bun.file("packages/nexum-chat-surface/src/styles.css").text()
+await Bun.write(join(artifactRoot, "dist", "surfaces.css"), `${surfaceStyles}\n${chatSurfaceStyles}`)
+await Bun.write(join(artifactRoot, "dist", "chat-surface.css"), chatSurfaceStyles)
 
 for (const [subpath, entry] of Object.entries(publicEntries)) {
   if (subpath === ".") {
@@ -117,6 +120,7 @@ const manifest = {
         ]),
     ),
     "./chat-surface/styles.css": "./dist/chat-surface.css",
+    "./surfaces/styles.css": "./dist/surfaces.css",
   },
   files: ["dist", "README.md", "LICENSE"],
   dependencies: {

@@ -22,14 +22,13 @@ separate packages users should install.
 | Server | `nexum-ai/server` | [Server](nexum-server.md) |
 | Surface Adapter | `nexum-ai/surface-adapter` | [Surface Adapter](nexum-surface-adapter.md) |
 | Chat Surface | `nexum-ai/chat-surface` | [Chat Surface](nexum-chat-surface.md) |
+| Surfaces | `nexum-ai/surfaces` | [Surfaces](nexum-surfaces.md) |
 | CLI | `nexum` binary and `nexum-ai/cli` | [CLI](nexum-cli.md) |
 
-## Internal reference modules
+## Internal test modules
 
-These pages document repository-only validation surfaces. They are useful when
-contributing, but are not public installation targets:
+These pages document repository-only test validation modules:
 
-- [Reference Surfaces](nexum-surfaces.md)
 - [Test Workbench](nexum-test.md)
 
 Start with a [composition example](../examples/README.md) if you are unsure
