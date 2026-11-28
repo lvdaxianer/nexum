@@ -801,6 +801,12 @@ input[aria-invalid="true"]:focus {
   color: #1c8a73;
 }
 
+.skill-source-kind {
+  margin-left: 6px;
+  color: #71839a;
+  font-size: 10px;
+}
+
 .skill-row-invalid .skill-status,
 .skill-row-conflict .skill-status {
   color: #b8564c;
@@ -870,6 +876,22 @@ input[aria-invalid="true"]:focus {
 .skill-unregister:hover {
   border-color: #c45b52;
   background: #fff0ee;
+}
+
+.skill-remove {
+  justify-self: start;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #b64b45;
+  border-radius: 9px;
+  background: #b64b45;
+  color: #fff;
+  font-size: 11px;
+}
+
+.skill-remove:hover {
+  border-color: #943b37;
+  background: #943b37;
 }
 
 .notice {
@@ -2757,7 +2779,8 @@ footer {
 :root[data-theme="dark"] .skill-row-copy p,
 :root[data-theme="dark"] .skill-row-copy small,
 :root[data-theme="dark"] .skill-status,
-:root[data-theme="dark"] .skill-validation {
+:root[data-theme="dark"] .skill-validation,
+:root[data-theme="dark"] .skill-source-kind {
   color: var(--d-muted);
 }
 
@@ -2783,6 +2806,12 @@ footer {
   border-color: var(--d-danger-soft);
   background: transparent;
   color: var(--d-danger);
+}
+
+:root[data-theme="dark"] .skill-remove {
+  border-color: var(--d-danger);
+  background: var(--d-danger);
+  color: var(--d-text-strong);
 }
 
 :root[data-theme="dark"] .skill-detail-panel {

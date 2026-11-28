@@ -28,6 +28,7 @@ import {
   type NexumSessionMessages,
   type NexumSessionState,
   type NexumSkillDeleteResult,
+  type NexumSkillSourceDeleteResult,
   type NexumSkillRegisterInput,
   type NexumSkillRefreshInput,
   type NexumSkill,
@@ -72,6 +73,7 @@ export type {
   NexumSessionMessages,
   NexumSessionState,
   NexumSkillDeleteResult,
+  NexumSkillSourceDeleteResult,
   NexumSkillRegisterInput,
   NexumSkillRefreshInput,
   NexumSkill,
@@ -249,6 +251,8 @@ export const Nexum = {
               }),
             unregister: (input: { readonly id: string }) =>
               request<NexumSkillDeleteResult>(`/skills/${encodeURIComponent(input.id)}`, { method: "DELETE" }),
+            remove: (input: { readonly id: string }) =>
+              request<NexumSkillSourceDeleteResult>(`/skills/${encodeURIComponent(input.id)}/source`, { method: "DELETE" }),
           },
           mcp: {
             list: () => experimentalRequest<readonly NexumMcpServer[]>("/mcp"),

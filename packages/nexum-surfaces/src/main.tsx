@@ -101,6 +101,9 @@ function App() {
   const [skillUnregisterID, setSkillUnregisterID] = createSignal("")
   const [skillUnregisterBusy, setSkillUnregisterBusy] = createSignal(false)
   const [skillUnregisterConfirmOpen, setSkillUnregisterConfirmOpen] = createSignal(false)
+  const [skillRemoveID, setSkillRemoveID] = createSignal("")
+  const [skillRemoveBusy, setSkillRemoveBusy] = createSignal(false)
+  const [skillRemoveConfirmOpen, setSkillRemoveConfirmOpen] = createSignal(false)
   const [mcpServers, setMcpServers] = createSignal<NexumMcpServer[]>([])
   const [mcpLoading, setMcpLoading] = createSignal(false)
   const [mcpError, setMcpError] = createSignal("")
@@ -594,6 +597,19 @@ function App() {
     setSkillUnregisterConfirmOpen(true)
   }
 
+  /**
+   * 打开内置 Skill 源目录删除确认框。
+   *
+   * @param skillID - Skill ID
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-28
+   */
+  function requestRemoveSkill(skillID: string) {
+    if (skillBusy() || skillUnregisterBusy() || skillRemoveBusy()) return
+    setSkillRemoveID(skillID)
+    setSkillRemoveConfirmOpen(true)
+  }
+
   async function confirmUnregisterSkill() {
     const skillID = skillUnregisterID()
     if (!skillID || skillUnregisterBusy()) return
@@ -611,9 +627,35 @@ function App() {
     } catch (error) {
       const message = messageFrom(error, "Skill 取消注册失败，请重试")
       setNotice(message)
-      setSkillUnregisterConfirmOpen(false)
     } finally {
       setSkillUnregisterBusy(false)
+    }
+  }
+
+  /**
+   * 执行内置 Skill 源目录删除并在成功后更新列表。
+   *
+   * @author lvdaxianer@yeah.net
+   * @date 2026-11-28
+   */
+  async function confirmRemoveSkill() {
+    const skillID = skillRemoveID()
+    if (!skillID || skillRemoveBusy()) return
+    setSkillRemoveBusy(true)
+    try {
+      await client.experimental.nexum.skill.remove({ id: skillID })
+      setSkills((current) => current.filter((skill) => skill.id !== skillID))
+      setSkillValidation((current) => {
+        const next = { ...current }
+        delete next[skillID]
+        return next
+      })
+      setSkillRemoveConfirmOpen(false)
+      setNotice(`内置 Skill ${skillID} 已删除，源目录已移除`)
+    } catch (error) {
+      setNotice(messageFrom(error, "内置 Skill 删除失败，请重试"))
+    } finally {
+      setSkillRemoveBusy(false)
     }
   }
 
@@ -1263,6 +1305,9 @@ function App() {
                         <div class="skill-row-title">
                           <strong>{skill.id}</strong>
                           <span class="skill-status">{skill.status}</span>
+                          <span class="skill-source-kind">
+                            {skill.sourceKind === "builtin" ? "内置" : skill.sourceKind === "registered" ? "外部" : "来源未知"}
+                          </span>
                         </div>
                         <p>{skill.description || "暂无描述"}</p>
                         <small>
@@ -1278,13 +1323,31 @@ function App() {
                       <Show when={skillValidation()[skill.id]}>
                         <span class="skill-validation">{skillValidation()[skill.id]}</span>
                       </Show>
-                      <button
-                        class="skill-unregister"
-                        disabled={skillBusy() || skillUnregisterBusy()}
-                        onClick={() => requestUnregisterSkill(skill.id)}
+                      <Show
+                        when={skill.sourceKind === "builtin"}
+                        fallback={
+                          <Show
+                            when={skill.sourceKind === "registered"}
+                            fallback={<span class="skill-source-kind">来源未知，暂不可操作</span>}
+                          >
+                            <button
+                              class="skill-unregister"
+                              disabled={skillBusy() || skillUnregisterBusy() || skillRemoveBusy()}
+                              onClick={() => requestUnregisterSkill(skill.id)}
+                            >
+                              取消注册
+                            </button>
+                          </Show>
+                        }
                       >
-                        取消注册
-                      </button>
+                        <button
+                          class="skill-remove"
+                          disabled={skillBusy() || skillUnregisterBusy() || skillRemoveBusy()}
+                          onClick={() => requestRemoveSkill(skill.id)}
+                        >
+                          删除 Skill
+                        </button>
+                      </Show>
                       <Show when={skillDetailID() === skill.id}>
                         <div class="skill-detail-panel" aria-live="polite">
                           <Show when={skillDetailError()}>
@@ -1694,6 +1757,15 @@ function App() {
           onOpenChange={setSkillUnregisterConfirmOpen}
           busy={skillUnregisterBusy()}
           onConfirm={confirmUnregisterSkill}
+        />
+        <ConfirmDialog
+          title="删除这个内置 Skill？"
+          description={`将删除 root 下的 ${skillRemoveID()} 目录及其文件，操作不可恢复。确认继续吗？`}
+          confirmLabel="确认删除 Skill"
+          open={skillRemoveConfirmOpen()}
+          onOpenChange={setSkillRemoveConfirmOpen}
+          busy={skillRemoveBusy()}
+          onConfirm={confirmRemoveSkill}
         />
       </section>
       </main>

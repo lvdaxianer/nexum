@@ -283,6 +283,7 @@ export type NexumSkill = {
   readonly status: "ready" | "invalid" | "conflict"
   readonly diagnostics: readonly string[]
   readonly sourceType?: "local-directory"
+  readonly sourceKind?: "builtin" | "registered"
   readonly registeredAt?: string
   readonly updatedAt?: string
 }
@@ -346,9 +347,10 @@ export type NexumMcpServerInput = {
 }
 
 export type NexumSkillRegistryUpdateEventData = {
-  readonly change: "registered" | "refreshed" | "validated" | "unregistered"
+  readonly change: "registered" | "refreshed" | "validated" | "unregistered" | "removed"
   readonly skillID: string
   readonly status?: NexumSkill["status"]
+  readonly sourceKind?: NexumSkill["sourceKind"]
 }
 
 export type NexumSkillRegisterInput = {
@@ -362,6 +364,12 @@ export type NexumSkillRefreshInput = {
 export type NexumSkillDeleteResult = {
   readonly id: string
   readonly deleted: true
+}
+
+export type NexumSkillSourceDeleteResult = {
+  readonly id: string
+  readonly deleted: true
+  readonly sourceDeleted: true
 }
 
 export type NexumSessionState = {

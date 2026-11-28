@@ -15,6 +15,7 @@ import type {
   ToolRequest,
   ToolResult,
 } from "@nexum/core"
+import { NexumSkillRegistryError } from "@nexum/core"
 import { createLocalHostAdapter, createSandboxHost, type NexumSandboxOptions } from "@nexum/integrations"
 import type { NexumLocalFunctionRegistry } from "./local-functions.ts"
 
@@ -253,16 +254,16 @@ function mcpToolName(toolName: string): string {
 
 const skillRegistryDefinition: ModelToolDefinition = {
   name: "skill_registry",
-  description: "管理 Nexum 注册表中的 Skill。必须使用 address 注册；禁止用 shell 搜索 Skill，也不能删除或修改 Skill 源文件。",
+  description: "管理 Nexum 注册表中的 Skill。必须使用 address 注册；禁止用 shell 搜索 Skill；remove 只允许删除配置 root 下的内置 Skill 源目录。",
   parameters: {
     type: "object",
     properties: {
       operation: {
         type: "string",
-        enum: ["list", "detail", "register", "refresh", "validate", "unregister"],
+        enum: ["list", "detail", "register", "refresh", "validate", "unregister", "remove"],
         description: "要执行的注册表操作",
       },
-      id: { type: "string", description: "Skill ID；detail、refresh、unregister 时使用" },
+      id: { type: "string", description: "Skill ID；detail、refresh、validate、unregister、remove 时使用" },
       address: { type: "string", description: "本地 Skill 目录地址；register 时必填" },
     },
     required: ["operation"],
@@ -278,7 +279,8 @@ async function executeSkillRegistryTool(registry: NexumSkillRegistry, request: T
     operation !== "register" &&
     operation !== "refresh" &&
     operation !== "validate" &&
-    operation !== "unregister"
+    operation !== "unregister" &&
+    operation !== "remove"
   ) {
     return { ok: false, output: "skill_registry 工具参数无效" }
   }
@@ -306,11 +308,34 @@ async function executeSkillRegistryTool(registry: NexumSkillRegistry, request: T
       return safeSkillRegistryResult({ valid: data.length > 0 && data.every((item) => item.status === "ready"), data })
     }
     if (typeof request.input.id !== "string" || !request.input.id.trim()) return { ok: false, output: "skill_registry 工具参数无效" }
-    await registry.unregister(request.input.id)
-    return safeSkillRegistryResult({ id: request.input.id, deleted: true })
-  } catch {
+    if (operation === "unregister") {
+      await registry.unregister(request.input.id)
+      return safeSkillRegistryResult({ id: request.input.id, deleted: true })
+    }
+    await registry.remove(request.input.id)
+    return safeSkillRegistryResult({ id: request.input.id, deleted: true, sourceDeleted: true })
+  } catch (error) {
+    if (error instanceof NexumSkillRegistryError) return { ok: false, output: skillRegistryErrorOutput(error) }
     return { ok: false, output: "Skill 注册表操作失败" }
   }
+}
+
+/**
+ * 将 Registry 内部错误映射为各控制面共用的稳定错误码和操作提示。
+ *
+ * @param error - Registry 生命周期错误
+ * @returns Agent 可安全展示的错误文本
+ * @author lvdaxianer@yeah.net
+ * @date 2026-11-28
+ */
+function skillRegistryErrorOutput(error: NexumSkillRegistryError): string {
+  const details = {
+    builtin: ["NEXUM_SKILL_BUILTIN", "内置 Skill 不能取消注册，请使用 remove"],
+    source_not_removable: ["NEXUM_SKILL_SOURCE_NOT_REMOVABLE", "只有内置 Skill 支持删除源目录"],
+    source_remove_failed: ["NEXUM_SKILL_SOURCE_DELETE_FAILED", "源目录删除失败，注册记录已保留"],
+    persistence_failed: ["NEXUM_SKILL_REGISTRY_STORAGE_FAILED", "注册状态保存失败，源目录未改动"],
+  }[error.code]
+  return `Skill 注册表操作失败：${details[0]}，${details[1]}`
 }
 
 function safeSkillRegistryResult(value: unknown): ToolResult {

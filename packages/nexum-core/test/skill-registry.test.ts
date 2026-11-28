@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createNexumSkillRegistry } from "../../nexum-application/src/index.ts"
@@ -33,12 +33,47 @@ test("discovers a complete directory skill with a stable digest and safe file ma
     version: "0.1.0",
     status: "ready",
     fileCount: 3,
+    sourceKind: "builtin",
   })
   expect(summary?.files).toEqual(["SKILL.md", "references/contract.md", "scripts/check.py"])
   expect(summary?.digest).toMatch(/^[a-f0-9]{64}$/)
   expect(skill).toBeDefined()
   await expect(skill?.read("SKILL.md")).resolves.toContain("Use the registered workflow")
   expect(JSON.stringify(summary)).not.toContain(root)
+})
+
+test("keeps external registrations distinct from built-in Skills", async () => {
+  const sourceRoot = await mkdtemp(join(tmpdir(), "nexum-skill-external-"))
+  const skillRoot = await makeSkill(sourceRoot, "external-skill")
+  const registry = createNexumSkillRegistry({ roots: [] })
+
+  await expect(registry.register(skillRoot)).resolves.toMatchObject({ sourceKind: "registered" })
+})
+
+test("defaults discovered custom source candidates to external ownership", async () => {
+  const candidate = {
+    id: "custom-source-skill",
+    name: "custom-source-skill",
+    description: "custom source",
+    digest: "custom-digest",
+    fileCount: 1,
+    files: ["SKILL.md"],
+    status: "ready" as const,
+    diagnostics: [],
+    sourceType: "local-directory" as const,
+    address: "/custom/source",
+    read: async () => "# Custom source\n",
+  }
+  const source = {
+    discover: async () => [candidate],
+    scan: async () => candidate,
+    normalizeAddress: (address: string) => address,
+  }
+  const registry = createNexumSkillRegistry({ roots: [], source })
+
+  await registry.refresh()
+
+  await expect(registry.list()).resolves.toMatchObject([{ id: "custom-source-skill", sourceKind: "registered" }])
 })
 
 test("marks an incomplete or symlink-escaping skill invalid without exposing its path", async () => {
@@ -107,6 +142,31 @@ test("registers an address and restores the Skill after a new registry is create
   await expect(second.list()).resolves.toMatchObject([{ id: "persisted-skill", status: "ready" }])
 })
 
+test("infers built-in ownership for legacy persisted root registrations", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-legacy-root-"))
+  const skillRoot = await makeSkill(root, "legacy-built-in")
+  const dataRoot = await mkdtemp(join(tmpdir(), "nexum-skill-legacy-data-"))
+  const filePath = join(dataRoot, "skills.json")
+  await writeFile(
+    filePath,
+    JSON.stringify({
+      version: 1,
+      registrations: [{
+        address: skillRoot,
+        sourceType: "local-directory",
+        registeredAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }],
+    }),
+  )
+  const registry = createNexumSkillRegistry({ roots: [root], filePath })
+
+  await registry.refresh()
+
+  await expect(registry.list()).resolves.toMatchObject([{ id: "legacy-built-in", sourceKind: "builtin" }])
+  expect(JSON.parse(await readFile(filePath, "utf8")).registrations[0].sourceKind).toBe("builtin")
+})
+
 test("re-registering an address is idempotent", async () => {
   const sourceRoot = await mkdtemp(join(tmpdir(), "nexum-skill-source-"))
   const skillRoot = await makeSkill(sourceRoot, "idempotent-skill")
@@ -136,6 +196,75 @@ test("unregisters a Skill without deleting its source directory", async () => {
   await expect(registry.list()).resolves.toEqual([])
   await expect(readFile(skillFile, "utf8")).resolves.toBe(original)
   expect(JSON.parse(await readFile(filePath, "utf8")).registrations).toEqual([])
+})
+
+test("rejects unregistering a built-in Skill", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-built-in-"))
+  await makeSkill(root, "built-in-skill")
+  const registry = createNexumSkillRegistry({ roots: [root] })
+
+  await registry.refresh()
+
+  await expect(registry.unregister("built-in-skill")).rejects.toMatchObject({ code: "builtin" })
+  await expect(registry.list()).resolves.toMatchObject([{ id: "built-in-skill", sourceKind: "builtin" }])
+})
+
+test("deletes a built-in Skill source only through its configured root", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-built-in-delete-"))
+  const skillRoot = await makeSkill(root, "deletable-skill")
+  const registry = createNexumSkillRegistry({ roots: [root] })
+
+  await registry.refresh()
+  await registry.remove("deletable-skill")
+
+  await expect(Bun.file(join(skillRoot, "SKILL.md")).exists()).resolves.toBe(false)
+  await expect(registry.list()).resolves.toEqual([])
+})
+
+test("rejects deleting an external Skill source and preserves its files", async () => {
+  const sourceRoot = await mkdtemp(join(tmpdir(), "nexum-skill-external-delete-"))
+  const skillRoot = await makeSkill(sourceRoot, "protected-skill")
+  const registry = createNexumSkillRegistry({ roots: [] })
+
+  await registry.register(skillRoot)
+
+  await expect(registry.remove("protected-skill")).rejects.toMatchObject({ code: "source_not_removable" })
+  await expect(Bun.file(join(skillRoot, "SKILL.md")).exists()).resolves.toBe(true)
+})
+
+test("rejects deleting a replaced Skill directory and preserves its registration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-replaced-delete-"))
+  const skillRoot = await makeSkill(root, "replaced-skill")
+  const registry = createNexumSkillRegistry({ roots: [root] })
+
+  await registry.refresh()
+  await writeFile(join(skillRoot, "SKILL.md"), "---\nname: replacement-skill\ndescription: replacement\n---\n")
+
+  await expect(registry.remove("replaced-skill")).rejects.toMatchObject({ code: "source_not_removable" })
+  await expect(Bun.file(join(skillRoot, "SKILL.md")).exists()).resolves.toBe(true)
+})
+
+test("keeps a built-in registration when source deletion fails", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-delete-failure-"))
+  const skillRoot = await makeSkill(root, "failed-delete-skill")
+  const registry = createNexumSkillRegistry({ roots: [root] })
+
+  await registry.refresh()
+  await rm(skillRoot, { recursive: true })
+
+  await expect(registry.remove("failed-delete-skill")).rejects.toMatchObject({ code: "source_remove_failed" })
+  await expect(registry.list()).resolves.toMatchObject([{ id: "failed-delete-skill", sourceKind: "builtin" }])
+})
+
+test("serializes concurrent built-in removal without reviving the registration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-concurrent-delete-"))
+  await makeSkill(root, "concurrent-delete-skill")
+  const registry = createNexumSkillRegistry({ roots: [root] })
+
+  await registry.refresh()
+  await Promise.allSettled([registry.remove("concurrent-delete-skill"), registry.remove("concurrent-delete-skill")])
+
+  await expect(registry.list()).resolves.toEqual([])
 })
 
 test("refreshing one registered Skill keeps other registered Skills available", async () => {

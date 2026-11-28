@@ -42,6 +42,7 @@ function registryFor(ids: readonly string[]): NexumSkillRegistry {
       return packages.get(id)
     },
     async unregister() {},
+    async remove() {},
   }
 }
 

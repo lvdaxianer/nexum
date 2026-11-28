@@ -17,6 +17,7 @@ directory's `skills/` root at startup by default.
 | `status` | `ready`, `invalid`, or `conflict` |
 | `diagnostics` | Safe validation messages without secrets or raw command output |
 | `sourceType` | Currently `local-directory` |
+| `sourceKind` | `builtin` for a configured root child, `registered` for an external address |
 
 ## Registry lifecycle
 
@@ -27,7 +28,7 @@ not invoked.
 
 ## Use from a client
 
-Use the Skill list/detail/validate/register/refresh routes exposed by Server or
+Use the Skill list/detail/validate/register/refresh/unregister/remove routes exposed by Server or
 the matching Client methods. A Surface can use the list for `@skill`
 autocomplete, display diagnostics, and refresh after `skill.updated` without
 waiting for the Server to load plugins first.
@@ -47,9 +48,13 @@ configured roots / registered address
   → expose a safe summary to Server and Client
 ```
 
-Registering the same normalized address is idempotent. Unregistering removes
-the registry entry but does not delete the source directory. A duplicate ID is
-reported as `conflict`; an invalid or conflicting Skill cannot be activated.
+Registering the same normalized address is idempotent. A configured root child
+is a `builtin` Skill; an address registered outside those roots is a
+`registered` Skill. Unregistering removes only a `registered` registry entry
+and never deletes its source directory. A `builtin` Skill must be removed with
+the dedicated operation, which only deletes a real direct-child directory of a
+configured root. A duplicate ID is reported as `conflict`; an invalid or
+conflicting Skill cannot be activated.
 
 The default standalone service root is `./skills`, with one Skill per direct
 child directory. A host product can pass other roots through `skillRoots` when
@@ -65,7 +70,8 @@ Content-Type: application/json
 ```
 
 Registration records the source address and safe metadata. Nexum does not copy,
-move, or modify the source files.
+move, or modify external source files; removing a built-in explicitly deletes
+its configured-root child directory.
 
 ## Explicit activation
 
@@ -84,4 +90,6 @@ boundaries; a Skill cannot bypass the host sandbox.
 
 A Surface can use the list for `@` autocomplete, show validation diagnostics,
 and refresh after `skill.updated`. It should show `invalid` and `conflict`
-items as actionable diagnostics rather than as ready-to-run Skills.
+items as actionable diagnostics rather than as ready-to-run Skills, label
+`builtin` entries with source deletion and `registered` entries with
+unregistration, and keep the row actionable when a destructive request fails.

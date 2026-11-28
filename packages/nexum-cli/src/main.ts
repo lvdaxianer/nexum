@@ -25,6 +25,7 @@ import {
   cmdSkillList,
   cmdSkillRefresh,
   cmdSkillRegister,
+  cmdSkillRemove,
   cmdSkillUnregister,
   cmdSkillValidate,
   cmdStatus,
@@ -54,7 +55,7 @@ export const USAGE = `Nexum CLI — 与 Web UI 同级的终端 Surface
   theme [dark|light|auto] 查看/切换主题(写入 ~/.nexum/cli.json)
   model get | model set | model probe
   role-prompt get | role-prompt set <文件> | role-prompt reset
-  skill list | skill detail <id> | skill validate [id] | skill refresh [id] | skill register <地址> | skill unregister <id>
+  skill list | skill detail <id> | skill validate [id] | skill refresh [id] | skill register <地址> | skill unregister <id> | skill remove <id>
   mcp list | mcp add | mcp connect <id> | mcp disconnect <id> | mcp remove <id> | mcp tools <id> | mcp resources <id> | mcp prompts <id>
   permission list | allow <动作> [范围] | deny <动作> [范围] | remove <id> | mode ask|allow
 
@@ -179,6 +180,7 @@ export async function run(argv: string[]): Promise<number> {
         if (rest[0] === "refresh") return await cmdSkillRefresh(client, io, rest[1]).then(() => 0)
         if (rest[0] === "register" && rest[1]) return await cmdSkillRegister(client, io, rest[1]).then(() => 0)
         if (rest[0] === "unregister" && rest[1]) return await cmdSkillUnregister(client, io, rest[1]).then(() => 0)
+        if (rest[0] === "remove" && rest[1]) return await cmdSkillRemove(client, io, rest[1]).then(() => 0)
       }
       if (command === "mcp") {
         if (rest[0] === "list") return await cmdMcpList(client, io).then(() => 0)

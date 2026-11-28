@@ -22,7 +22,7 @@ as ordered SSE frames.
 | Health and discovery | Health, capabilities, model, role prompt |
 | Session | List/create, update/delete, mode, state, prompt, cancel, events, messages, continue |
 | Human interaction | Permission requests, policy rules, Questions |
-| Skills | List, detail, register, refresh, validate, activate, unregister |
+| Skills | List, detail, register, refresh, validate, activate, unregister, remove source |
 | MCP | Registration, connection control, catalogs, OAuth |
 
 ## Beginner request flow
@@ -225,7 +225,7 @@ processed sequence. Common event types include `assistant.text`,
 ## Skills and MCP
 
 Skills are managed under `/api/nexum/skills`: list, detail, register, refresh,
-validate, activate, and delete. MCP lifecycle endpoints are under
+validate, activate, unregister, and remove a built-in source directory. MCP lifecycle endpoints are under
 `/api/experimental/nexum/mcp`: list/register, connect, disconnect, delete, and
 read tools/resources/prompts. OAuth uses an attempt ID with authorize, status,
 complete, and cancel operations.
@@ -275,7 +275,7 @@ Errors keep a stable `errorCode`, human-readable `message`, and optional
 | Session | `/api/nexum/session`, `/api/nexum/session/{sessionID}`, `/api/nexum/session/{sessionID}/mode` | `messages`, `continue` |
 | Run and events | `prompt`, `cancel`, `events` | — |
 | Permission and Question | pending/list/reply/cancel routes | — |
-| Skills | list/detail/register/refresh/validate/activate/unregister | — |
+| Skills | list/detail/register/refresh/validate/activate/unregister/remove-source | — |
 | MCP | — | `/api/experimental/nexum/mcp/...` |
 
 Experimental routes may change without compatibility guarantees. Use the
@@ -319,6 +319,7 @@ must be encoded as path segments.
 | `POST` | `/api/nexum/skills/validate` |
 | `POST` | `/api/nexum/skills/{id}/activate` |
 | `DELETE` | `/api/nexum/skills/{id}` |
+| `DELETE` | `/api/nexum/skills/{id}/source` |
 | `GET` | `/api/experimental/nexum/session/{sessionID}/messages` |
 | `POST` | `/api/experimental/nexum/session/{sessionID}/continue` |
 | `GET` | `/api/experimental/nexum/mcp` |
@@ -523,10 +524,30 @@ secrets, or raw command output:
 | refresh | Rescan the source and update the digest/status |
 | validate | Check the source without activating it |
 | activate | Use a ready Skill for a Session after Permission |
-| unregister | Remove the registry entry without deleting source files |
+| unregister | Remove an external registry entry without deleting source files; built-in entries return `NEXUM_SKILL_BUILTIN` |
+| remove | Delete the real direct-child source directory of a configured-root built-in Skill; external entries return `NEXUM_SKILL_SOURCE_NOT_REMOVABLE` |
 
 `ready`, `invalid`, and `conflict` are distinct states. A duplicate Skill ID
 is not silently selected. Activation emits `skill.activated` or `skill.failed`.
+
+### `DELETE /api/nexum/skills/{id}/source`
+
+This destructive endpoint is only for a `builtin` Skill discovered from a
+configured root. It deletes the real direct-child source directory, never the
+root itself, a root-outside directory, or a symlink. Callers must use the same
+authentication and trace headers described above; the `{id}` path segment must
+be URL-encoded.
+
+On success the response is `{ "data": { "id": "example-skill", "deleted": true, "sourceDeleted": true } }`
+and a `skill.updated` event with `change: "removed"` is published. A built-in
+unregister request returns `409 NEXUM_SKILL_BUILTIN`; attempting this endpoint
+for an external Skill returns `409 NEXUM_SKILL_SOURCE_NOT_REMOVABLE`; an
+unknown Skill returns `404 NEXUM_SKILL_NOT_FOUND`. Clients should keep the
+current row and offer retry when a destructive request fails. A filesystem
+failure that leaves the registration intact returns `500
+NEXUM_SKILL_SOURCE_DELETE_FAILED`.
+If Registry persistence fails before deletion, the source remains untouched and
+the response is `500 NEXUM_SKILL_REGISTRY_STORAGE_FAILED`.
 
 ## MCP lifecycle and OAuth
 

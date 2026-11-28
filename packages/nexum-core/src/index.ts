@@ -24,10 +24,13 @@ export {
   type NexumSkillRegistrationStore,
   type NexumSkillRegistry,
   type NexumSkillSource,
+  type NexumSkillSourceKind,
   type NexumSkillSourceType,
   type NexumSkillStatus,
   type NexumSkillSummary,
 } from "./skill-registry.js"
+export { NexumSkillRegistryError } from "./skill-registry.js"
+export type { NexumSkillRegistryErrorCode } from "./skill-registry.js"
 import type { MessageStore } from "./message-store.js"
 import { normalizeNexumToolRequest } from "./tools.js"
 import { NexumSkillInvocationError } from "./skill-invocation.js"

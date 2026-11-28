@@ -59,20 +59,67 @@ test("exposes safe Skill management and activation routes", async () => {
   await permission.reply({ sessionID: session.sessionID, requestID: pending.id, decision: "allow_once" })
   const activateResponse = await activateRequest
   const unregisterResponse = await fetch(new URL("/api/nexum/skills/example-skill", server.url), { method: "DELETE" })
+  const removeResponse = await fetch(new URL("/api/nexum/skills/example-skill/source", server.url), { method: "DELETE" })
 
   expect(listResponse.status).toBe(200)
-  expect(listBody.data[0]).toMatchObject({ id: "example-skill", status: "ready", fileCount: 1 })
+  expect(listBody.data[0]).toMatchObject({ id: "example-skill", status: "ready", fileCount: 1, sourceKind: "builtin" })
   expect(JSON.stringify(listBody)).not.toContain(root)
   expect(detailResponse.status).toBe(200)
   expect(registerResponse.status).toBe(200)
   expect(validateResponse.status).toBe(200)
   expect(activateResponse.status).toBe(200)
-  expect(unregisterResponse.status).toBe(200)
-  expect(await unregisterResponse.json()).toMatchObject({ data: { id: "example-skill", deleted: true } })
-  expect(await Bun.file(join(skillRoot, "SKILL.md")).exists()).toBe(true)
+  expect(unregisterResponse.status).toBe(409)
+  expect(await unregisterResponse.json()).toMatchObject({ errorCode: "NEXUM_SKILL_BUILTIN" })
+  expect(removeResponse.status).toBe(200)
+  expect(await removeResponse.json()).toMatchObject({ data: { id: "example-skill", deleted: true, sourceDeleted: true } })
+  expect(await Bun.file(join(skillRoot, "SKILL.md")).exists()).toBe(false)
   expect(await activateResponse.json()).toMatchObject({
     data: { skills: [{ id: "example-skill" }] },
   })
+})
+
+test("unregisters an external Skill without deleting its source", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-external-api-"))
+  temporaryDirectories.push(root)
+  const skillRoot = join(root, "external-skill")
+  await mkdir(skillRoot)
+  await writeFile(join(skillRoot, "SKILL.md"), "---\nname: external-skill\ndescription: external\n---\n")
+  const registry = createNexumSkillRegistry({ roots: [], filePath: join(root, ".nexum", "skills.json") })
+  const server = await startNexumServer({ port: 0, skillRegistry: registry })
+  servers.push(server)
+
+  await fetch(new URL("/api/nexum/skills/register", server.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ address: skillRoot }),
+  })
+  const removeResponse = await fetch(new URL("/api/nexum/skills/external-skill/source", server.url), { method: "DELETE" })
+  const response = await fetch(new URL("/api/nexum/skills/external-skill", server.url), { method: "DELETE" })
+
+  expect(removeResponse.status).toBe(409)
+  expect(await removeResponse.json()).toMatchObject({ errorCode: "NEXUM_SKILL_SOURCE_NOT_REMOVABLE" })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ data: { id: "external-skill", deleted: true } })
+  expect(await Bun.file(join(skillRoot, "SKILL.md")).exists()).toBe(true)
+})
+
+test("keeps a built-in registration when source deletion fails", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nexum-skill-delete-failure-api-"))
+  temporaryDirectories.push(root)
+  const skillRoot = join(root, "failed-delete-skill")
+  await mkdir(skillRoot)
+  await writeFile(join(skillRoot, "SKILL.md"), "---\nname: failed-delete-skill\ndescription: failure\n---\n")
+  const registry = createNexumSkillRegistry({ roots: [root], filePath: join(root, ".nexum", "skills.json") })
+  const server = await startNexumServer({ port: 0, skillRegistry: registry })
+  servers.push(server)
+
+  await rm(skillRoot, { recursive: true })
+  const response = await fetch(new URL("/api/nexum/skills/failed-delete-skill/source", server.url), { method: "DELETE" })
+  const listResponse = await fetch(new URL("/api/nexum/skills", server.url))
+
+  expect(response.status).toBe(500)
+  expect(await response.json()).toMatchObject({ errorCode: "NEXUM_SKILL_SOURCE_DELETE_FAILED" })
+  expect(await listResponse.json()).toMatchObject({ data: [{ id: "failed-delete-skill", sourceKind: "builtin" }] })
 })
 
 test("revalidates the registered source before returning validation status", async () => {

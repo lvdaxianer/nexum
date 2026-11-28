@@ -105,7 +105,7 @@ if (selectedSessionID) {
 | Permission        | `session.permission.list/reply()`                                  | 查询待处理权限并提交决定                                                   |
 | Permission Policy | `experimental.nexum.permissionPolicy.list/create/update/remove()`  | 查询和管理全局或 Session 级权限策略规则                                    |
 | Question          | `session.question.list/reply/cancel()`                             | 查询问题、提交答案或取消问题                                               |
-| Skill             | `session.skill.list/detail/register/refresh/validate/unregister()` | 发现、校验和管理 Skill                                                     |
+| Skill             | `experimental.nexum.skill.list/detail/register/refresh/validate/unregister/remove()` | 发现、校验、取消注册或删除 Skill 源目录                         |
 
 具体 URL、请求字段和响应状态见 [`apis/nexum.md`](../../../apis/zh-CN/nexum.md)。
 
