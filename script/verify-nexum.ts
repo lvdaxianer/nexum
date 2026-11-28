@@ -76,6 +76,12 @@ if (existsSync(artifactRoot)) {
     if (contents.includes("nexum-ai/persistence/internal/")) fail(`${file} 泄漏了 persistence internal 引用`)
     if (contents.includes("/src/") || contents.includes("packages/")) fail(`${file} 泄漏了源码路径`)
     if (file === "dist/surfaces.js" && contents.includes("import.meta")) fail(`${file} 不能包含不兼容 webpack 4 的 import.meta 语法`)
+    if ((file === "dist/surfaces.js" || file === "dist/chat-surface.js") && contents.includes("React.createElement")) {
+      fail(`${file} 不能依赖未发布的 React 运行时，Solid Surface 必须使用 Solid JSX runtime`)
+    }
+    if ((file === "dist/surfaces.js" || file === "dist/chat-surface.js") && /solid-js\/jsx(?:-dev)?-runtime/.test(contents)) {
+      fail(`${file} 不能依赖 webpack 4 无法解析的 Solid JSX runtime 子路径`)
+    }
   }
 }
 

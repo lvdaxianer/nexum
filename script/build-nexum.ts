@@ -17,6 +17,7 @@ await rm(artifactRoot, { recursive: true, force: true })
 await mkdir(join(artifactRoot, "dist"), { recursive: true })
 
 for (const [subpath, entry] of Object.entries(publicEntries)) {
+  const isSolidSurfaceEntry = subpath === "./chat-surface" || subpath === "./surfaces"
   const result = await Bun.build({
     entrypoints: [resolve(process.cwd(), entry.source)],
     outfile: outputPath(entry),
@@ -24,6 +25,14 @@ for (const [subpath, entry] of Object.entries(publicEntries)) {
     format: "esm",
     packages: "bundle",
     external: externalDependencies,
+    // webpack 4 无法解析 Solid JSX runtime 子路径，发布 Surface 使用 classic JSX。
+    jsx: isSolidSurfaceEntry
+      ? { runtime: "classic", factory: "createComponent", fragment: "Fragment" }
+      : undefined,
+    // Fragment 只需要返回 children，内联实现可避免 webpack 4 解析 Solid 子路径。
+    banner: isSolidSurfaceEntry
+      ? 'import { createComponent } from "solid-js"; function Fragment(props) { return props.children; }'
+      : undefined,
     sourcemap: "none",
     minify: false,
   })
