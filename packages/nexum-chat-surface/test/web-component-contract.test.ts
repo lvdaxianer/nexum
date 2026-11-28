@@ -20,5 +20,11 @@ test("nexum-chat observes the embeddable attributes including theme", () => {
 
   defineChatSurfaceElement(registry)
 
-  expect(elementClass?.observedAttributes).toEqual(["session-id", "api-base-url", "title", "theme"])
+  expect(elementClass?.observedAttributes).toEqual(["session-id", "api-base-url", "title", "theme", "show-header"])
+})
+
+test("nexum-chat maps show-header false to the ChatSurface header setting", async () => {
+  const source = await Bun.file(`${import.meta.dir}/../src/web-component.tsx`).text()
+  expect(source).toContain('this.getAttribute("show-header") !== "false"')
+  expect(source).toContain("showHeader={showHeader()}")
 })
