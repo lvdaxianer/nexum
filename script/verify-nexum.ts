@@ -75,6 +75,7 @@ if (existsSync(artifactRoot)) {
     if (contents.includes("@nexum/")) fail(`${file} 泄漏了 @nexum/* 引用`)
     if (contents.includes("nexum-ai/persistence/internal/")) fail(`${file} 泄漏了 persistence internal 引用`)
     if (contents.includes("/src/") || contents.includes("packages/")) fail(`${file} 泄漏了源码路径`)
+    if (file === "dist/surfaces.js" && contents.includes("import.meta")) fail(`${file} 不能包含不兼容 webpack 4 的 import.meta 语法`)
   }
 }
 

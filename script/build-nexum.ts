@@ -33,7 +33,12 @@ for (const [subpath, entry] of Object.entries(publicEntries)) {
   if (result.outputs.length !== 1) throw new Error(`${subpath} 构建产物数量异常: ${result.outputs.length}`)
   await Bun.write(outputPath(entry), await result.outputs[0].arrayBuffer())
   const compiled = await Bun.file(outputPath(entry)).text()
-  await Bun.write(outputPath(entry), compiled.replace(/^\/\/ packages\/.*\r?\n/gm, ""))
+  const stripped = compiled.replace(/^\/\/ packages\/.*\r?\n/gm, "")
+  // 发布给 Vue CLI 4 等 webpack 4 consumer 的 Surfaces 不得残留 Vite 专有语法。
+  const browserCompatible = subpath === "./surfaces"
+    ? stripped.replace("import.meta.env?.VITE_NEXUM_API_URL", "undefined")
+    : stripped
+  await Bun.write(outputPath(entry), browserCompatible)
   console.log(`built ${subpath} -> ${relative(process.cwd(), outputPath(entry))}`)
 }
 
