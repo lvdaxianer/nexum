@@ -122,6 +122,8 @@ export function NexumSurfaces(props: NexumSurfacesProps = {}) {
   const [notice, setNotice] = createSignal("准备开始一次 Nexum 运行")
   const [darkMode, setDarkMode] = createSignal(window.matchMedia("(prefers-color-scheme: dark)").matches)
   const [modelConfigured, setModelConfigured] = createSignal(false)
+  // Core 已保存的模型名：与表单草稿解耦，编辑抽屉里的草稿不影响输入栏的禁用与模型展示。
+  const [savedModel, setSavedModel] = createSignal("")
   const [renameBusy, setRenameBusy] = createSignal(false)
   const [deleteBusy, setDeleteBusy] = createSignal(false)
   const [deleteState, setDeleteState] = createSignal<ActionState>("idle")
@@ -152,6 +154,7 @@ export function NexumSurfaces(props: NexumSurfacesProps = {}) {
       setModel(active.data.model)
       setCredentialRef(active.data.credentialRef ?? "")
       setModelConfigured(true)
+      setSavedModel(active.data.model)
       setNotice(active.data.credentialConfigured ? "模型配置已加载" : "模型服务地址已加载")
     }
     await Promise.all([restoreSession().catch(() => undefined), loadSkills(), loadRolePrompt()])
@@ -310,6 +313,7 @@ export function NexumSurfaces(props: NexumSurfacesProps = {}) {
     })
     setCredential("")
     setModelConfigured(true)
+    setSavedModel(saved.data.model)
     setProbeResult(undefined)
     setModelSaveState("success")
     setModelSaveMessage("模型配置已保存，可以继续探测能力")
@@ -1730,6 +1734,8 @@ export function NexumSurfaces(props: NexumSurfacesProps = {}) {
             client={{ baseUrl: apiBaseUrl }}
             title={currentSessionTitle()}
             theme={darkMode() ? "dark" : undefined}
+            model={savedModel() || undefined}
+            composerDisabledHint={savedModel() ? undefined : "尚未配置全局模型，请先在左侧「模型配置」保存模型服务"}
             onSessionStatusChange={(id, status) => setSessions((current) => mergeSessionStatus(current, id, status))}
             onSkillUpdated={scheduleSkillReload}
             onOpenPermissionSettings={openPolicyPopover}

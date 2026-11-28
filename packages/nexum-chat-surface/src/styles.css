@@ -816,6 +816,28 @@
   text-overflow: ellipsis;
 }
 
+/* 未配置模型等宿主禁用态：提示换成警告色，说明为什么输入被禁用。 */
+.nexum-chat-hint.is-blocked {
+  color: var(--nexum-chat-warning);
+}
+
+/* 当前生效模型的 chip，固定在输入栏左侧。 */
+.nexum-chat-model {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--nexum-chat-accent-soft);
+  color: var(--nexum-chat-accent);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .nexum-chat-composer-extras {
   flex: 0 0 auto;
   display: inline-flex;
