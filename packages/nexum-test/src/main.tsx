@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { Nexum } from "@nexum/client"
 import { ChatSurface } from "@nexum/chat-surface"
 import { Drawer } from "./drawer"
@@ -6,6 +6,7 @@ import { ConfirmDialog } from "./confirm-dialog"
 import { Popover } from "@kobalte/core/popover"
 import { mergeSessionSnapshot, mergeSessionStatus } from "./session-state"
 import { mergeMcpServers, mcpStatusLabel } from "./mcp-state"
+import { WORKBENCH_THEME } from "./theme"
 import type {
   NexumMcpServer,
   NexumAgentMode,
@@ -120,7 +121,6 @@ export function NexumSurfaces(props: NexumSurfacesProps = {}) {
   const [policyBusy, setPolicyBusy] = createSignal(false)
   const [policyError, setPolicyError] = createSignal("")
   const [notice, setNotice] = createSignal("准备开始一次 Nexum 运行")
-  const [darkMode, setDarkMode] = createSignal(window.matchMedia("(prefers-color-scheme: dark)").matches)
   const [modelConfigured, setModelConfigured] = createSignal(false)
   // Core 已保存的模型名：与表单草稿解耦，编辑抽屉里的草稿不影响输入栏的禁用与模型展示。
   const [savedModel, setSavedModel] = createSignal("")
@@ -135,16 +135,8 @@ export function NexumSurfaces(props: NexumSurfacesProps = {}) {
   let mcpPollingActive = false
   let mcpRefreshTimer: ReturnType<typeof setTimeout> | undefined
 
-  // 主题跟随系统：写入 html[data-theme] 供宿主暗色覆盖层使用，并同步给 ChatSurface。
-  createEffect(() => {
-    document.documentElement.dataset.theme = darkMode() ? "dark" : "light"
-  })
-
   onMount(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)")
-    const handleThemeChange = (event: MediaQueryListEvent) => setDarkMode(event.matches)
-    media.addEventListener("change", handleThemeChange)
-    onCleanup(() => media.removeEventListener("change", handleThemeChange))
+    document.documentElement.dataset.theme = WORKBENCH_THEME
   })
 
   onMount(async () => {
@@ -1733,7 +1725,7 @@ export function NexumSurfaces(props: NexumSurfacesProps = {}) {
             sessionID={sessionID()}
             client={{ baseUrl: apiBaseUrl }}
             title={currentSessionTitle()}
-            theme={darkMode() ? "dark" : "light"}
+            theme={WORKBENCH_THEME}
             model={savedModel() || undefined}
             composerDisabledHint={savedModel() ? undefined : "尚未配置全局模型，请先在左侧「模型配置」保存模型服务"}
             onSessionStatusChange={(id, status) => setSessions((current) => mergeSessionStatus(current, id, status))}
