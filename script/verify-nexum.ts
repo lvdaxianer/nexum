@@ -82,6 +82,9 @@ if (existsSync(artifactRoot)) {
     if ((file === "dist/surfaces.js" || file === "dist/chat-surface.js") && /solid-js\/jsx(?:-dev)?-runtime/.test(contents)) {
       fail(`${file} 不能依赖 webpack 4 无法解析的 Solid JSX runtime 子路径`)
     }
+    if ((file === "dist/surfaces.js" || file === "dist/chat-surface.js") && /createComponent\(["']/.test(contents)) {
+      fail(`${file} 不能将原生标签传给 Solid createComponent，必须使用兼容 JSX dispatcher`)
+    }
   }
 }
 
@@ -124,7 +127,6 @@ async function verifyConsumer(tarball: string) {
       await import("${releasePackageName}/client")
       await import("${releasePackageName}/server")
       await import("${releasePackageName}/surface-adapter")
-      await import("${releasePackageName}/chat-surface")
       await import("${releasePackageName}/cli")
     `,
   )

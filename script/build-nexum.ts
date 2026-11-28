@@ -1,5 +1,8 @@
 import { mkdir, readdir, rm } from "node:fs/promises"
 import { basename, dirname, join, relative, resolve } from "node:path"
+import babel from "@babel/core"
+import presetTypescript from "@babel/preset-typescript"
+import presetSolid from "babel-preset-solid"
 import {
   artifactRoot,
   declarationPath,
@@ -12,6 +15,123 @@ import {
 } from "./nexum-package"
 
 const externalDependencies = ["@modelcontextprotocol/sdk", "dompurify", "marked", "solid-js"]
+const solidSurfaceBanner = String.raw`import { SVGElements as compatSVGElements, dynamicProperty as compatDynamicProperty, createComponent as compatCreateComponent, insert as compatInsert, assign as compatAssign, spread as compatSpread } from "solid-js/web";
+const $ELEMENT = Symbol("hyper-element");
+function createCompatHyperScript(r) {
+  function h() {
+    let args = [].slice.call(arguments), e, classes = [], multiExpression = false;
+    while (Array.isArray(args[0])) args = args[0];
+    if (args[0][$ELEMENT]) args.unshift(h.Fragment);
+    typeof args[0] === "string" && detectMultiExpression(args);
+    const ret = () => {
+      while (args.length) item(args.shift());
+      if (e instanceof Element && classes.length) e.classList.add(...classes);
+      return e;
+    };
+    ret[$ELEMENT] = true;
+    return ret;
+    function item(l) {
+      const type = typeof l;
+      if (l == null) ;
+      else if (type === "string") {
+        if (!e) parseClass(l); else e.appendChild(document.createTextNode(l));
+      } else if (type === "number" || type === "boolean" || type === "bigint" || type === "symbol" || l instanceof Date || l instanceof RegExp) {
+        e.appendChild(document.createTextNode(l.toString()));
+      } else if (Array.isArray(l)) {
+        for (let i = 0; i < l.length; i++) item(l[i]);
+      } else if (l instanceof Element) {
+        compatInsert(e, l, multiExpression ? null : undefined);
+      } else if (type === "object") {
+        let dynamic = false;
+        const d = Object.getOwnPropertyDescriptors(l);
+        for (const k in d) {
+          if (k === "class" && classes.length !== 0) {
+            const fixedClasses = classes.join(" ");
+            const value = typeof d[k].value === "function" ? () => fixedClasses + " " + d[k].value() : fixedClasses + " " + l[k];
+            Object.defineProperty(l, "class", { ...d[k], value });
+            classes = [];
+          }
+          if (k !== "ref" && k.slice(0, 2) !== "on" && typeof d[k].value === "function") {
+            compatDynamicProperty(l, k);
+            dynamic = true;
+          } else if (d[k].get) dynamic = true;
+        }
+        dynamic ? compatSpread(e, l, e instanceof SVGElement, !!args.length) : compatAssign(e, l, e instanceof SVGElement, !!args.length);
+      } else if (type === "function") {
+        if (!e) {
+          let props, next = args[0];
+          if (next == null || typeof next === "object" && !Array.isArray(next) && !(next instanceof Element)) props = args.shift();
+          props || (props = {});
+          if (args.length) props.children = args.length > 1 ? args : args[0];
+          const d = Object.getOwnPropertyDescriptors(props);
+          for (const k in d) {
+            if (Array.isArray(d[k].value)) {
+              const list = d[k].value;
+              props[k] = () => {
+                for (let i = 0; i < list.length; i++) while (list[i][$ELEMENT]) list[i] = list[i]();
+                return list;
+              };
+              compatDynamicProperty(props, k);
+            } else if (typeof d[k].value === "function" && !d[k].value.length && k !== "ref" && k !== "anchorRef" && !k.startsWith("on")) {
+              compatDynamicProperty(props, k);
+            }
+          }
+          e = compatCreateComponent(l, props);
+          args = [];
+        } else {
+          while (l[$ELEMENT]) l = l();
+          compatInsert(e, l, multiExpression ? null : undefined);
+        }
+      }
+    }
+    function parseClass(string) {
+      const m = string.split(/([.#]?[^\\s#.]+)/);
+      if (/^[.#]/.test(m[1])) e = document.createElement("div");
+      for (let i = 0; i < m.length; i++) {
+        const v = m[i], s = v.substring(1);
+        if (!v) continue;
+        if (!e) e = compatSVGElements.has(v) ? document.createElementNS("http://www.w3.org/2000/svg", v) : document.createElement(v);
+        else if (v[0] === ".") classes.push(s); else if (v[0] === "#") e.setAttribute("id", s);
+      }
+    }
+    function detectMultiExpression(list) {
+      for (let i = 1; i < list.length; i++) {
+        if (typeof list[i] === "function") { multiExpression = true; return; }
+        if (Array.isArray(list[i])) detectMultiExpression(list[i]);
+      }
+    }
+  }
+  h.Fragment = props => props.children;
+  return h;
+}
+const h = createCompatHyperScript({ spread: compatSpread, assign: compatAssign, insert: compatInsert, createComponent: compatCreateComponent, dynamicProperty: compatDynamicProperty, SVGElements: compatSVGElements });
+const Fragment = h.Fragment;`
+
+const solidTransformPlugin = {
+  name: "nexum-solid-dom-compiler",
+  setup(build: {
+    onLoad: (
+      options: { filter: RegExp },
+      callback: (args: { path: string }) => Promise<{ contents: string; loader: "js"; resolveDir: string }>,
+    ) => void
+  }) {
+    build.onLoad({ filter: /\.(?:tsx|jsx|ts)$/ }, async ({ path }) => {
+      const source = await Bun.file(path).text()
+      const transformed = await babel.transformAsync(source, {
+        filename: path,
+        sourceType: "module",
+        configFile: false,
+        babelrc: false,
+        presets: [
+          [presetSolid, { generate: "dom", hydratable: false }],
+          [presetTypescript, { onlyRemoveTypeImports: true }],
+        ],
+      })
+      if (!transformed?.code) throw new Error(`Solid 编译未生成代码: ${path}`)
+      return { contents: transformed.code, loader: "js", resolveDir: dirname(path) }
+    })
+  },
+}
 
 await rm(artifactRoot, { recursive: true, force: true })
 await mkdir(join(artifactRoot, "dist"), { recursive: true })
@@ -25,14 +145,7 @@ for (const [subpath, entry] of Object.entries(publicEntries)) {
     format: "esm",
     packages: "bundle",
     external: externalDependencies,
-    // webpack 4 无法解析 Solid JSX runtime 子路径，发布 Surface 使用 classic JSX。
-    jsx: isSolidSurfaceEntry
-      ? { runtime: "classic", factory: "createComponent", fragment: "Fragment" }
-      : undefined,
-    // Fragment 只需要返回 children，内联实现可避免 webpack 4 解析 Solid 子路径。
-    banner: isSolidSurfaceEntry
-      ? 'import { createComponent } from "solid-js"; function Fragment(props) { return props.children; }'
-      : undefined,
+    plugins: isSolidSurfaceEntry ? [solidTransformPlugin] : undefined,
     sourcemap: "none",
     minify: false,
   })

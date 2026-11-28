@@ -1,5 +1,4 @@
-import { CloseButton, Content, Description, Overlay, Portal, Root, Title, Trigger } from "@kobalte/core/dialog"
-import { type JSXElement, Show, splitProps } from "solid-js"
+import { createEffect, createSignal, type JSXElement, Show } from "solid-js"
 
 type DrawerProps = {
   title: string
@@ -18,27 +17,40 @@ type DrawerProps = {
  * @date 2026-11-20
  */
 export function Drawer(props: DrawerProps) {
-  const [local, others] = splitProps(props, ["title", "description", "triggerClass", "trigger", "children"])
+  const [open, setOpen] = createSignal(props.open)
+  createEffect(() => setOpen(props.open))
+  const changeOpen = (next: boolean) => {
+    setOpen(next)
+    props.onOpenChange(next)
+  }
   return (
-    <Root {...others}>
-      <Trigger class={local.triggerClass ?? "drawer-trigger"}>{local.trigger}</Trigger>
-      <Portal>
-        <Overlay class="drawer-overlay" />
-        <Content class="drawer-content">
+    <>
+      <button
+        type="button"
+        class={props.triggerClass ?? "drawer-trigger"}
+        aria-expanded={open()}
+        aria-haspopup="dialog"
+        onClick={() => changeOpen(!open())}
+      >
+        {props.trigger}
+      </button>
+      <Show when={open()}>
+        <div class="drawer-overlay" />
+        <div class="drawer-content" role="dialog" aria-modal="true" aria-label={props.title}>
           <div class="drawer-header">
             <div>
-              <Title class="drawer-title">{local.title}</Title>
-              <Show when={local.description}>
-                <Description class="drawer-description">{local.description}</Description>
+              <h2 class="drawer-title">{props.title}</h2>
+              <Show when={props.description}>
+                <p class="drawer-description">{props.description}</p>
               </Show>
             </div>
-            <CloseButton class="drawer-close" aria-label="关闭抽屉">
+            <button class="drawer-close" type="button" aria-label="关闭抽屉" onClick={() => changeOpen(false)}>
               ✕
-            </CloseButton>
+            </button>
           </div>
-          <div class="drawer-body">{local.children}</div>
-        </Content>
-      </Portal>
-    </Root>
+          <div class="drawer-body">{props.children}</div>
+        </div>
+      </Show>
+    </>
   )
 }
