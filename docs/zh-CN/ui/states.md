@@ -4,7 +4,7 @@
 
 状态：现状基线
 
-权威来源：`packages/nexum-chat-surface/src/chat-surface.tsx`、`packages/nexum-surfaces/src/main.tsx`、`packages/nexum-surfaces/src/confirm-dialog.tsx`
+权威来源：`packages/nexum-chat-surface/src/chat-surface.tsx`、`packages/nexum-test/src/main.tsx`、`packages/nexum-test/src/confirm-dialog.tsx`
 
 最后核对：2026-11-24
 
@@ -68,7 +68,7 @@ Session 切换后，旧请求返回不能覆盖新 Session；组件使用生命�
 
 ## 5. 参考 Surface 的本地状态
 
-`nexum-surfaces` 使用 `idle`、`pending`、`success`、`error` 等本地 ActionState 管理模型保存、Session 创建/删除、Skill 注册、Role Prompt 和策略变更。网络操作期间按钮禁用，失败信息留在当前抽屉或确认框内；成功后刷新对应资源。
+内部 Test Workbench 使用 `idle`、`pending`、`success`、`error` 等本地 ActionState 管理模型保存、Session 创建/删除、Skill 注册、Role Prompt 和策略变更。网络操作期间按钮禁用，失败信息留在当前抽屉或确认框内；成功后刷新对应资源。
 
 危险操作的 ConfirmDialog 在 `busy` 时：
 

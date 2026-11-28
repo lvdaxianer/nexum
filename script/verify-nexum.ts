@@ -58,11 +58,11 @@ if (!existsSync(manifestPath)) {
   if (exports["./chat-surface/styles.css"] !== "./dist/chat-surface.css") {
     fail("./chat-surface/styles.css 没有指向 dist/chat-surface.css")
   }
-  if (exports["./surfaces/styles.css"] !== "./dist/surfaces.css") {
-    fail("./surfaces/styles.css 没有指向 dist/surfaces.css")
-  }
+  if ("./surfaces" in exports || "./surfaces/styles.css" in exports) fail("发布 manifest 不能包含内部 surfaces 入口")
   if (!existsSync(join(artifactRoot, "dist", "chat-surface.css"))) fail("缺少 dist/chat-surface.css")
-  if (!existsSync(join(artifactRoot, "dist", "surfaces.css"))) fail("缺少 dist/surfaces.css")
+  if (existsSync(join(artifactRoot, "dist", "surfaces.js")) || existsSync(join(artifactRoot, "dist", "surfaces.css"))) {
+    fail("发布目录不能包含内部 surfaces 产物")
+  }
 }
 
 for (const forbidden of ["src", "test", ".turbo", "node_modules", "packages"]) {
@@ -75,14 +75,18 @@ if (existsSync(artifactRoot)) {
     if (contents.includes("@nexum/")) fail(`${file} 泄漏了 @nexum/* 引用`)
     if (contents.includes("nexum-ai/persistence/internal/")) fail(`${file} 泄漏了 persistence internal 引用`)
     if (contents.includes("/src/") || contents.includes("packages/")) fail(`${file} 泄漏了源码路径`)
-    if (file === "dist/surfaces.js" && contents.includes("import.meta")) fail(`${file} 不能包含不兼容 webpack 4 的 import.meta 语法`)
-    if ((file === "dist/surfaces.js" || file === "dist/chat-surface.js") && contents.includes("React.createElement")) {
+    if (file === "dist/chat-surface.js" && contents.includes("import.meta")) fail(`${file} 不能包含构建运行时 import.meta 语法`)
+    if (file === "dist/chat-surface.js" && /^await\s+/m.test(contents)) fail(`${file} 不能包含顶层 await 语法`)
+    if (file === "dist/chat-surface.js" && /\?\.(?:[A-Za-z_$]|\[)/.test(contents)) fail(`${file} 不能包含可选链语法`)
+    if (file === "dist/chat-surface.js" && /\?\?/.test(contents)) fail(`${file} 不能包含空值合并语法`)
+    if (file === "dist/chat-surface.js" && /\bimport\s*\(/.test(contents)) fail(`${file} 不能包含动态 import 语法`)
+    if (file === "dist/chat-surface.js" && contents.includes("React.createElement")) {
       fail(`${file} 不能依赖未发布的 React 运行时，Solid Surface 必须使用 Solid JSX runtime`)
     }
-    if ((file === "dist/surfaces.js" || file === "dist/chat-surface.js") && /solid-js\/jsx(?:-dev)?-runtime/.test(contents)) {
+    if (file === "dist/chat-surface.js" && /solid-js\/jsx(?:-dev)?-runtime/.test(contents)) {
       fail(`${file} 不能依赖 webpack 4 无法解析的 Solid JSX runtime 子路径`)
     }
-    if ((file === "dist/surfaces.js" || file === "dist/chat-surface.js") && /createComponent\(["']/.test(contents)) {
+    if (file === "dist/chat-surface.js" && /createComponent\(["']/.test(contents)) {
       fail(`${file} 不能将原生标签传给 Solid createComponent，必须使用兼容 JSX dispatcher`)
     }
   }
@@ -135,7 +139,7 @@ async function verifyConsumer(tarball: string) {
 
   await Bun.write(
     join(consumer, "types.ts"),
-    `/// <reference types="bun" />\nimport { createEmbeddedRuntime } from "${releasePackageName}/application"\nimport { Nexum } from "${releasePackageName}/client"\nimport { createMemoryPersistence } from "${releasePackageName}/persistence/memory"\nimport { NexumSurfaces } from "${releasePackageName}/surfaces"\nimport type { NexumSurfacesProps } from "${releasePackageName}/surfaces"\nvoid createEmbeddedRuntime\nvoid Nexum\nvoid createMemoryPersistence\nvoid NexumSurfaces\nconst surfacesProps: NexumSurfacesProps = { apiBaseUrl: "http://127.0.0.1:4097" }\nvoid surfacesProps\n`,
+    `/// <reference types="bun" />\nimport { createEmbeddedRuntime } from "${releasePackageName}/application"\nimport { Nexum } from "${releasePackageName}/client"\nimport { createMemoryPersistence } from "${releasePackageName}/persistence/memory"\nimport { ChatSurface } from "${releasePackageName}/chat-surface"\nimport type { ChatSurfaceProps } from "${releasePackageName}/chat-surface"\nvoid createEmbeddedRuntime\nvoid Nexum\nvoid createMemoryPersistence\nvoid ChatSurface\nconst chatProps: ChatSurfaceProps = { sessionID: "session-1", theme: "light" }\nvoid chatProps\n`,
   )
   const typecheck = Bun.spawnSync(
     ["bunx", "--bun", "tsc", "--noEmit", "--module", "NodeNext", "--moduleResolution", "NodeNext", "--target", "ES2022", "types.ts"],
@@ -148,29 +152,28 @@ async function verifyConsumer(tarball: string) {
   }
 
   await Bun.write(
-    join(consumer, "surface-import.ts"),
-    `import { NexumSurfaces } from "${releasePackageName}/surfaces"\nimport type { NexumSurfacesProps } from "${releasePackageName}/surfaces"\nimport "${releasePackageName}/surfaces/styles.css"\nvoid NexumSurfaces\nconst props: NexumSurfacesProps = { apiBaseUrl: "http://127.0.0.1:4097" }\nvoid props\n`,
+    join(consumer, "chat-surface-import.ts"),
+    `import { ChatSurface } from "${releasePackageName}/chat-surface"\nimport type { ChatSurfaceProps } from "${releasePackageName}/chat-surface"\nimport "${releasePackageName}/chat-surface/styles.css"\nvoid ChatSurface\nconst props: ChatSurfaceProps = { sessionID: "session-1", theme: "light" }\nvoid props\n`,
   )
   const surfaceBundle = Bun.spawnSync(
     [
       "bun",
       "build",
-      "surface-import.ts",
+      "chat-surface-import.ts",
       "--target=browser",
       "--format=esm",
-      "--outdir=surface-dist",
+      "--outdir=chat-surface-dist",
       "--external=solid-js",
     ],
     { cwd: consumer, stdout: "pipe", stderr: "pipe" },
   )
   if (surfaceBundle.exitCode !== 0) {
-    fail(`仓库外 consumer Surfaces 浏览器构建失败:\n${new TextDecoder().decode(surfaceBundle.stderr)}`)
+    fail(`仓库外 consumer ChatSurface 浏览器构建失败:\n${new TextDecoder().decode(surfaceBundle.stderr)}`)
   }
 
   const cli = Bun.spawnSync([join(consumer, "node_modules/.bin/nexum"), "--help"], { cwd: consumer, stdout: "pipe", stderr: "pipe" })
   if (cli.exitCode !== 0) fail(`仓库外 consumer CLI 检查失败:\n${new TextDecoder().decode(cli.stderr)}`)
   if (!existsSync(join(consumer, `node_modules/${releasePackageName}/dist/chat-surface.css`))) fail("仓库外 consumer 缺少 Chat Surface CSS")
-  if (!existsSync(join(consumer, `node_modules/${releasePackageName}/dist/surfaces.css`))) fail("仓库外 consumer 缺少 Surfaces CSS")
 
   const tar = Bun.spawnSync(["tar", "-tzf", tarball], { stdout: "pipe", stderr: "pipe" })
   if (tar.exitCode !== 0) {

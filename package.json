@@ -8,7 +8,7 @@
   "packageManager": "bun@1.4.4",
   "scripts": {
     "dev": "bun run --cwd packages/nexum-test dev",
-    "dev:surface": "bun run --cwd packages/nexum-surfaces dev",
+    "dev:surface": "bun run --cwd packages/nexum-test dev",
     "dev:server": "bun run --cwd packages/nexum-server dev",
     "cli": "bun run --cwd packages/nexum-cli start",
     "build": "bun turbo build",
@@ -40,6 +40,7 @@
   },
   "devDependencies": {
     "@babel/core": "7.29.7",
+    "@babel/preset-env": "7.29.2",
     "@babel/preset-typescript": "7.27.1",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",

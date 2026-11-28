@@ -4,7 +4,7 @@
 
 状态：现状基线
 
-权威来源：`packages/nexum-protocol/src/index.ts`、`packages/nexum-chat-surface/src/index.ts`、`packages/nexum-chat-surface/src/chat-surface.tsx`、`packages/nexum-surfaces/src/main.tsx`
+权威来源：`packages/nexum-protocol/src/index.ts`、`packages/nexum-chat-surface/src/index.ts`、`packages/nexum-chat-surface/src/chat-surface.tsx`、`packages/nexum-test/src/main.tsx`
 
 最后核对：2026-11-24
 

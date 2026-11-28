@@ -4,9 +4,17 @@
 
 <!-- 内部模块 / Internal module -->
 
-This is an internal cross-layer verification package, not a production Runtime
-or a user-facing demo. It runs real Core, Application, Protocol, Client, Server,
-and Surface code together.
+This is an internal cross-layer verification package and complete Test
+Workbench, not a production Runtime or public UI package. It owns the left
+navigation and management panels, and imports the public Chat Surface for the
+right chat area:
+
+```tsx
+import { ChatSurface } from "@nexum/chat-surface"
+```
+
+The public consumer entry is `nexum-ai/chat-surface`; the complete workbench is
+not published as `nexum-ai/surfaces`.
 
 ## Workbench
 

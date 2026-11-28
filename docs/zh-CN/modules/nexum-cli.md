@@ -12,7 +12,7 @@
 
 ## 职责
 
-`@nexum/cli` 是 Nexum 的终端 Surface，与 Web UI（[`@nexum/surfaces`](./nexum-surfaces.md)）同级。它复用与聊天类 Surface 相同的协议适配层（[`@nexum/surface-adapter`](./nexum-surface-adapter.md)），把 Session 历史、SSE 事件、思考过程、Permission/Question 交互投影为终端文本，并提供 REPL 与一次性管理面命令。
+`@nexum/cli` 是 Nexum 的独立终端入口，与 Web 聊天组件 [`nexum-ai/chat-surface`](./nexum-chat-surface.md) 并列发布。它复用与聊天类 Surface 相同的协议适配层（[`@nexum/surface-adapter`](./nexum-surface-adapter.md)），把 Session 历史、SSE 事件、思考过程、Permission/Question 交互投影为终端文本，并提供 REPL 与一次性管理面命令。
 
 它不负责 Core 执行语义、协议实现或业务决策；这些由 Server/Application/Core 负责。CLI 只消费协议并投影状态。
 

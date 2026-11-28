@@ -118,7 +118,7 @@ Application 提供默认 Runtime Composer。不要从零开始拼接所有模块
 | [`nexum-ai/server`](docs/zh-CN/modules/nexum-server.md)                         | 协议绑定     | 将已组合 Runtime 暴露为 HTTP/SSE，负责路由、错误边界和事件投递                                      | 独立本地服务或应用后端         |
 | [`nexum-ai/surface-adapter`](docs/zh-CN/modules/nexum-surface-adapter.md)       | Surface 适配 | `ChatProtocolAdapter`、聊天操作和协议错误归一化                                                     | 复用聊天协议接入不同 UI        |
 | [`nexum-ai/chat-surface`](docs/zh-CN/modules/nexum-chat-surface.md)             | UI 组件      | 可嵌入聊天组件、聊天交互和 Web Component                                                            | 在应用内嵌入聊天体验           |
-| [`nexum-ai/surfaces`](docs/zh-CN/modules/nexum-surfaces.md)                     | UI 组件      | 可嵌入完整 Web 工作台，把协议事件投影成聊天、卡片、抽屉和状态视图                                  | 在应用内嵌入完整 Agent 工作台   |
+| `nexum-test`                                                                       | 内部 Demo    | 完整演示工作台，并通过 `import` 引入 `ChatSurface`                                          | 仓库内验证，不作为生产依赖     |
 | `nexum-ai/cli`                                                            | 终端 Surface | REPL、思考动画、交互问答和管理面命令                                                                | 终端 Agent                     |
 | 仓库内部验证组合                                                       | 验证组合     | Server、Runtime、Client 和 Surface 的跨层 POC 与持久化恢复验证                                      | Test Workbench，不作为生产依赖 |
 
@@ -135,7 +135,6 @@ nexum-ai/client ───────> nexum-ai/protocol
 nexum-ai/server ───────> nexum-ai/core + nexum-ai/application + nexum-ai/protocol
 nexum-ai/surface-adapter ──> nexum-ai/client
 nexum-ai/chat-surface ─────> nexum-ai/surface-adapter
-nexum-ai/surfaces ──────────> nexum-ai/client + nexum-ai/chat-surface
 nexum-ai/cli ──────────────> nexum-ai/surface-adapter + nexum-ai/client
 Test Workbench ────────> Application + Server + Client + Core
 ```

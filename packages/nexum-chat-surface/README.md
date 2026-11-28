@@ -11,9 +11,11 @@ import { ChatSurface } from "nexum-ai/chat-surface"
 import "nexum-ai/chat-surface/styles.css"
 
 export function ChatPanel(props: { sessionID: string; apiBaseUrl: string }) {
-  return <ChatSurface sessionID={props.sessionID} client={{ baseUrl: props.apiBaseUrl }} title="Nexum Chat" />
+  return <ChatSurface sessionID={props.sessionID} client={{ baseUrl: props.apiBaseUrl }} theme="light" title="Nexum Chat" />
 }
 ```
+
+`theme` 可选值为 `"light"` 或 `"dark"`。传入后只固定 ChatSurface 自身的主题，不跟随宿主页面或系统深色模式；不传时使用默认亮色主题。
 
 组件负责历史消息、实时事件、流式输出、Permission、Question、取消/继续和 Skill 展示；Session 创建、模型配置、权限策略和宿主能力仍由应用控制。它通过 `nexum-ai/surface-adapter` 消费协议，不直接依赖 Core 或 Server。
 

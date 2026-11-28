@@ -1,6 +1,7 @@
 import { mkdir, readdir, rm } from "node:fs/promises"
 import { basename, dirname, join, relative, resolve } from "node:path"
 import babel from "@babel/core"
+import presetEnv from "@babel/preset-env"
 import presetTypescript from "@babel/preset-typescript"
 import presetSolid from "babel-preset-solid"
 import {
@@ -137,11 +138,11 @@ await rm(artifactRoot, { recursive: true, force: true })
 await mkdir(join(artifactRoot, "dist"), { recursive: true })
 
 for (const [subpath, entry] of Object.entries(publicEntries)) {
-  const isSolidSurfaceEntry = subpath === "./chat-surface" || subpath === "./surfaces"
+  const isSolidSurfaceEntry = subpath === "./chat-surface"
   const result = await Bun.build({
     entrypoints: [resolve(process.cwd(), entry.source)],
     outfile: outputPath(entry),
-    target: "bun",
+    target: isSolidSurfaceEntry ? "browser" : "bun",
     format: "esm",
     packages: "bundle",
     external: externalDependencies,
@@ -156,17 +157,18 @@ for (const [subpath, entry] of Object.entries(publicEntries)) {
   await Bun.write(outputPath(entry), await result.outputs[0].arrayBuffer())
   const compiled = await Bun.file(outputPath(entry)).text()
   const stripped = compiled.replace(/^\/\/ packages\/.*\r?\n/gm, "")
-  // 发布给 Vue CLI 4 等 webpack 4 consumer 的 Surfaces 不得残留 Vite 专有语法。
-  const browserCompatible = subpath === "./surfaces"
-    ? stripped.replace("import.meta.env?.VITE_NEXUM_API_URL", "undefined")
-    : stripped
-  await Bun.write(outputPath(entry), browserCompatible)
+  const lowered = await babel.transformAsync(stripped, {
+    configFile: false,
+    babelrc: false,
+    sourceType: "module",
+    presets: [[presetEnv, { bugfixes: true, modules: false, targets: { chrome: "61", edge: "16", firefox: "60", safari: "11" } }]],
+  })
+  if (!lowered?.code) throw new Error(`低版本语法编译未生成代码: ${subpath}`)
+  await Bun.write(outputPath(entry), lowered.code)
   console.log(`built ${subpath} -> ${relative(process.cwd(), outputPath(entry))}`)
 }
 
-const surfaceStyles = await Bun.file("packages/nexum-surfaces/src/styles.css").text()
 const chatSurfaceStyles = await Bun.file("packages/nexum-chat-surface/src/styles.css").text()
-await Bun.write(join(artifactRoot, "dist", "surfaces.css"), `${surfaceStyles}\n${chatSurfaceStyles}`)
 await Bun.write(join(artifactRoot, "dist", "chat-surface.css"), chatSurfaceStyles)
 
 for (const [subpath, entry] of Object.entries(publicEntries)) {
@@ -247,7 +249,6 @@ const manifest = {
         ]),
     ),
     "./chat-surface/styles.css": "./dist/chat-surface.css",
-    "./surfaces/styles.css": "./dist/surfaces.css",
   },
   files: ["dist", "README.md", "LICENSE"],
   dependencies: {
@@ -298,14 +299,23 @@ async function rewriteDeclarations() {
   for (const file of await Array.fromAsync(new Bun.Glob("dist/**/*.d.ts").scan({ cwd: artifactRoot, onlyFiles: true }))) {
     const path = join(artifactRoot, file)
     const original = await Bun.file(path).text()
-    const rewritten = original.replace(/@nexum\/[a-z0-9-]+(?:\/internal)?(?:\/[a-z0-9-]+)*/g, (name) => {
-      const base = name.match(/^@nexum\/[a-z0-9-]+/)?.[0]
-      if (!base) return name
-      const subpath = workspacePackageToSubpath[base as keyof typeof workspacePackageToSubpath]
-      if (!subpath) return name
-      const suffix = name.slice(base.length)
-      return `${subpath}${suffix}`
-    }).replace(/nexum-ai\/persistence\/internal\/([a-z0-9-]+)/g, "../persistence/$1.js")
+    const rewritten = original
+      .replace(/@nexum\/[a-z0-9-]+(?:\/internal)?(?:\/[a-z0-9-]+)*/g, (name) => {
+        const base = name.match(/^@nexum\/[a-z0-9-]+/)?.[0]
+        if (!base) return name
+        const subpath = workspacePackageToSubpath[base as keyof typeof workspacePackageToSubpath]
+        if (!subpath) return name
+        const suffix = name.slice(base.length)
+        return `${subpath}${suffix}`
+      })
+      .replace(/nexum-ai\/persistence\/internal\/([a-z0-9-]+)/g, "../persistence/$1.js")
+      .replace(/(["'])(\.\.?\/[^"']+)\1/g, (match, quote: string, specifier: string) => {
+        if (specifier.endsWith(".js") || specifier.endsWith(".json")) return match
+        if (specifier.endsWith(".ts") || specifier.endsWith(".tsx")) {
+          return `${quote}${specifier.replace(/\.tsx?$/, ".js")}${quote}`
+        }
+        return `${quote}${specifier}.js${quote}`
+      })
     await Bun.write(path, rewritten)
   }
 }

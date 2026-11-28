@@ -1,11 +1,15 @@
 {
-  "extends": "@tsconfig/bun/tsconfig.json",
+  "extends": "@tsconfig/node22/tsconfig.json",
   "compilerOptions": {
     "strict": true,
     "noEmit": true,
-    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    "types": ["bun"]
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "types": ["bun", "vite/client"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "vite.config.ts"]
 }

@@ -16,6 +16,7 @@ replaceable layers.
 | Server | HTTP/SSE routes, event delivery, runtime binding | UI rendering or policy decisions |
 | Surface Adapter | Stable chat operations and error normalization | Core execution or UI layout |
 | Chat Surface / CLI | User-facing projection and interaction | Runtime ownership |
+| Test Workbench | Internal demo composition; imports Chat Surface | Public package UI contract |
 
 ## Dependency direction
 

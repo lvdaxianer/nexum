@@ -22,7 +22,7 @@ bun dev
 - `packages/nexum-protocol`：公开协议模型和事件契约
 - `packages/nexum-client`：HTTP/SSE 协议客户端
 - `packages/nexum-server`：HTTP/SSE 服务绑定
-- `packages/nexum-surfaces`：参考 Web Surface
+- `packages/nexum-test`：内部 Web Test Workbench；可复用聊天区位于 `packages/nexum-chat-surface`
 - `packages/nexum-test`：跨层测试与本地工作台
 
 ## Verification

@@ -25,6 +25,6 @@ export type {
 } from "@nexum/surface-adapter"
 
 export { ChatSurface } from "./chat-surface"
-export type { ChatItem, ChatSurfaceProps } from "./chat-surface"
+export type { ChatItem, ChatSurfaceProps, ChatSurfaceTheme } from "./chat-surface"
 export const CHAT_SURFACE_TAG = "nexum-chat" as const
 export { defineChatSurfaceElement } from "./web-component"
